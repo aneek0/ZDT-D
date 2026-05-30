@@ -1159,7 +1159,7 @@ private fun clearDownloadedUpdateApk() {
     )
   }
 
-  private fun beginStartupHandshake(plan: StartupTimingPlan) {
+  private fun beginStartupHandshake(@Suppress("UNUSED_PARAMETER") plan: StartupTimingPlan) {
     _uiState.update { st ->
       st.copy(
         startup = StartupUiState(
@@ -1168,9 +1168,9 @@ private fun clearDownloadedUpdateApk() {
           errorText = "",
           moduleFound = false,
           moduleStructureOk = true,
-          connectingDurationMs = plan.connectingEndMs.toInt(),
-          loadingDurationMs = plan.loadingDurationMs.toInt(),
-          completeDurationMs = plan.completeMs.toInt(),
+          connectingDurationMs = 0,
+          loadingDurationMs = 0,
+          completeDurationMs = 0,
         )
       )
     }
@@ -1193,10 +1193,7 @@ private fun clearDownloadedUpdateApk() {
     startDaemonLogPolling()
     refreshPrograms()
     refreshDaemonSettings()
-    launchIO {
-      delay(startupMinCompleteMs)
-      _uiState.update { it.copy(startup = StartupUiState.hidden(), daemonUnavailableVisible = false) }
-    }
+    _uiState.update { it.copy(startup = StartupUiState.hidden(), daemonUnavailableVisible = false) }
   }
 
 
@@ -1265,21 +1262,14 @@ private fun clearDownloadedUpdateApk() {
   startupJob = launchIO {
     startupCompleted = false
     val startupStartedAt = System.currentTimeMillis()
-    val timingPlan = createStartupTimingPlan()
-    val loadingStageStartAt = timingPlan.connectingEndMs + timingPlan.loadingDurationMs
 
-    beginStartupHandshake(timingPlan)
+    beginStartupHandshake(createStartupTimingPlan())
     val deadline = startupStartedAt + 10_000L
     while (isActive && System.currentTimeMillis() < deadline) {
       try {
         val rep = api.getStatus()
         _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
         root.setCachedServiceOn(ApiModels.isServiceOn(rep))
-        waitForStartupElapsed(startupStartedAt, timingPlan.connectingEndMs)
-        if (!isActive) return@launchIO
-        setStartupStage(StartupStage.LOADING_STATUS)
-        waitForStartupElapsed(startupStartedAt, loadingStageStartAt)
-        if (!isActive) return@launchIO
         finishStartupHandshake()
         return@launchIO
       } catch (_: Throwable) {
