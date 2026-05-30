@@ -9,9 +9,15 @@ import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -20,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import com.android.zdtd.service.ui.ZdtdApp
 import com.android.zdtd.service.ui.theme.ZdtdTheme
+import com.android.zdtd.service.R
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -106,6 +113,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     setContent {
+      var conflictDialog by remember { mutableStateOf<MainViewModel.ProfileConflictDialog?>(null) }
+
       ZdtdTheme {
         Surface {
           val rootState by vm.rootState.collectAsStateWithLifecycle()
@@ -120,6 +129,36 @@ class MainActivity : AppCompatActivity() {
             programUpdatesFlow = vm.programUpdates,
             actions = remember(vm) { vm },
           )
+
+          val dialog = conflictDialog
+          if (dialog != null) {
+            val ctx = applicationContext
+            AlertDialog(
+              onDismissRequest = { },
+              title = { Text(ctx.getString(R.string.enable_blocked_profile_overlap)) },
+              text = {
+                Text(
+                  ctx.getString(
+                    R.string.enable_blocked_profile_overlap_detail,
+                    dialog.profileName,
+                    dialog.conflictingProfile,
+                    "${dialog.commonApps} ${if (dialog.commonApps == 1) "app" else "apps"}"
+                  )
+                )
+              },
+              confirmButton = {
+                TextButton(onClick = { conflictDialog = null }) {
+                  Text("OK")
+                }
+              }
+            )
+          }
+        }
+      }
+
+      LaunchedEffect(Unit) {
+        vm.conflictDialogEvents.collect { dialog ->
+          conflictDialog = dialog
         }
       }
     }

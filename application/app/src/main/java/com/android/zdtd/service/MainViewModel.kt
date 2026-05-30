@@ -338,6 +338,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     _toastEvents.tryEmit(msg)
   }
 
+  // Conflict dialog state — emitted when enabling a profile that overlaps with another enabled profile.
+  data class ProfileConflictDialog(
+    val programId: String,
+    val profileName: String,
+    val conflictingProfile: String,
+    val conflictingProgram: String,
+    val commonApps: Int,
+  )
+
+  private val _conflictDialogEvents = MutableSharedFlow<ProfileConflictDialog>(extraBufferCapacity = 4)
+  val conflictDialogEvents: SharedFlow<ProfileConflictDialog> = _conflictDialogEvents.asSharedFlow()
+
   private fun scheduleProxyInfoApply(reason: String) {
     proxyInfoApplyJob?.cancel()
     proxyInfoApplyJob = launchIO {
@@ -4467,6 +4479,62 @@ private fun shQuote(s: String): String {
     return null
   }
 
+  /**
+   * Check whether enabling a specific profile would cause an app overlap
+   * with another already-enabled profile. Returns a ProfileConflictDialog
+   * if there's a conflict, or null if the profile can be safely enabled.
+   */
+  private suspend fun checkEnableProfileConflict(
+    programId: String,
+    profile: String,
+  ): ProfileConflictDialog? {
+    if (programId !in guardedProfileProgramIds) return null
+    val assignments = runCatching { api.getAppAssignments() }.getOrNull() ?: return null
+    val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+
+    // Collect apps for the profile we want to enable
+    val targetApps = mutableSetOf<String>()
+    for (entry in assignments.lists) {
+      if (entry.programId == programId && entry.profile == profile) {
+        targetApps.addAll(entry.packages)
+      }
+    }
+    if (targetApps.isEmpty()) return null
+
+    // Find enabled profiles that conflict
+    for (p in programs) {
+      if (p.id !in guardedProfileProgramIds) continue
+      val enabledProfiles = if (p.id == programId) {
+        // For same program, check other enabled profiles (including the one we're enabling)
+        p.profiles.filter { it.enabled || (it.name == profile) }.map { it.name }.toSet()
+      } else {
+        p.profiles.filter { it.enabled }.map { it.name }.toSet()
+      }
+      if (enabledProfiles.isEmpty()) continue
+
+      for (otherProfile in enabledProfiles) {
+        if (p.id == programId && otherProfile == profile) continue
+        val otherApps = mutableSetOf<String>()
+        for (entry in assignments.lists) {
+          if (entry.programId == p.id && entry.profile == otherProfile) {
+            otherApps.addAll(entry.packages)
+          }
+        }
+        val common = targetApps.intersect(otherApps)
+        if (common.isNotEmpty()) {
+          return ProfileConflictDialog(
+            programId = programId,
+            profileName = profile,
+            conflictingProfile = otherProfile,
+            conflictingProgram = p.id,
+            commonApps = common.size,
+          )
+        }
+      }
+    }
+    return null
+  }
+
   private suspend fun refreshProgramsNow(force: Boolean = false) {
     val now = System.currentTimeMillis()
     val current = _uiState.value.programs
@@ -4599,6 +4667,15 @@ private fun shQuote(s: String): String {
 
   override fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
     launchIO {
+      if (enabled) {
+        val conflict = checkEnableProfileConflict(programId, profile)
+        if (conflict != null) {
+          log("ERR", "enable blocked: $programId/$profile overlaps with ${conflict.conflictingProgram}/${conflict.conflictingProfile}")
+          _conflictDialogEvents.tryEmit(conflict)
+          withContext(Dispatchers.Main.immediate) { onDone(false) }
+          return@launchIO
+        }
+      }
       val ok = runCatching { api.setProfileEnabled(programId, profile, enabled) }.getOrDefault(false)
       if (ok) {
         log("OK", "$programId/$profile enabled=$enabled (apply after stop/start)")
