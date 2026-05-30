@@ -13,52 +13,8 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License" />
-  </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
-    <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest Release" />
-  </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
-    <img src="https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square" alt="Release Date" />
-  </a>
-  <a href="https://tokei.kojix2.net/github/GAME-OVER-op/ZDT-D">
-   <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2FGAME-OVER-op%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
-  </a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Android-Root%20Module-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android Root Module" />
-  <img src="https://img.shields.io/badge/Magisk-supported-00AF9C?style=flat-square" alt="Magisk Supported" />
-  <img src="https://img.shields.io/badge/KernelSU-supported-4285F4?style=flat-square" alt="KernelSU Supported" />
-  <img src="https://img.shields.io/badge/APatch-supported-8A2BE2?style=flat-square" alt="APatch Supported" />
-  <img src="https://img.shields.io/badge/Kotlin-Android-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin Android" />
-  <img src="https://img.shields.io/badge/Rust-Daemon-B7410E?style=flat-square&logo=rust&logoColor=white" alt="Rust Daemon" />
-  <img src="https://img.shields.io/badge/DPI-Bypass-red?style=flat-square" alt="DPI Bypass" />
-  <img src="https://img.shields.io/badge/Per--App-Routing-orange?style=flat-square" alt="Per-App Routing" />
-  <img src="https://img.shields.io/badge/DNS-Control-blue?style=flat-square" alt="DNS Control" />
-</p>
-
-<p align="center">
   <b>ZDT-D</b> is an Android root module for traffic routing, DPI bypass, proxy chaining, DNS control, and per-app network management.
 </p>
-
-## 🎦 Video guide for installation
-
-<div align="center">
-
-<a href="https://youtu.be/jKYHZ9H53pM">
-  <img src="https://i.ibb.co/WmJX05C/1.png" width="720" alt="ZDT-D installation video guide">
-</a>
-
-<br>
-<br>
-
-<a href="https://youtu.be/jKYHZ9H53pM">
-  <img src="https://img.shields.io/badge/Watch_on-YouTube-red?style=for-the-badge&logo=youtube">
-</a>
-
-</div>
 
 ## Description
 
