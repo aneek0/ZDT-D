@@ -4576,20 +4576,6 @@ private fun shQuote(s: String): String {
 
   private fun normalizedProfileNameForGuard(name: String): String = name.trim().lowercase(Locale.ROOT)
 
-  private fun findProfileNameOwnerAcrossPrograms(
-    programs: List<ApiModels.Program>,
-    requestedName: String,
-    excludeProgramId: String,
-  ): ApiModels.Program? {
-    val needle = normalizedProfileNameForGuard(requestedName)
-    if (needle.isEmpty()) return null
-    return programs.firstOrNull { program ->
-      program.id in guardedProfileProgramIds &&
-        program.id != excludeProgramId &&
-        program.profiles.any { normalizedProfileNameForGuard(it.name) == needle }
-    }
-  }
-
   private fun nextGlobalProfileName(programId: String, programs: List<ApiModels.Program>): String {
     val used = programs
       .filter { it.id in guardedProfileProgramIds }
@@ -4706,17 +4692,7 @@ private fun shQuote(s: String): String {
   override fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
     launchIO {
       val p = profile.trim()
-      val guardPrograms = freshestProgramsForProfileGuard()
-      if (programId in guardedProfileProgramIds) {
-        val owner = findProfileNameOwnerAcrossPrograms(guardPrograms, p, excludeProgramId = programId)
-        if (owner != null) {
-          log("ERR", "$programId: profile '$p' already exists in ${owner.id}")
-          withContext(Dispatchers.Main.immediate) { onDone(null) }
-          return@launchIO
-        }
-      }
-
-      val before = guardPrograms.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
+      val before = uiState.value.programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
       val ok = runCatching { api.createProfile(programId, p) }.getOrDefault(false)
       if (!ok) {
         log("ERR", "$programId: create profile '$p' failed")
