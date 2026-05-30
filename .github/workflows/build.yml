@@ -683,7 +683,8 @@ jobs:
     needs:
       - build_gate
       - build_apk
-    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
+    # Disabled: personal fork — no automatic releases
+    if: false && github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
 
     steps:
       - name: Checkout repository
