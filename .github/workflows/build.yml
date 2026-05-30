@@ -703,7 +703,7 @@ jobs:
           name: zdt-module-final
           path: out/dist
 
-      - name: Rename artifacts and create build tag
+      - name: Create build release with artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -714,22 +714,21 @@ jobs:
           BUILD_TIME="$(date -u '+%Y%m%d-%H%M%S')"
           TAG="build-${SHORT_SHA}-${BUILD_TIME}"
 
-          cp -f out/dist/app-release.apk "out/dist/ZDT-D-${TAG}.apk"
-          cp -f out/dist/zdt_module.zip "out/dist/ZDT-D-module-${TAG}.zip"
+          APK_NAME="ZDT-D-${TAG}.apk"
+          MODULE_NAME="ZDT-D-module-${TAG}.zip"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG" "$FULL_SHA"
-          push_output="$(git push origin "refs/tags/${TAG}" 2>&1)" || {
-            if echo "$push_output" | grep -qi "already exists"; then
-              echo "::warning::Tag $TAG already exists, continuing with existing tag."
-            else
-              echo "$push_output"
-              exit 1
-            fi
-          }
+          cp -f out/dist/app-release.apk "out/dist/${APK_NAME}"
+          cp -f out/dist/zdt_module.zip "out/dist/${MODULE_NAME}"
 
           echo "tag=$TAG"
-          echo "Created build tag: $TAG"
-          echo "APK: ZDT-D-${TAG}.apk"
-          echo "Module: ZDT-D-module-${TAG}.zip"
+          echo "APK: ${APK_NAME}"
+          echo "Module: ${MODULE_NAME}"
+
+          gh release create "$TAG" \
+            --title "Build ${SHORT_SHA}" \
+            --notes "Automatic build ${BUILD_TIME}\nCommit: ${FULL_SHA}" \
+            --prerelease \
+            "out/dist/${APK_NAME}" \
+            "out/dist/${MODULE_NAME}"
+
+          echo "Created release with tag: $TAG"
