@@ -163,13 +163,7 @@ data class UiState(
   val daemonLogDetailedTail: String = "",
 )
 
-private data class StartupTimingPlan(
-  val totalMs: Long,
-  val connectingEndMs: Long,
-  val completeMs: Long,
-) {
-  val loadingDurationMs: Long get() = (totalMs - completeMs - connectingEndMs).coerceAtLeast(0L)
-}
+
 
 
 data class LogLine(
@@ -378,11 +372,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val proxyInfoApplyDelayMs: Long = 1_200L
   private var appVisible: Boolean = false
   private var startupCompleted: Boolean = false
-  private val startupMinVisibleMsRange: LongRange = 2_000L..4_500L
-  private val startupMinCompleteMs: Long = 900L
-  private val startupMinConnectingMsFloor: Long = 700L
-  private val startupMinLoadingMsFloor: Long = 400L
-
   private val statusFreshMs: Long = 1_800L
   private val programsFreshMs: Long = 1_200L
   private val statusPollFailureThreshold: Int = 5
@@ -1133,44 +1122,13 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  private suspend fun waitForStartupElapsed(startedAt: Long, minElapsedMs: Long) {
-    val remaining = minElapsedMs - (System.currentTimeMillis() - startedAt)
-    if (remaining > 0L) delay(remaining)
-  }
-
-  private fun createStartupTimingPlan(): StartupTimingPlan {
-    val totalMs = Random.nextLong(startupMinVisibleMsRange.first, startupMinVisibleMsRange.last + 1L)
-    val remainingBeforeComplete = (totalMs - startupMinCompleteMs).coerceAtLeast(
-      startupMinConnectingMsFloor + startupMinLoadingMsFloor
-    )
-    val maxConnecting = minOf(
-      3_200L,
-      (remainingBeforeComplete - startupMinLoadingMsFloor).coerceAtLeast(startupMinConnectingMsFloor)
-    )
-    val connectingEndMs = if (maxConnecting <= startupMinConnectingMsFloor) {
-      startupMinConnectingMsFloor
-    } else {
-      Random.nextLong(startupMinConnectingMsFloor, maxConnecting + 1L)
-    }
-    return StartupTimingPlan(
-      totalMs = totalMs,
-      connectingEndMs = connectingEndMs,
-      completeMs = startupMinCompleteMs,
-    )
-  }
-
-  private fun beginStartupHandshake(@Suppress("UNUSED_PARAMETER") plan: StartupTimingPlan) {
+  private fun beginStartupHandshake() {
     _uiState.update { st ->
       st.copy(
-        startup = StartupUiState(
+        startup = st.startup.copy(
           visible = true,
           stage = StartupStage.CONNECTING_DAEMON,
           errorText = "",
-          moduleFound = false,
-          moduleStructureOk = true,
-          connectingDurationMs = 0,
-          loadingDurationMs = 0,
-          completeDurationMs = 0,
         )
       )
     }
@@ -1263,7 +1221,7 @@ private fun clearDownloadedUpdateApk() {
     startupCompleted = false
     val startupStartedAt = System.currentTimeMillis()
 
-    beginStartupHandshake(createStartupTimingPlan())
+    beginStartupHandshake()
     val deadline = startupStartedAt + 10_000L
     while (isActive && System.currentTimeMillis() < deadline) {
       try {
