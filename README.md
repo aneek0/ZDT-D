@@ -1,5 +1,13 @@
 # ZDT-D Root Module (Magisk / KernelSU / APatch)
 
+> **⚠️ Disclaimer — Personal Fork**
+>
+> This is an **unofficial personal fork** of [ZDT-D by GAME-OVER-op](https://github.com/GAME-OVER-op/ZDT-D), created exclusively for personal use.
+>
+> **This fork is NOT supported, endorsed, or maintained by the original author.** Do not contact the original author regarding issues, questions, or support for this fork — all changes here are independent and may diverge from the upstream project.
+>
+> If you are looking for the official version, go to [github.com/GAME-OVER-op/ZDT-D](https://github.com/GAME-OVER-op/ZDT-D).
+
 <div align="center">
   <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" />
 </div>
@@ -8,26 +16,11 @@
   <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/stargazers">
-    <img src="https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Stars" />
-  </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/network/members">
-    <img src="https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Forks" />
-  </a>
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
     <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest Release" />
   </a>
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
     <img src="https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square" alt="Release Date" />
-  </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
-    <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads" />
-  </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/commits/main">
-    <img src="https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square" alt="Last Commit" />
-  </a>
-  <a href="https://t.me/module_ggover">
-    <img src="https://img.shields.io/badge/Telegram-Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
   </a>
   <a href="https://tokei.kojix2.net/github/GAME-OVER-op/ZDT-D">
    <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2FGAME-OVER-op%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
@@ -63,10 +56,6 @@
 
 <a href="https://youtu.be/jKYHZ9H53pM">
   <img src="https://img.shields.io/badge/Watch_on-YouTube-red?style=for-the-badge&logo=youtube">
-</a>
-&nbsp;
-<a href="https://t.me/avencoreschat/536213">
-  <img src="https://img.shields.io/badge/Watch_on-Telegram-229ED9?style=for-the-badge&logo=telegram&logoColor=white">
 </a>
 
 </div>
@@ -225,30 +214,8 @@ GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/mai
 
 ## Downloads
 
-- [Releases](https://github.com/GAME-OVER-op/ZDT-D/releases)
+- [Releases (original)](https://github.com/GAME-OVER-op/ZDT-D/releases)
 
-## Project growth
+---
 
-<p align="center">
-  <img src="https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=for-the-badge&logo=github&label=Stars" alt="GitHub Stars" />
-  <img src="https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=for-the-badge&logo=github&label=Forks" alt="GitHub Forks" />
-  <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=for-the-badge&label=Downloads" alt="Total Downloads" />
-  <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=for-the-badge&label=Latest%20Release" alt="Latest Release" />
-</p>
-
-| Metric | Status |
-|---|---|
-| Repository activity | ![Last Commit](https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square&label=Last%20Commit) |
-| Stars | ![GitHub Stars](https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Stars) |
-| Forks | ![GitHub Forks](https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Forks) |
-| Watchers | ![GitHub Watchers](https://img.shields.io/github/watchers/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Watchers) |
-| Downloads | ![Downloads](https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square&label=Total%20Downloads) |
-| Latest release | ![Latest Release](https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square&label=Release) |
-| Release date | ![Release Date](https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square&display_date=published_at&label=Published) |
-| Open issues | ![Issues](https://img.shields.io/github/issues/GAME-OVER-op/ZDT-D?style=flat-square&label=Issues) |
-| Repository size | ![Repo Size](https://img.shields.io/github/repo-size/GAME-OVER-op/ZDT-D?style=flat-square&label=Repo%20Size) |
-| Top language | ![Top Language](https://img.shields.io/github/languages/top/GAME-OVER-op/ZDT-D?style=flat-square&label=Top%20Language) |
-
-<p align="center">
-  <b>ZDT-D is actively maintained and continues to grow as an Android root networking project.</b>
-</p>
+> **Note:** This is a personal, unofficial fork. It is not affiliated with or supported by the original author. For the official project, visit [github.com/GAME-OVER-op/ZDT-D](https://github.com/GAME-OVER-op/ZDT-D).
