@@ -773,6 +773,136 @@ private fun replaceTopLevelScalars(yaml: String, replacements: Map<String, Strin
   return head.trimEnd() + "\n\n" + cleaned.trimStart('\n') + "\n"
 }
 
+/**
+ * Validates mihomo YAML config and returns a list of human-readable error messages.
+ * Returns empty list if config looks valid.
+ */
+private fun validateMihomoYaml(yaml: String): List<String> {
+  if (yaml.isBlank()) return listOf("config is empty")
+  val errors = mutableListOf<String>()
+  val lines = yaml.replace("\r\n", "\n").split("\n")
+
+  // Check for tabs (YAML forbids tabs for indentation)
+  val tabLine = lines.indexOfFirst { line -> line.isNotEmpty() && line[0] == '\t' }
+  if (tabLine >= 0) errors += "line ${tabLine + 1}: tabs are not allowed for indentation, use spaces"
+
+  // Track top-level keys and their line numbers
+  val topLevelKeys = mutableMapOf<String, Int>()
+  val sectionPattern = Regex("^[A-Za-z0-9_-]+:")
+  for ((idx, line) in lines.withIndex()) {
+    if (line.isBlank() || line.trimStart().startsWith("#")) continue
+    val m = sectionPattern.matchAt(line, 0) ?: continue
+    // Must be at column 0 (top-level)
+    if (line[0] == ' ' || line[0] == '\t') continue
+    val key = m.value.removeSuffix(":")
+    if (key in topLevelKeys) {
+      errors += "line ${idx + 1}: duplicate top-level key '$key' (first at line ${topLevelKeys[key]})"
+    } else {
+      topLevelKeys[key] = idx + 1
+    }
+  }
+
+  // Check required top-level sections
+  if ("proxies" !in topLevelKeys && "proxy-providers" !in topLevelKeys) {
+    errors += "missing 'proxies' or 'proxy-providers' section (need at least one proxy source)"
+  }
+  if ("proxy-groups" !in topLevelKeys) {
+    errors += "missing 'proxy-groups' section"
+  }
+  if ("rules" !in topLevelKeys) {
+    errors += "missing 'rules' section"
+  }
+
+  // Validate each proxy block
+  val proxySection = extractTopLevelYamlSection(yaml, "proxies")
+  val proxyBlocks = parseYamlListBlocks(proxySection)
+  for (block in proxyBlocks) {
+    val proxyName = block.name.ifBlank { "?" }
+    if (block.type == "unknown") {
+      errors += "proxy '$proxyName': missing or invalid 'type' field"
+    }
+    // Check server/port for types that need them
+    val needsServer = block.type in setOf(
+      "ss", "ssr", "vmess", "vless", "trojan", "socks5", "http", "snell", "wireguard", "hysteria", "hysteria2", "tuic"
+    )
+    if (needsServer) {
+      val server = Regex("(?m)^\\s*server:\\s*[\"']?([^\"'\\n]+)[\"']?\\s*$")
+        .find(block.raw)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+      if (server.isBlank()) errors += "proxy '$proxyName': missing 'server' field"
+      val portStr = Regex("(?m)^\\s*port:\\s*(\\d+)").find(block.raw)?.groupValues?.getOrNull(1)
+      if (portStr != null) {
+        val port = portStr.toIntOrNull()
+        if (port == null || port !in 1..65535) {
+          errors += "proxy '$proxyName': invalid port '$portStr'"
+        }
+      }
+    }
+  }
+
+  // Validate proxy-groups blocks
+  val groupsSection = extractTopLevelYamlSection(yaml, "proxy-groups")
+  val groupBlocks = parseYamlListBlocks(groupsSection)
+  for (block in groupBlocks) {
+    val groupName = block.name.ifBlank { "?" }
+    val groupType = Regex("(?m)^\\s*type:\\s*([^\\s#]+)").find(block.raw)
+      ?.groupValues?.getOrNull(1)?.trim()?.lowercase().orEmpty()
+    if (groupType.isBlank()) {
+      errors += "proxy-group '$groupName': missing 'type' field"
+    } else {
+      val validTypes = setOf("select", "url-test", "fallback", "load-balance", "relay", "ssid")
+      if (groupType !in validTypes) {
+        errors += "proxy-group '$groupName': unknown type '$groupType'"
+      }
+    }
+  }
+
+  // Validate rules
+  val rulesSection = extractTopLevelYamlSection(yaml, "rules")
+  if (rulesSection.isNotBlank() && rulesSection.trim() != "rules:") {
+    val ruleLines = rulesSection.lines().drop(1).map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
+    val validRulePrefixes = setOf(
+      "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN", "IP-CIDR", "IP-CIDR6",
+      "GEOIP", "IP-ASN", "SRC-IP-CIDR", "SRC-PORT", "DST-PORT",
+      "PROCESS-NAME", "PROCESS-PATH", "NETWORK", "UID", "DSCP",
+      "SUB-RULE", "AND", "OR", "NOT", "MATCH", "RULE-SET"
+    )
+    for ((i, rule) in ruleLines.withIndex()) {
+      if (rule.isBlank()) continue
+      // Remove inline comments
+      val ruleClean = rule.substringBefore('#').trim()
+      if (ruleClean.isBlank()) continue
+      val prefix = ruleClean.substringBefore(',').trim().uppercase()
+      if (prefix !in validRulePrefixes) {
+        errors += "rule line ${i + 1}: unknown rule type '$prefix' in '$ruleClean'"
+      }
+    }
+  }
+
+  // Check external-controller port format
+  val externalController = extractTopLevelScalar(yaml, "external-controller")
+  if (externalController.isNotBlank()) {
+    val port = parseMihomoControllerPort(externalController)
+    if (port == null) {
+      errors += "external-controller: cannot parse port from '$externalController'"
+    } else if (port !in 1..65535) {
+      errors += "external-controller: port $port out of range (1-65535)"
+    }
+  }
+
+  // Check mixed-port / port / socks-port
+  for (portKey in listOf("mixed-port", "port", "socks-port")) {
+    val portStr = extractTopLevelScalar(yaml, portKey)
+    if (portStr.isNotBlank()) {
+      val port = portStr.trim().toIntOrNull()
+      if (port == null || port !in 1..65535) {
+        errors += "$portKey: invalid value '$portStr'"
+      }
+    }
+  }
+
+  return errors
+}
+
 private fun parseYamlListBlocks(sectionText: String): List<MihomoYamlListBlock> {
   val lines = sectionText.replace("\r\n", "\n").split("\n")
   if (lines.isEmpty()) return emptyList()
@@ -2484,8 +2614,26 @@ fun MihomoProfileScreen(
     notify: Boolean = true,
     afterSuccess: (() -> Unit)? = null,
     failureDetail: String? = null,
+    skipValidation: Boolean = false,
   ) {
     val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(newText, usedVpnIpv4Cidrs))
+    if (!skipValidation) {
+      val errors = validateMihomoYaml(normalizedText)
+      if (errors.isNotEmpty()) {
+        val detail = failureDetail ?: errors.joinToString("\n")
+        queuePendingChange(
+          MihomoPendingChange(
+            id = "validation-${errors.hashCode()}",
+            title = context.getString(R.string.mihomo_pending_save_failed_title),
+            message = "Config has ${errors.size} validation error${if (errors.size > 1) "s" else ""}",
+            detail = detail,
+            yaml = normalizedText,
+          )
+        )
+        showSnack("Fix ${errors.size} error${if (errors.size > 1) "s" else ""} before saving")
+        return
+      }
+    }
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
       yamlSaving = false
@@ -2679,11 +2827,11 @@ fun MihomoProfileScreen(
         section = "dns",
         yamlText = yamlText,
         defaultText = mihomoDefaultDnsSection(),
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
       )
       4 -> MihomoProxiesBuilderTab(
         yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
         onQueuePendingChange = { proxyName, pendingYaml ->
           queuePendingChange(
             MihomoPendingChange(
@@ -2699,15 +2847,15 @@ fun MihomoProfileScreen(
       )
       5 -> MihomoGroupsBuilderTab(
         yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
       )
       6 -> MihomoRulesBuilderTab(
         yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
       )
       7 -> MihomoProvidersBuilderTab(
         yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
       )
       8 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AppListPickerCard(
@@ -3207,6 +3355,7 @@ private fun MihomoYamlTab(
   } else {
     stringResource(R.string.mihomo_save_failed_unknown_reason)
   }
+  val yamlErrors = remember(yamlText) { validateMihomoYaml(yamlText) }
   Card(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
@@ -3225,7 +3374,31 @@ private fun MihomoYamlTab(
         label = { Text("config.yaml") },
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         minLines = 16,
+        isError = yamlErrors.isNotEmpty(),
       )
+      if (yamlErrors.isNotEmpty()) {
+        Surface(
+          color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.38f),
+          shape = MaterialTheme.shapes.medium,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.24f)),
+        ) {
+          Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+              "${yamlErrors.size} error${if (yamlErrors.size > 1) "s" else ""}",
+              style = MaterialTheme.typography.labelMedium,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.error,
+            )
+            yamlErrors.forEach { err ->
+              Text(
+                "• $err",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+              )
+            }
+          }
+        }
+      }
       Text(
         stringResource(R.string.mihomo_managed_fields_warning),
         style = MaterialTheme.typography.bodySmall,
