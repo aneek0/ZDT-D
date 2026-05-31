@@ -15,8 +15,6 @@ wide-youtube.l.google.com
 youtubekids.com
 ggpht.com
 discord.com
-www.truebrandsnacks.com
-truebrandsnacks.com
 gateway.discord.gg
 cdn.discordapp.com
 discordapp.net
@@ -44,7 +42,6 @@ twimg.com
 t.co
 soundcloud.com
 sndcdn.com
-soundcloud.cloud
 instagram.com
 cdninstagram.com
 facebook.com
