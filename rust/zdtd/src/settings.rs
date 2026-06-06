@@ -125,12 +125,6 @@ pub struct ApiSettings {
     #[serde(default)]
     pub hotspot_t2s_capture_all: bool,
     #[serde(default)]
-    pub hotspot_mode: String,
-    #[serde(default)]
-    pub hotspot_program: String,
-    #[serde(default)]
-    pub hotspot_profile: String,
-    #[serde(default)]
     pub allow_loopback_redirect: bool,
     #[serde(default)]
     pub selinux_permissive_enabled: bool,
