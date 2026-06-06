@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, protector, settings, stats};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats};
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -2347,28 +2347,36 @@ fn flatten_conflicts(map: &BTreeMap<String, Vec<AppConflictView>>) -> Vec<AppCon
 }
 
 fn find_program_conflicts(
-    _candidate: &BTreeSet<String>,
-    _current_api_path: &str,
-    _program_id: &str,
-    _slot: &str,
+    candidate: &BTreeSet<String>,
+    current_api_path: &str,
+    program_id: &str,
+    slot: &str,
 ) -> BTreeMap<String, Vec<AppConflictView>> {
-    // All programs and profiles are fully isolated — no cross-profile/cross-program conflicts.
-    // Users may freely assign the same app to multiple profiles and programs.
-    BTreeMap::new()
-}
-
-/// Returns true when two program ids are allowed to share applications
-/// without triggering a conflict. This covers:
-/// - the same program (different profiles of mihomo, nfqws, etc.)
-/// - mihomo ↔ zapret cross-domain overlap
-fn same_program_or_compatible(a: &str, b: &str) -> bool {
-    if a == b { return true; }
-    let compatible_pairs = [
-        ("mihomo", "nfqws"),
-        ("mihomo", "nfqws2"),
-        ("nfqws", "nfqws2"),
-    ];
-    compatible_pairs.iter().any(|(x, y)| (a == *x && b == *y) || (a == *y && b == *x))
+    let mut out: BTreeMap<String, Vec<AppConflictView>> = BTreeMap::new();
+    let Some(domain) = app_domain(program_id) else { return out; };
+    let lists = collect_assignment_files();
+    let current_existing = lists
+        .iter()
+        .find(|v| v.path == current_api_path)
+        .map(|v| v.packages.clone())
+        .unwrap_or_default();
+    for item in lists {
+        if item.path == current_api_path { continue; }
+        if item.slot != slot { continue; }
+        let Some(item_domain) = app_domain(&item.program_id) else { continue; };
+        if !app_domains_conflict(domain, item_domain) { continue; }
+        for pkg in candidate.intersection(&item.packages) {
+            if current_existing.contains(pkg) { continue; }
+            out.entry(pkg.clone()).or_default().push(AppConflictView {
+                package: pkg.clone(),
+                program_id: item.program_id.clone(),
+                profile: item.profile.clone(),
+                slot: item.slot.clone(),
+                path: item.path.clone(),
+            });
+        }
+    }
+    out
 }
 
 fn find_proxyinfo_conflicts(candidate: &BTreeSet<String>) -> BTreeMap<String, Vec<AppConflictView>> {
@@ -5601,6 +5609,12 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 hotspot_t2s_enabled: Option<bool>,
                 #[serde(default)]
+                hotspot_mode: Option<String>,
+                #[serde(default)]
+                hotspot_program: Option<String>,
+                #[serde(default)]
+                hotspot_profile: Option<String>,
+                #[serde(default)]
                 hotspot_t2s_target: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_singbox_profile: Option<String>,
@@ -5622,16 +5636,61 @@ match (method.as_str(), path.as_str()) {
             if let Some(mode) = patch.protector_mode {
                 setting.protector_mode = mode;
             }
+            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.hotspot_t2s_enabled {
                 setting.hotspot_t2s_enabled = enabled;
+                // Enabling/disabling hotspot starts from a clean selection. The UI then sets
+                // exactly one mode/program/profile explicitly.
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+                // Hotspot/tethering requires IPv4 forwarding. Persist the existing
+                // advanced setting when hotspot is enabled, but do not disable it
+                // automatically when hotspot is turned off.
+                if enabled {
+                    setting.ip_forward_enabled = true;
+                    apply_ip_forward = Some(true);
+                }
+            }
+            if let Some(mode) = patch.hotspot_mode {
+                setting.hotspot_mode = mode;
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(program) = patch.hotspot_program {
+                setting.hotspot_program = program;
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(profile) = patch.hotspot_profile {
+                setting.hotspot_profile = profile;
             }
             if let Some(target) = patch.hotspot_t2s_target {
+                setting.hotspot_mode = "proxy".to_string();
+                setting.hotspot_program = target.clone();
+                setting.hotspot_profile.clear();
                 setting.hotspot_t2s_target = target;
             }
             if let Some(profile) = patch.hotspot_t2s_singbox_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "singbox".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_singbox_profile = profile;
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "wireproxy".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_wireproxy_profile = profile;
             }
             if let Some(capture_all) = patch.hotspot_t2s_capture_all {
@@ -5643,10 +5702,13 @@ match (method.as_str(), path.as_str()) {
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;
             }
-            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.ip_forward_enabled {
                 setting.ip_forward_enabled = enabled;
                 apply_ip_forward = Some(enabled);
+            }
+            if setting.hotspot_t2s_enabled && !setting.ip_forward_enabled {
+                setting.ip_forward_enabled = true;
+                apply_ip_forward = Some(true);
             }
             settings::save_api_settings(&setting)?;
             if let Some(enabled) = apply_ip_forward {
@@ -5655,6 +5717,37 @@ match (method.as_str(), path.as_str()) {
             let saved = settings::load_api_settings().unwrap_or(setting);
             protector::refresh(services_running);
             write_json(stream, 200, json!({"ok": true, "setting": saved}))
+        }
+
+        ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {
+            write_json(stream, 200, energy_saver::api_snapshot())
+        }
+        ("POST", "/api/energy-saver") | ("PUT", "/api/energy-saver") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let wrapper: serde_json::Value = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let cfg: energy_saver::EnergySaverSettings = if let Some(settings) = wrapper.get("settings") {
+                    serde_json::from_value(settings.clone())
+                        .map_err(|e| anyhow::anyhow!("bad JSON settings: {e}"))?
+                } else {
+                    serde_json::from_value(wrapper)
+                        .map_err(|e| anyhow::anyhow!("bad JSON settings: {e}"))?
+                };
+                let _saved = energy_saver::save_settings(cfg)?;
+                energy_saver::refresh(services_running);
+                Ok(energy_saver::api_snapshot())
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
+        }
+        ("POST", "/api/energy-saver/apply") => {
+            let res = energy_saver::apply_affinity_now();
+            match res {
+                Ok(applied) => write_json(stream, 200, json!({"ok": true, "applied": applied, "active": energy_saver::active()})),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
         }
 
         ("POST", "/api/fs/read_text") => {
