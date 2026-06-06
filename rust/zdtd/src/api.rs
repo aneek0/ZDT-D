@@ -2421,16 +2421,143 @@ fn validate_program_apps_content(content: &str, current_api_path: &str, program_
         anyhow::bail!("apps are blocked by proxyInfo: {}", overlap.join(", "));
     }
 
-    let conflicts = find_program_conflicts(&candidate, current_api_path, program_id, slot);
-    if !conflicts.is_empty() {
-        let mut parts = Vec::new();
-        for (pkg, uses) in &conflicts {
-            let labels = uses.iter().map(conflict_label).collect::<Vec<_>>().join(", ");
-            parts.push(format!("{pkg} ({labels})"));
+    Ok(())
+}
+
+/// Collect all packages assigned to a profile across all slots (user, mobile, wifi).
+fn gather_profile_packages(program_id: &str, profile: &str) -> BTreeSet<String> {
+    let mut pkgs = BTreeSet::new();
+    for slot_name in &["user", "mobile", "wifi"] {
+        let uid_path = program_root(program_id)
+            .join("profile")
+            .join(profile)
+            .join("app/uid")
+            .join(&format!("{}_program", slot_name));
+        if let Ok(content) = read_text_or_empty(&uid_path) {
+            pkgs.extend(parse_package_set(&content));
         }
-        parts.sort();
-        anyhow::bail!("apps are already used in conflicting program lists: {}", parts.join("; "));
     }
+    pkgs
+}
+
+/// Check whether enabling a profile would conflict with other *enabled* profiles.
+/// Called when the user toggles a profile to enabled=true via the API.
+/// Returns an error listing the conflicting apps and which active profiles use them.
+fn check_enabled_profile_conflicts(
+    program_id: &str,
+    profile: &str,
+    profile_packages: &BTreeSet<String>,
+) -> Result<()> {
+    if profile_packages.is_empty() {
+        return Ok(());
+    }
+    let Some(domain) = app_domain(program_id) else { return Ok(()) };
+
+    let mut conflicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // Helper: check a single program's active.json for enabled profiles.
+    let profile_based = [
+        "nfqws", "nfqws2", "byedpi", "dpitunnel",
+        "openvpn", "amneziawg", "tun2socks", "myvpn",
+        "mihomo", "mieru", "sing-box", "wireproxy",
+        "myproxy", "myprogram",
+    ];
+    for pid in &profile_based {
+        let active_path = active_json_path(pid);
+        if let Ok(active) = read_json::<ProfilesActive>(&active_path) {
+            for (pname, st) in &active.profiles {
+                if !st.enabled { continue; }
+                if *pid == program_id && pname == profile { continue; }
+                let mut pkgs = BTreeSet::new();
+                for slot_name in &["user", "mobile", "wifi"] {
+                    let uid_path = program_root(pid)
+                        .join("profile")
+                        .join(pname)
+                        .join("app/uid")
+                        .join(&format!("{}_program", slot_name));
+                    if let Ok(content) = read_text_or_empty(&uid_path) {
+                        pkgs.extend(parse_package_set(&content));
+                    }
+                }
+                if pkgs.is_empty() { continue; }
+                let Some(other_domain) = app_domain(pid) else { continue; };
+                if !app_domains_conflict(domain, other_domain) { continue; }
+                for pkg in profile_packages.intersection(&pkgs) {
+                    conflicts.entry(pkg.clone())
+                        .or_default()
+                        .push(format!("{pid}/{pname}"));
+                }
+            }
+        }
+    }
+
+    // Single programs with app lists (tor, operaproxy).
+    {
+        let tor_enabled = simple_enabled_json("tor", "enabled.json");
+        if tor_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("tor")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("tor").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("tor".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        let op_enabled = simple_enabled_json("operaproxy", "enabled.json");
+        if op_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("operaproxy")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("operaproxy").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("operaproxy".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if !conflicts.is_empty() {
+        let mut parts: Vec<String> = conflicts
+            .into_iter()
+            .map(|(pkg, uses)| {
+                let mut uses_sorted = uses;
+                uses_sorted.sort();
+                format!("{} ({})", pkg, uses_sorted.join(", "))
+            })
+            .collect();
+        parts.sort();
+        anyhow::bail!(
+            "Отключите один из профилей с общими приложениями: {}",
+            parts.join("; ")
+        );
+    }
+
     Ok(())
 }
 
@@ -2784,6 +2911,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::openvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("openvpn", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("openvpn", profile);
+                    check_enabled_profile_conflicts("openvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -2987,6 +3116,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::amneziawg::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("amneziawg", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("amneziawg", profile);
+                    check_enabled_profile_conflicts("amneziawg", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3188,6 +3319,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::tun2socks::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("tun2socks", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("tun2socks", profile);
+                    check_enabled_profile_conflicts("tun2socks", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3341,6 +3474,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::myvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("myvpn", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("myvpn", profile);
+                    check_enabled_profile_conflicts("myvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3486,6 +3621,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mihomo::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mihomo", profile, &setting.tun)?;
                     crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), None, None)?;
+                    let pkgs = gather_profile_packages("mihomo", profile);
+                    check_enabled_profile_conflicts("mihomo", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3635,6 +3772,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mieru::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mieru", profile, &setting.tun)?;
                     crate::programs::mieru::validate_port_uniqueness_with_override(Some(profile), None)?;
+                    let pkgs = gather_profile_packages("mieru", profile);
+                    check_enabled_profile_conflicts("mieru", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3783,6 +3922,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let st = active.profiles.get_mut(*profile)
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
+                if req.enabled {
+                    let pkgs = gather_profile_packages("sing-box", profile);
+                    check_enabled_profile_conflicts("sing-box", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4087,6 +4230,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     anyhow::bail!("profile not found");
                 }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("wireproxy", profile);
+                    check_enabled_profile_conflicts("wireproxy", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4354,6 +4501,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let st = active.profiles.get_mut(*profile)
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
+                if req.enabled {
+                    let pkgs = gather_profile_packages(id, profile);
+                    check_enabled_profile_conflicts(id, profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4679,6 +4830,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("myproxy", profile);
+                    check_enabled_profile_conflicts("myproxy", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4828,6 +4983,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("myprogram", profile);
+                    check_enabled_profile_conflicts("myprogram", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
