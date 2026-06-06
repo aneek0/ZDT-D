@@ -605,7 +605,7 @@ fn active_profiles_enabled(program: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn simple_enabled_json(program: &str, file: &str) -> bool {
+pub fn simple_enabled_json(program: &str, file: &str) -> bool {
     let path = settings::working_program_root_path(program).join(file);
     let Ok(raw) = std::fs::read_to_string(path) else { return false; };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };

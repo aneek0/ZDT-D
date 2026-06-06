@@ -119,6 +119,12 @@ pub struct ApiSettings {
     #[serde(default)]
     pub hotspot_t2s_capture_all: bool,
     #[serde(default)]
+    pub hotspot_mode: String,
+    #[serde(default)]
+    pub hotspot_program: String,
+    #[serde(default)]
+    pub hotspot_profile: String,
+    #[serde(default)]
     pub allow_loopback_redirect: bool,
     #[serde(default)]
     pub selinux_permissive_enabled: bool,
@@ -135,6 +141,9 @@ impl Default for ApiSettings {
             hotspot_t2s_singbox_profile: String::new(),
             hotspot_t2s_wireproxy_profile: String::new(),
             hotspot_t2s_capture_all: false,
+            hotspot_mode: String::new(),
+            hotspot_program: String::new(),
+            hotspot_profile: String::new(),
             allow_loopback_redirect: false,
             selinux_permissive_enabled: false,
             ip_forward_enabled: false,
