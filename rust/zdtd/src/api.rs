@@ -14,7 +14,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, runtime, settings, stats};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats};
+use crate::runtime::simple_enabled_json;
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
