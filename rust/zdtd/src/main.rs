@@ -4,6 +4,7 @@ mod api;
 mod api_status;
 mod config;
 mod daemon;
+mod energy_saver;
 mod iptables;
 mod iptables_backup;
 mod internet_wait;
@@ -21,6 +22,7 @@ mod shell;
 mod stats;
 mod stop;
 mod vpn_netd;
+mod vpn_tether;
 mod xtables_lock;
 
 use anyhow::Result;

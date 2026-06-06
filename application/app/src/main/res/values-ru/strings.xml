@@ -545,6 +545,7 @@
     <string name="setup_install_conflict_zapret_message">Предупреждение: обнаружены конфликтующие модули. Просьба удалить данные модули, возможна некорректная работа ZDT-D.</string>
     <string name="setup_install_conflict_dnscrypt_message">Обнаружен модуль DNSCrypt. Рекомендуется удалить данный модуль. Если вам нужен DNSCrypt, он уже есть в составе ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">Данный модуль имеет высокую конфликтность. Функционал данного модуля уже имеется в ZDT-D.</string>
+    <string name="setup_install_conflict_vpn_tether_message">Данная функция этого модуля уже имеется в проекте ZDT-D, пожалуйста удалите конфликтный модуль.</string>
     <string name="setup_zygisk_install_title">Установить Zygisk?</string>
     <string name="setup_zygisk_install_short">Дополнительный компонент скрытия интерфейсов</string>
     <string name="setup_zygisk_install_details_cd">Описание Zygisk</string>
@@ -565,6 +566,12 @@
 Минимальные версии:
 KernelSU: 10940+
 APatch: 10700+</string>
+    <string name="setup_metamodule_blocked_title">Установка заблокирована мета-модулем</string>
+    <string name="setup_metamodule_blocked_body">Похоже, на устройстве установлен мета-модуль KernelSU/APatch, но он отключён, повреждён или работает некорректно.
+
+Из-за этого менеджер заблокировал установку ZDT-D.
+
+Для корректной установки требуется рабочий мета-модуль либо его полное отсутствие. Проверьте состояние мета-модуля в KernelSU/APatch: включите его обратно или удалите, затем перезагрузите устройство и повторите установку.</string>
     <string name="setup_zygisk_recovery_title">Zygisk-компонент не установлен</string>
     <string name="setup_zygisk_recovery_body">По логу установки Zygisk-компонент не удалось установить. Можно повторить установку ZDT-D без Zygisk-компонента.</string>
     <string name="setup_zygisk_recovery_no">Нет</string>
@@ -778,11 +785,20 @@ APatch: 10700+</string>
     <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
     <string name="settings_hotspot_capture_all_title">Захват всего трафика hotspot режима</string>
     <string name="settings_hotspot_capture_all_body">Если включено, весь входящий TCP-трафик режима точки доступа направляется в выбранный инструмент. Если выключено, служебные reverse-proxy порты исключаются перед редиректом остального трафика.</string>
+    <string name="settings_hotspot_mode_title">Режим точки доступа</string>
+    <string name="settings_hotspot_mode_proxy">Proxy</string>
+    <string name="settings_hotspot_mode_vpn">VPN</string>
     <string name="settings_hotspot_program_title">Инструмент для точки доступа</string>
+    <string name="settings_hotspot_program_proxy_title">Proxy-программа</string>
+    <string name="settings_hotspot_program_vpn_title">VPN-программа</string>
+    <string name="settings_hotspot_profile_title">Профиль</string>
+    <string name="settings_hotspot_profile_missing">Выберите профиль для продолжения.</string>
+    <string name="settings_hotspot_profile_selected_fmt">Выбран профиль: %1$s</string>
+    <string name="settings_hotspot_profiles_empty">Нет включённых профилей для этой программы.</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
     <string name="settings_hotspot_warning_title">Предупреждение безопасности</string>
-    <string name="settings_hotspot_warning_body">Включение этой функции может снизить безопасность устройства, потому что порт инструмента будет открыт. Любой в сети сможет попытаться подключиться к прокси.</string>
+    <string name="settings_hotspot_warning_body">Включение этой функции может снизить безопасность устройства, потому что клиенты точки доступа будут направляться через выбранный Proxy или VPN backend. Используйте только в доверенной сети.</string>
     <string name="settings_hotspot_warning_accept">Принять</string>
     <string name="settings_hotspot_saved">Настройка точки доступа сохранена</string>
     <string name="settings_hotspot_save_failed">Не удалось сохранить настройку точки доступа</string>
@@ -1721,4 +1737,25 @@ APatch: 10700+</string>
     <string name="widget_action_stop_hint">Нажмите для остановки</string>
     <string name="widget_cpu_value_fmt">%1$.1f%%</string>
     <string name="widget_ram_value_fmt">%1$.1f МБ</string>
+    <string name="settings_energy_saver_title">Расширенный режим энергосбережения</string>
+    <string name="settings_energy_saver_body">Настройка поведения программ при выключенном экране и выбор ядер для снижения нагрузки.</string>
+    <string name="settings_energy_saver_open">Открыть</string>
+    <string name="settings_energy_saver_subtitle">Экономия заряда при выключенном экране и управление нагрузкой программ.</string>
+    <string name="settings_energy_saver_global_title">Включить расширенное энергосбережение</string>
+    <string name="settings_energy_saver_global_body">Если выключено, настройки этого окна не будут применяться.</string>
+    <string name="settings_energy_saver_delay_title">Задержка паузы после выключения экрана</string>
+    <string name="settings_energy_saver_delay_body">Выбранные программы будут поставлены на паузу после этой задержки и продолжат работу при включении экрана.</string>
+    <string name="settings_energy_saver_warning">Пауза программы может временно остановить интернет для профилей, которые её используют. Используйте этот режим только для программ, которые можно безопасно приостанавливать.</string>
+    <string name="settings_energy_saver_no_programs">Поддерживаемые программы не найдены.</string>
+    <string name="settings_energy_saver_running_pids">Программа доступна для настройки</string>
+    <string name="settings_energy_saver_freeze_title">Приостанавливать после выключения экрана</string>
+    <string name="settings_energy_saver_freeze_body">Поставить программу на паузу после выключения экрана и продолжить работу при его включении.</string>
+    <string name="settings_energy_saver_affinity_title">Использовать выбранные ядра процессора</string>
+    <string name="settings_energy_saver_affinity_body">Запускать программу только на выбранных ядрах, чтобы снизить нагрузку и расход энергии.</string>
+    <string name="settings_energy_saver_cores_selected">Выбрано: %1$d из %2$d ядер</string>
+    <string name="settings_energy_saver_core_chip">Ядро %1$d</string>
+    <string name="settings_energy_saver_cores_title">Ядра процессора</string>
+    <string name="settings_energy_saver_saved">Настройки энергосбережения сохранены</string>
+    <string name="settings_energy_saver_save_failed">Не удалось сохранить настройки энергосбережения</string>
+
 </resources>

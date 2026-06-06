@@ -80,7 +80,6 @@ fn allow_loopback_redirect_enabled() -> bool {
 ///
 /// - Creates NAT_DPI chain and hooks OUTPUT -> NAT_DPI (nat table).
 /// - Creates MANGLE_APP chain once and hooks OUTPUT -> MANGLE_APP (mangle table).
-/// - Adds mangle exclusions RETURN for each UID.
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
@@ -102,10 +101,9 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         return Ok(());
     }
 
-    // mangle exclusions
-    for uid in &uids {
-        ensure_rule_mangle_return(uid)?;
-    }
+    // MANGLE_APP is UID-specific on the NFQUEUE side, so separate owner RETURN
+    // exclusions are intentionally not added here. Non-targeted UIDs naturally
+    // pass through to the final RETURN in MANGLE_APP.
 
     let protos = proto_choice.protos();
 
@@ -163,9 +161,11 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
 
         for uid in &uids {
             for proto in protos {
+                if allow_loopback_redirect {
+                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                }
                 for dp in &dport_args {
                     if allow_loopback_redirect {
-                        ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
                         add_nat_local_rule_idempotent(uid, proto, Some(dp.as_str()), dest_port)?;
                     }
                     add_nat_rule_idempotent(uid, proto, Some(dp.as_str()), &mode, &ifaces, dest_port)?;
@@ -339,12 +339,8 @@ fn ensure_nat_chain_nat_dpi(allow_loopback_redirect: bool) -> Result<()> {
 }
 
 fn ensure_nat_local_chain(enabled: bool) -> Result<()> {
-    loop {
-        let (c, _) = ipt_run_timeout(&["-t","nat","-D","OUTPUT","-j","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT)?;
-        if c != 0 { break; }
-    }
-
     if !enabled {
+        delete_rule_all("nat", "OUTPUT", &["-j", "NAT_DPI_LOCAL"])?;
         let _ = ipt_run_timeout(&["-t","nat","-F","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT);
         let _ = ipt_run_timeout(&["-t","nat","-X","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT);
         return Ok(());
@@ -354,7 +350,10 @@ fn ensure_nat_local_chain(enabled: bool) -> Result<()> {
     if c != 0 {
         let _ = ipt_run_timeout(&["-t","nat","-N","NAT_DPI_LOCAL"], Capture::Both, IPT_CMD_TIMEOUT)?;
     }
-    let _ = ipt_run_timeout(&["-t","nat","-I","OUTPUT","1","-j","NAT_DPI_LOCAL"], Capture::Both, IPT_CMD_TIMEOUT)?;
+
+    // NAT_DPI_LOCAL must stay before NAT_DPI in OUTPUT, but do not delete and
+    // reinsert the jump on every DPI program apply if it is already correct.
+    ensure_jump_at_position("nat", "OUTPUT", "NAT_DPI_LOCAL", 1)?;
     Ok(())
 }
 
@@ -380,68 +379,158 @@ fn ensure_mangle_chain_app_once() -> Result<()> {
     // Prevent our own local connections from being re-processed by NAT_DPI/MANGLE_APP rules.
     // Must be at the very top to avoid feedback loops.
     ensure_loopback_return_mangle()?;
+    if let Err(e) = crate::iptables::mangle_app::cleanup_owner_returns("iptables") {
+        warn!("DPI: cleanup legacy MANGLE_APP owner RETURN rules failed: {e:#}");
+    }
 
     info!("DPI: MANGLE_APP ready");
     Ok(())
 }
 
 fn ensure_loopback_return_mangle() -> Result<()> {
-    // Keep loopback / localhost traffic at the very top to avoid feedback loops.
-    // Remove duplicates (including legacy -d 127.0.0.1).
-    let mut del_all = |args: &[&str]| -> Result<()> {
-        loop {
-            let (c, _) = ipt_run_timeout(args, Capture::None, IPT_CMD_TIMEOUT)?;
-            if c != 0 { break; }
-        }
-        Ok(())
-    };
-
-    // Legacy + new rules
-    del_all(&["-t","mangle","-D","MANGLE_APP","-d","127.0.0.1","-j","RETURN"])?;
-    del_all(&["-t","mangle","-D","MANGLE_APP","-o","lo","-j","RETURN"])?;
-    del_all(&["-t","mangle","-D","MANGLE_APP","-d","127.0.0.0/8","-j","RETURN"])?;
-
-    // Keep these strictly at the beginning: #1 and #2.
-    let _ = ipt_run_timeout(
-        &["-t","mangle","-I","MANGLE_APP","1","-o","lo","-j","RETURN"],
-        Capture::Both,
-        IPT_CMD_TIMEOUT,
-    )?;
-    let _ = ipt_run_timeout(
-        &["-t","mangle","-I","MANGLE_APP","2","-d","127.0.0.0/8","-j","RETURN"],
-        Capture::Both,
-        IPT_CMD_TIMEOUT,
-    )?;
-    Ok(())
+    ensure_ordered_return_prefix(
+        "mangle",
+        "MANGLE_APP",
+        &[
+            &["-o", "lo", "-j", "RETURN"],
+            &["-d", "127.0.0.0/8", "-j", "RETURN"],
+        ],
+        &[
+            &["-d", "127.0.0.1", "-j", "RETURN"],
+        ],
+    )
 }
 
 fn ensure_loopback_return_nat() -> Result<()> {
-    // Keep loopback / localhost traffic at the very top to avoid feedback loops.
-    // Remove duplicates (including legacy -d 127.0.0.1).
-    let mut del_all = |args: &[&str]| -> Result<()> {
-        loop {
-            let (c, _) = ipt_run_timeout(args, Capture::None, IPT_CMD_TIMEOUT)?;
-            if c != 0 { break; }
+    ensure_ordered_return_prefix(
+        "nat",
+        "NAT_DPI",
+        &[
+            &["-o", "lo", "-j", "RETURN"],
+            &["-d", "127.0.0.0/8", "-j", "RETURN"],
+        ],
+        &[
+            &["-d", "127.0.0.1", "-j", "RETURN"],
+        ],
+    )
+}
+
+fn ensure_ordered_return_prefix(
+    table: &str,
+    chain: &str,
+    expected: &[&[&str]],
+    legacy: &[&[&str]],
+) -> Result<()> {
+    if return_prefix_already_ordered(table, chain, expected, legacy)? {
+        return Ok(());
+    }
+
+    for rule in legacy {
+        delete_rule_all(table, chain, rule)?;
+    }
+    for rule in expected {
+        delete_rule_all(table, chain, rule)?;
+    }
+    for (idx, rule) in expected.iter().enumerate() {
+        insert_rule_at(table, chain, idx + 1, rule)?;
+    }
+    Ok(())
+}
+
+fn return_prefix_already_ordered(
+    table: &str,
+    chain: &str,
+    expected: &[&[&str]],
+    legacy: &[&[&str]],
+) -> Result<bool> {
+    let (rc, out) = ipt_run_timeout(&["-t", table, "-S", chain], Capture::Stdout, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        return Ok(false);
+    }
+
+    let expected_lines: Vec<String> = expected
+        .iter()
+        .map(|tail| format!("-A {chain} {}", tail.join(" ")))
+        .collect();
+    let legacy_lines: Vec<String> = legacy
+        .iter()
+        .map(|tail| format!("-A {chain} {}", tail.join(" ")))
+        .collect();
+    let chain_lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("-A "))
+        .collect();
+
+    if chain_lines.len() < expected_lines.len() {
+        return Ok(false);
+    }
+    for (idx, expected_line) in expected_lines.iter().enumerate() {
+        if chain_lines.get(idx).copied() != Some(expected_line.as_str()) {
+            return Ok(false);
         }
-        Ok(())
-    };
+    }
+    for line in chain_lines.iter().skip(expected_lines.len()) {
+        if expected_lines.iter().any(|expected_line| *line == expected_line.as_str())
+            || legacy_lines.iter().any(|legacy_line| *line == legacy_line.as_str())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 
-    // Legacy + new rules
-    del_all(&["-t","nat","-D","NAT_DPI","-d","127.0.0.1","-j","RETURN"])?;
-    del_all(&["-t","nat","-D","NAT_DPI","-o","lo","-j","RETURN"])?;
-    del_all(&["-t","nat","-D","NAT_DPI","-d","127.0.0.0/8","-j","RETURN"])?;
+fn ensure_jump_at_position(table: &str, chain: &str, jump: &str, pos: usize) -> Result<()> {
+    if jump_already_at_position(table, chain, jump, pos)? {
+        return Ok(());
+    }
+    delete_rule_all(table, chain, &["-j", jump])?;
+    insert_rule_at(table, chain, pos, &["-j", jump])
+}
 
-    // Keep these strictly at the beginning: #1 and #2.
-    let _ = ipt_run_timeout(
-        &["-t","nat","-I","NAT_DPI","1","-o","lo","-j","RETURN"],
-        Capture::Both,
-        IPT_CMD_TIMEOUT,
-    )?;
-    let _ = ipt_run_timeout(
-        &["-t","nat","-I","NAT_DPI","2","-d","127.0.0.0/8","-j","RETURN"],
-        Capture::Both,
-        IPT_CMD_TIMEOUT,
-    )?;
+fn jump_already_at_position(table: &str, chain: &str, jump: &str, pos: usize) -> Result<bool> {
+    let (rc, out) = ipt_run_timeout(&["-t", table, "-S", chain], Capture::Stdout, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        return Ok(false);
+    }
+
+    let expected = format!("-A {chain} -j {jump}");
+    let chain_lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("-A "))
+        .collect();
+    if chain_lines.get(pos.saturating_sub(1)).copied() != Some(expected.as_str()) {
+        return Ok(false);
+    }
+    for (idx, line) in chain_lines.iter().enumerate() {
+        if idx != pos.saturating_sub(1) && *line == expected.as_str() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn delete_rule_all(table: &str, chain: &str, rule: &[&str]) -> Result<()> {
+    loop {
+        let mut args = vec!["-t", table, "-D", chain];
+        args.extend_from_slice(rule);
+        let (rc, _) = ipt_run_timeout(&args, Capture::None, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn insert_rule_at(table: &str, chain: &str, pos: usize, rule: &[&str]) -> Result<()> {
+    let pos_s = pos.to_string();
+    let mut args = vec!["-t", table, "-I", chain, pos_s.as_str()];
+    args.extend_from_slice(rule);
+    let (rc, out) = ipt_run_timeout(&args, Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("DPI: insert rule failed in {table}/{chain}: {}", out.trim());
+    }
     Ok(())
 }
 
@@ -467,66 +556,6 @@ fn read_uids(uid_file: &Path) -> Result<Vec<String>> {
         }
     }
     Ok(set.into_iter().collect())
-}
-
-fn ensure_rule_mangle_return(uid: &str) -> Result<()> {
-    let check = ["-t","mangle","-C","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-    let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
-    if c != 0 {
-        // Keep UID exclusions after loopback/DNS RETURN rules, but before
-        // NFQUEUE and the final RETURN. This prevents later DPI/NAT exclusions
-        // from pushing DNS below service UID returns again.
-        let pos_s = mangle_uid_return_insert_pos().unwrap_or(3).to_string();
-        let add_pos = ["-t","mangle","-I","MANGLE_APP",pos_s.as_str(),"-m","owner","--uid-owner",uid,"-j","RETURN"];
-        let (c2, _) = ipt_run_timeout(&add_pos, Capture::Both, IPT_CMD_TIMEOUT)?;
-        if c2 != 0 {
-            // Some builds may not support positional "-I <chain> <num>".
-            // Fall back to "-I <chain>" and then re-assert loopback rules on top.
-            let add1 = ["-t","mangle","-I","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-            let (c3, _) = ipt_run_timeout(&add1, Capture::Both, IPT_CMD_TIMEOUT)?;
-            if c3 == 0 {
-                let _ = ensure_loopback_return_mangle();
-            }
-        }
-    }
-    Ok(())
-}
-
-fn mangle_uid_return_insert_pos() -> Result<usize> {
-    let (code, out) = ipt_run_timeout(&["-t","mangle","-S","MANGLE_APP"], Capture::Stdout, IPT_CMD_TIMEOUT)?;
-    if code != 0 {
-        return Ok(3);
-    }
-
-    let mut idx = 0usize;
-    let mut insert_after = 2usize;
-    for raw in out.lines() {
-        let line = raw.trim();
-        if !line.starts_with("-A MANGLE_APP ") {
-            continue;
-        }
-        idx += 1;
-        if line == "-A MANGLE_APP -j RETURN" || line.contains(" -j NFQUEUE") {
-            return Ok(idx.max(1));
-        }
-        if is_mangle_return_prefix(line) {
-            insert_after = idx + 1;
-        }
-    }
-    Ok(insert_after.max(3))
-}
-
-fn is_mangle_return_prefix(line: &str) -> bool {
-    if !line.ends_with(" -j RETURN") {
-        return false;
-    }
-    line == "-A MANGLE_APP -o lo -j RETURN"
-        || line == "-A MANGLE_APP -d 127.0.0.0/8 -j RETURN"
-        || line.contains("--dports 53,853,5353")
-        || line.contains("--dport 53")
-        || line.contains("--dport 853")
-        || line.contains("--dport 5353")
-        || line.contains("-m owner --uid-owner")
 }
 
 

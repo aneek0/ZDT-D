@@ -21,6 +21,7 @@ object ApiModels {
   )
 
   data class StatusReport(
+    val total: ProcAgg = ProcAgg(),
     val zdtd: ProcAgg = ProcAgg(),
     val zapret: ProcAgg = ProcAgg(),
     val zapret2: ProcAgg = ProcAgg(),
@@ -71,6 +72,9 @@ object ApiModels {
   data class DaemonSettings(
     val protectorMode: String = "off",
     val hotspotT2sEnabled: Boolean = false,
+    val hotspotMode: String = "proxy",
+    val hotspotProgram: String = "",
+    val hotspotProfile: String = "",
     val hotspotT2sTarget: String = "",
     val hotspotT2sSingboxProfile: String = "",
     val hotspotT2sWireproxyProfile: String = "",
@@ -82,6 +86,38 @@ object ApiModels {
   data class SingBoxProfileChoice(
     val name: String,
     val enabled: Boolean = false,
+  )
+
+
+  data class EnergySaverProgramSetting(
+    val freezeOnScreenOff: Boolean = false,
+    val cpuAffinityEnabled: Boolean = false,
+    val cpuCores: List<Int> = listOf(0, 1, 2),
+  )
+
+  data class EnergySaverConfig(
+    val enabled: Boolean = false,
+    val freezeDelaySeconds: Long = 300L,
+    val programs: Map<String, EnergySaverProgramSetting> = emptyMap(),
+  )
+
+  data class EnergySaverProgram(
+    val id: String,
+    val displayName: String,
+    val binary: String,
+    val binaryPath: String,
+    val exists: Boolean = true,
+    val allowFreeze: Boolean = true,
+    val allowAffinity: Boolean = true,
+    val runningPids: List<Int> = emptyList(),
+  )
+
+  data class EnergySaverState(
+    val exists: Boolean = false,
+    val active: Boolean = false,
+    val onlineCpuCount: Int = 0,
+    val settings: EnergySaverConfig = EnergySaverConfig(),
+    val programs: List<EnergySaverProgram> = emptyList(),
   )
 
   data class ProxyInfoState(
@@ -145,6 +181,7 @@ object ApiModels {
     val apiRuntimeState = normalizeRuntimeState(o.optString("runtime_state", ""))
     val apiActualRuntimeState = normalizeRuntimeState(o.optString("actual_runtime_state", ""))
     return StatusReport(
+      total = parseProcAgg(o.optJSONObject("total")),
       zdtd = parseProcAgg(o.optJSONObject("zdtd")),
       zapret = parseProcAgg(o.optJSONObject("zapret")),
       zapret2 = parseProcAgg(o.optJSONObject("zapret2")),
@@ -234,6 +271,12 @@ object ApiModels {
 
   fun computeTotals(r: StatusReport?): ProcAgg {
     if (r == null) return ProcAgg()
+    // Newer daemon versions provide a unique-process total calculated in Rust.
+    // Prefer it to avoid double-counting helpers exposed in multiple buckets,
+    // e.g. t2s as both myproxy/t2s and the global t2s bucket.
+    if (r.total.count > 0 || r.total.cpuPercent > 0.0 || r.total.rssMb > 0.0) {
+      return r.total
+    }
     val parts = buildList {
       add(r.zdtd)
       add(r.zapret)
@@ -276,6 +319,28 @@ object ApiModels {
       else -> "off"
     }
     val hotspotEnabled = setting?.optBoolean("hotspot_t2s_enabled", false) ?: false
+    val rawMode = setting?.optString("hotspot_mode", "proxy")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    val hotspotMode = if (rawMode == "vpn") "vpn" else "proxy"
+    val rawProgram = setting?.optString("hotspot_program", "")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    val hotspotProgram = when (rawProgram) {
+      "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
+      "singbox", "sing-box", "sing_box" -> "singbox"
+      "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
+      "openvpn", "open-vpn", "open_vpn" -> "openvpn"
+      "amneziawg", "amnezia-wg", "amnezia_wg", "awg" -> "amneziawg"
+      "mihomo" -> "mihomo"
+      "mieru" -> "mieru"
+      else -> ""
+    }
+    val hotspotProfile = setting?.optString("hotspot_profile", "")
+      ?.trim()
+      .orEmpty()
     val rawTarget = setting?.optString("hotspot_t2s_target", "")
       ?.trim()
       ?.lowercase(Locale.ROOT)
@@ -286,7 +351,7 @@ object ApiModels {
       "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
-    val hotspotProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
+    val hotspotSingboxProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
       ?.trim()
       .orEmpty()
     val hotspotWireproxyProfile = setting?.optString("hotspot_t2s_wireproxy_profile", "")
@@ -296,13 +361,98 @@ object ApiModels {
     return DaemonSettings(
       protectorMode = safeMode,
       hotspotT2sEnabled = hotspotEnabled,
+      hotspotMode = hotspotMode,
+      hotspotProgram = hotspotProgram,
+      hotspotProfile = hotspotProfile,
       hotspotT2sTarget = safeTarget,
-      hotspotT2sSingboxProfile = hotspotProfile,
+      hotspotT2sSingboxProfile = hotspotSingboxProfile,
       hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
     )
+  }
+
+
+  fun parseEnergySaver(wrapper: JSONObject?): EnergySaverState {
+    if (wrapper == null) return EnergySaverState()
+    val settingsObj = wrapper.optJSONObject("settings") ?: JSONObject()
+    val programsObj = settingsObj.optJSONObject("programs") ?: JSONObject()
+    val programSettings = linkedMapOf<String, EnergySaverProgramSetting>()
+    val keys = programsObj.keys()
+    while (keys.hasNext()) {
+      val id = keys.next()
+      val o = programsObj.optJSONObject(id) ?: continue
+      val coresArr = o.optJSONArray("cpu_cores") ?: JSONArray()
+      val cores = buildList {
+        for (i in 0 until coresArr.length()) {
+          val core = coresArr.optInt(i, -1)
+          if (core >= 0 && !contains(core)) add(core)
+        }
+      }.ifEmpty { listOf(0, 1, 2) }
+      programSettings[id] = EnergySaverProgramSetting(
+        freezeOnScreenOff = jsonBool(o, "freeze_on_screen_off", false),
+        cpuAffinityEnabled = jsonBool(o, "cpu_affinity_enabled", false),
+        cpuCores = cores,
+      )
+    }
+    val programsArr = wrapper.optJSONArray("programs") ?: JSONArray()
+    val programs = buildList {
+      for (i in 0 until programsArr.length()) {
+        val o = programsArr.optJSONObject(i) ?: continue
+        val id = o.optString("id", "").trim()
+        if (id.isBlank()) continue
+        val pidsArr = o.optJSONArray("running_pids") ?: JSONArray()
+        val pids = buildList {
+          for (j in 0 until pidsArr.length()) {
+            val pid = pidsArr.optInt(j, 0)
+            if (pid > 0) add(pid)
+          }
+        }
+        add(
+          EnergySaverProgram(
+            id = id,
+            displayName = o.optString("display_name", id),
+            binary = o.optString("binary", id),
+            binaryPath = o.optString("binary_path", ""),
+            exists = jsonBool(o, "exists", true),
+            allowFreeze = jsonBool(o, "allow_freeze", true),
+            allowAffinity = jsonBool(o, "allow_affinity", true),
+            runningPids = pids,
+          )
+        )
+      }
+    }
+    return EnergySaverState(
+      exists = jsonBool(wrapper, "exists", false),
+      active = jsonBool(wrapper, "active", false),
+      onlineCpuCount = wrapper.optInt("online_cpu_count", 0),
+      settings = EnergySaverConfig(
+        enabled = jsonBool(settingsObj, "enabled", false),
+        freezeDelaySeconds = settingsObj.optLong("freeze_delay_seconds", 300L).coerceAtLeast(10L),
+        programs = programSettings,
+      ),
+      programs = programs,
+    )
+  }
+
+  fun energySaverConfigToJson(config: EnergySaverConfig): JSONObject {
+    val programs = JSONObject()
+    config.programs.forEach { (id, setting) ->
+      val cores = JSONArray()
+      setting.cpuCores.distinct().sorted().forEach { cores.put(it) }
+      programs.put(
+        id,
+        JSONObject()
+          .put("freeze_on_screen_off", setting.freezeOnScreenOff)
+          .put("cpu_affinity_enabled", setting.cpuAffinityEnabled)
+          .put("cpu_cores", cores),
+      )
+    }
+    return JSONObject()
+      .put("enabled", config.enabled)
+      .put("freeze_delay_seconds", config.freezeDelaySeconds)
+      .put("programs", programs)
   }
 
   fun parseSingBoxProfiles(wrapper: JSONObject?): List<SingBoxProfileChoice> {

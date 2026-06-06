@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -29,6 +30,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -46,11 +50,16 @@ import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.net.URLEncoder
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import androidx.annotation.StringRes
 import kotlin.random.Random
+
+private const val ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG = 0x0001
+private const val ZIP_EOCD_MIN_SIZE = 22
+private const val ZIP_EOCD_MAX_SEARCH = 65557
 
 enum class RootState {
   CHECKING,
@@ -101,6 +110,7 @@ data class SetupUiState(
   val showZygiskInstallConfirm: Boolean = false,
   val showKsuApatchZygiskWarning: Boolean = false,
   val showZygiskInstallRecoveryDialog: Boolean = false,
+  val showMetamoduleInstallBlockedDialog: Boolean = false,
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -255,6 +265,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     baseUrlProvider = { _uiState.value.baseUrl },
     tokenProvider = { _uiState.value.token },
   )
+
+  private val hotspotSettingsMutex = Mutex()
 
   private val githubHttp = OkHttpClient.Builder()
     .retryOnConnectionFailure(true)
@@ -1289,6 +1301,11 @@ private fun clearDownloadedUpdateApk() {
     return logText.contains("ZDTD_ZYGISK_")
   }
 
+  private fun hasMetamoduleInstallBlockedMarker(logText: String): Boolean {
+    return logText.contains("Metamodule installation blocked", ignoreCase = true) ||
+      logText.contains("A metamodule with custom installer is active", ignoreCase = true)
+  }
+
   override fun refreshZygiskInstallMarker() {
     if (_rootState.value != RootState.GRANTED) {
       _setup.update {
@@ -1388,6 +1405,7 @@ private fun clearDownloadedUpdateApk() {
           installerLabel = label,
           showKsuApatchZygiskWarning = showZygiskWarning,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showManualDialog = false,
           manualZipSaved = false,
           manualZipPath = "",
@@ -1425,7 +1443,8 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
-        val zygiskInstallError = zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
+        val metamoduleInstallBlocked = hasMetamoduleInstallBlockedMarker(out)
+        val zygiskInstallError = !metamoduleInstallBlocked && zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
         _setup.update {
           it.copy(
             installing = false,
@@ -1433,11 +1452,12 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = !zygiskInstallError,
+            showManualDialog = !metamoduleInstallBlocked && !zygiskInstallError,
             showZygiskInstallRecoveryDialog = zygiskInstallError,
+            showMetamoduleInstallBlockedDialog = metamoduleInstallBlocked,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = if (zygiskInstallError) "" else str(R.string.mv_auto_018) +
+            manualDialogText = if (metamoduleInstallBlocked || zygiskInstallError) "" else str(R.string.mv_auto_018) +
               str(R.string.mv_auto_019) +
               str(R.string.mv_auto_020),
           )
@@ -1454,6 +1474,10 @@ private fun clearDownloadedUpdateApk() {
     _setup.update { it.copy(showZygiskInstallRecoveryDialog = false) }
   }
 
+  override fun dismissMetamoduleInstallBlockedDialog() {
+    _setup.update { it.copy(showMetamoduleInstallBlockedDialog = false) }
+  }
+
   override fun retryInstallWithoutZygisk() {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     launchIO {
@@ -1464,6 +1488,7 @@ private fun clearDownloadedUpdateApk() {
         it.copy(
           installZygiskRequested = false,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showZygiskInstallConfirm = false,
         )
       }
@@ -1529,6 +1554,8 @@ private fun clearDownloadedUpdateApk() {
           kind="dnscrypt"
         elif [ "${'$'}lower" = "portguard" ]; then
           kind="portguard"
+        elif [ "${'$'}lower" = "vpn-to-hotspot-usb" ]; then
+          kind="vpn_tether"
         fi
         [ -n "${'$'}kind" ] || continue
         if [ -f "${'$'}d/remove" ]; then marked=1; else marked=0; fi
@@ -1549,6 +1576,7 @@ private fun clearDownloadedUpdateApk() {
         "zapret" -> str(R.string.setup_install_conflict_zapret_message)
         "dnscrypt" -> str(R.string.setup_install_conflict_dnscrypt_message)
         "portguard" -> str(R.string.setup_install_conflict_portguard_message)
+        "vpn_tether" -> str(R.string.setup_install_conflict_vpn_tether_message)
         else -> return@mapNotNull null
       }
       InstallConflictUi(
@@ -3632,6 +3660,7 @@ if (mf.isNotBlank()) {
         installOk = false,
         installError = null,
         showZygiskInstallRecoveryDialog = false,
+        showMetamoduleInstallBlockedDialog = false,
         manualZipSaved = false,
         manualZipPath = "",
         showUpdatePrompt = false,
@@ -3656,45 +3685,182 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun installViaMagisk(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = false)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "Magisk"))
-    val r = root.execRoot("sh -c 'magisk --install-module /data/local/tmp/zdt_module.zip'")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "Magisk",
+      installCommand = "magisk --install-module /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaKsu(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, str(R.string.mv_auto_013)))
     val ksu = runCatching { root.ksuPath() }.getOrNull() ?: "ksud"
-    val r = root.execRoot("sh -c ${shQuote("${ksu} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = str(R.string.mv_auto_013),
+      installCommand = "${shQuote(ksu)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaApatch(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "APatch"))
     val apd = runCatching { root.apatchPath() }.getOrNull() ?: "apd"
-    val r = root.execRoot("sh -c ${shQuote("${apd} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "APatch",
+      installCommand = "${shQuote(apd)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
+  }
+
+  private suspend fun runRootManagerInstallWithModuleProgress(
+    installerLabel: String,
+    installCommand: String,
+    stageLog: String,
+  ): Pair<Boolean, String> {
+    val progressDir = File(ctx.applicationInfo.dataDir, "install_status")
+    runCatching { progressDir.mkdirs() }
+    val progressFile = File(progressDir, "progress.properties").absolutePath
+    val progressLog = File(progressDir, "progress.log").absolutePath
+    val installLog = File(progressDir, "install.log").absolutePath
+    val resultFile = File(progressDir, "result.properties").absolutePath
+    val runnerPath = "/data/local/tmp/zdt_module_install_runner.sh"
+    val installLabel = str(R.string.setup_install_progress_installing_fmt, installerLabel)
+    updateInstallProgress(62, installLabel)
+
+    val cleanupScript = """
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(progressFile)} ${shQuote(progressLog)} ${shQuote(installLog)} ${shQuote(resultFile)} ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true
+      chmod 0771 ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+    """.trimIndent()
+    root.execRootSh(cleanupScript)
+
+    val runnerScript = """
+      #!/system/bin/sh
+      export ZDTD_INSTALL_STATUS_DIR=${shQuote(progressDir.absolutePath)}
+      export ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)}
+      export ZDTD_INSTALL_PROGRESS_LOG=${shQuote(progressLog)}
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(resultFile)} 2>/dev/null || true
+      {
+        echo "runner_start=$(date +%s 2>/dev/null || echo 0)"
+        echo "installer=${installerLabel}"
+      } > ${shQuote(installLog)} 2>/dev/null || true
+      chmod 0644 ${shQuote(installLog)} 2>/dev/null || true
+      (${installCommand}) >> ${shQuote(installLog)} 2>&1
+      rc=$?
+      {
+        echo "rc=${'$'}rc"
+        echo "time=$(date +%s 2>/dev/null || echo 0)"
+      } > ${shQuote(resultFile)} 2>/dev/null || true
+      chmod 0644 ${shQuote(resultFile)} 2>/dev/null || true
+      exit 0
+    """.trimIndent()
+
+    val runnerB64 = Base64.encodeToString(runnerScript.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+    val startScript = """
+      set -e
+      mkdir -p /data/local/tmp 2>/dev/null || true
+      echo ${shQuote(runnerB64)} | (base64 -d 2>/dev/null || /system/bin/toybox base64 -d 2>/dev/null) > ${shQuote(runnerPath)}
+      chmod 0700 ${shQuote(runnerPath)}
+      sh ${shQuote(runnerPath)} >/dev/null 2>&1 &
+      echo "started"
+    """.trimIndent()
+
+    val start = root.execRootSh(startScript)
+    val startOut = (start.out + start.err).joinToString("\n").trim()
+    if (!start.isSuccess) {
+      return false to listOf(stageLog, startOut.ifBlank { "failed to start module installer runner" }).filter { it.isNotBlank() }.joinToString("\n")
+    }
+
+    var lastPercent = 62
+    var rc: Int? = null
+    val deadline = System.currentTimeMillis() + 10L * 60L * 1000L
+    while (currentCoroutineContext().isActive && rc == null) {
+      val text = readInstallProgressText(progressLog, progressFile)
+      val percent = parseInstallProgressPercent(text)
+      if (percent != null && percent > lastPercent) {
+        val next = percent.coerceIn(63, 98)
+        if (next > lastPercent) {
+          lastPercent = next
+          updateInstallProgress(next, installLabel)
+        }
+      }
+
+      val resultText = readInstallStatusFile(resultFile)
+      rc = parseInstallResultCode(resultText)
+      if (rc != null) break
+
+      if (System.currentTimeMillis() > deadline) {
+        val logText = root.readLogTail(installLog, 400)
+        return false to listOf(stageLog, "installer timeout", startOut, logText).filter { it.isNotBlank() }.joinToString("\n")
+      }
+      delay(450)
+    }
+
+    val installOut = root.readLogTail(installLog, 1200)
+    root.execRootSh("rm -f ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+    val ok = rc == 0
+    val finalLog = listOf(stageLog, startOut, installOut).filter { it.isNotBlank() }.joinToString("\n").trim()
+    return ok to finalLog
+  }
+
+  private fun readInstallProgressText(progressLog: String, progressFile: String): String {
+    val logText = runCatching { root.readLogTail(progressLog, 80) }.getOrDefault("")
+    if (logText.isNotBlank()) return logText
+
+    val propsText = runCatching { root.readLogTail(progressFile, 20) }.getOrDefault("")
+    if (propsText.isNotBlank()) return propsText
+
+    return runCatching {
+      val f = File(progressFile)
+      if (f.isFile && f.canRead()) f.readText() else ""
+    }.getOrDefault("")
+  }
+
+  private fun readInstallStatusFile(resultFile: String): String {
+    return runCatching { root.readLogTail(resultFile, 20) }.getOrDefault("")
+  }
+
+  private fun parseInstallResultCode(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("rc=")) return@mapNotNull null
+        trimmed.removePrefix("rc=").trim().toIntOrNull()
+      }
+      .lastOrNull()
+  }
+
+  private fun parseInstallProgressPercent(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        when {
+          trimmed.startsWith("percent=") -> trimmed.removePrefix("percent=").trim().toIntOrNull()
+          trimmed.startsWith("ZDTD_PROGRESS:") -> trimmed.removePrefix("ZDTD_PROGRESS:").substringBefore(':').trim().toIntOrNull()
+          else -> null
+        }
+      }
+      .lastOrNull()
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return Triple(false, "asset zdt_module.zip missing: ${it.message ?: it}", "")
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) {
+      return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
+    }
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return Triple(false, verify.message, "")
+
+    val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+      return Triple(false, "module zip compatibility patch failed: ${it.message ?: it}", "")
     }
 
     val src = cacheZip.absolutePath
@@ -3707,26 +3873,39 @@ if (mf.isNotBlank()) {
       append(str(R.string.mv_auto_068)).append(dst).append("\n\n")
       append(str(R.string.mv_auto_069))
     }
-    return Triple(true, (out + "\n" + msg).trim(), dst)
+    return Triple(true, listOf(verify.message, normalizeLog, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
   }
 
-  private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
+  private suspend fun stageModuleZipToTmp(
+    normalizeForStrictZipInstaller: Boolean = false,
+  ): Pair<Boolean, String> {
     updateInstallProgress(22, str(R.string.setup_install_progress_copying))
-    // Copy assets/zdt_module.zip to cache and then to /data/local/tmp
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
+    // Copy assets/zdt_module.zip to cache, verify the protected archive,
+    // optionally normalize the same temporary copy for strict ZIP parsers,
+    // then stage it for the selected root manager.
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
+    val normalizeLog = if (normalizeForStrictZipInstaller) {
+      runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+        return false to "module zip compatibility patch failed: ${it.message ?: it}"
       }
-    }.getOrElse {
-      return false to "asset zdt_module.zip missing: ${it.message ?: it}"
+    } else {
+      "module zip protection kept for Magisk installer"
     }
+
+    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
+    if (!busyBoxOk) return false to busyBoxLog
 
     val src = cacheZip.absolutePath
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
-    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip'")
+    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    return copyRes.isSuccess to out1.trim()
+    val log = listOf(verify.message, normalizeLog, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    return copyRes.isSuccess to log
   }
 
   private suspend fun installManually(): Pair<Boolean, String> {
@@ -3734,9 +3913,15 @@ if (mf.isNotBlank()) {
     runCatching { unpackDir.deleteRecursively() }
     unpackDir.mkdirs()
 
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
     val extractLog = StringBuilder()
+    extractLog.append(verify.message).append("\n")
     val extractedOk = runCatching {
-      extractAssetZip("zdt_module.zip", unpackDir, extractLog)
+      extractZipFile(cacheZip, unpackDir, extractLog)
     }.getOrElse {
       return false to "extract failed: ${it.message ?: it}"
     }
@@ -4189,30 +4374,205 @@ private fun shQuote(s: String): String {
     return "'" + s.replace("'", "'\\''") + "'"
   }
 
+  private data class ModuleZipVerification(val ok: Boolean, val message: String)
+
+  private fun copyBundledModuleZipToCache(): Pair<File?, String?> {
+    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
+    runCatching {
+      ctx.assets.open("zdt_module.zip").use { input ->
+        cacheZip.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+    }
+    return cacheZip to null
+  }
+
+  private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
+    val expected = readSha256Asset("busybox/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
+    val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
+      return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return ModuleZipVerification(false, "module zip SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    return ModuleZipVerification(true, "module zip SHA-256 verified: $actual")
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsInPlace(zipFile: File): String {
+    val data = zipFile.readBytes()
+    val eocd = findZipEocdOffset(data)
+    val diskNo = readLe16(data, eocd + 4)
+    val cdDisk = readLe16(data, eocd + 6)
+    val entriesOnDisk = readLe16(data, eocd + 8)
+    val entriesTotal = readLe16(data, eocd + 10)
+    val cdSize = readLe32(data, eocd + 12)
+    val cdOffset = readLe32(data, eocd + 16)
+
+    require(diskNo == 0 && cdDisk == 0) { "multi-disk ZIP is not supported" }
+    require(entriesOnDisk == entriesTotal) { "split Central Directory is not supported" }
+    require(entriesTotal != 0xFFFF && cdSize != 0xFFFFFFFFL && cdOffset != 0xFFFFFFFFL) {
+      "ZIP64 Central Directory is not supported"
+    }
+    require(cdOffset >= 0 && cdSize >= 0 && cdOffset + cdSize <= data.size.toLong()) {
+      "invalid Central Directory bounds"
+    }
+
+    var pos = cdOffset.toInt()
+    val end = (cdOffset + cdSize).toInt()
+    var entries = 0
+    var patched = 0
+
+    while (pos < end) {
+      require(hasZipSignature(data, pos, 0x02014b50)) {
+        "Central Directory entry signature not found at offset $pos"
+      }
+      val flagsOffset = pos + 8
+      val flags = readLe16(data, flagsOffset)
+      if ((flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG) != 0) {
+        writeLe16(data, flagsOffset, flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG.inv())
+        patched++
+      }
+      val nameLen = readLe16(data, pos + 28)
+      val extraLen = readLe16(data, pos + 30)
+      val commentLen = readLe16(data, pos + 32)
+      pos += 46 + nameLen + extraLen + commentLen
+      entries++
+    }
+
+    require(pos == end) { "Central Directory walk ended at unexpected offset" }
+    require(entries == entriesTotal) { "Central Directory entry count mismatch: expected=$entriesTotal actual=$entries" }
+
+    if (patched > 0) {
+      zipFile.writeBytes(data)
+    }
+
+    return if (patched > 0) {
+      "module zip normalized for strict installer: cleared encrypted flag in $patched Central Directory entries"
+    } else {
+      "module zip already compatible with strict installer"
+    }
+  }
+
+  private fun findZipEocdOffset(data: ByteArray): Int {
+    val minOffset = max(0, data.size - ZIP_EOCD_MAX_SEARCH)
+    var pos = data.size - ZIP_EOCD_MIN_SIZE
+    while (pos >= minOffset) {
+      if (hasZipSignature(data, pos, 0x06054b50)) return pos
+      pos--
+    }
+    error("ZIP EOCD signature not found")
+  }
+
+  private fun hasZipSignature(data: ByteArray, offset: Int, signature: Int): Boolean {
+    if (offset < 0 || offset + 4 > data.size) return false
+    return (data[offset].toInt() and 0xff) == (signature and 0xff) &&
+      (data[offset + 1].toInt() and 0xff) == ((signature shr 8) and 0xff) &&
+      (data[offset + 2].toInt() and 0xff) == ((signature shr 16) and 0xff) &&
+      (data[offset + 3].toInt() and 0xff) == ((signature shr 24) and 0xff)
+  }
+
+  private fun readLe16(data: ByteArray, offset: Int): Int {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return (data[offset].toInt() and 0xff) or
+      ((data[offset + 1].toInt() and 0xff) shl 8)
+  }
+
+  private fun readLe32(data: ByteArray, offset: Int): Long {
+    require(offset >= 0 && offset + 4 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return ((data[offset].toLong() and 0xffL) or
+      ((data[offset + 1].toLong() and 0xffL) shl 8) or
+      ((data[offset + 2].toLong() and 0xffL) shl 16) or
+      ((data[offset + 3].toLong() and 0xffL) shl 24))
+  }
+
+  private fun writeLe16(data: ByteArray, offset: Int, value: Int) {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP write out of bounds at offset $offset" }
+    data[offset] = (value and 0xff).toByte()
+    data[offset + 1] = ((value shr 8) and 0xff).toByte()
+  }
+
+  private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    val expected = readSha256Asset("busybox/busybox-arm64.sha256")
+      ?: return@withContext (false to "asset busybox/busybox-arm64.sha256 missing or invalid")
+    val cacheBusyBox = File(ctx.cacheDir, "busybox-arm64")
+    runCatching {
+      ctx.assets.open("busybox/busybox-arm64").use { input ->
+        cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return@withContext (false to "asset busybox/busybox-arm64 missing: ${it.message ?: it}")
+    }
+    val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
+      return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return@withContext (false to "busybox SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    val src = cacheBusyBox.absolutePath
+    val r = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_busybox && chmod 755 /data/local/tmp/zdt_busybox'")
+    val out = (r.out + r.err).joinToString("\n").trim()
+    if (!r.isSuccess) return@withContext (false to out)
+    true to listOf("busybox SHA-256 verified: $actual", out).filter { it.isNotBlank() }.joinToString("\n")
+  }
+
+  private fun readSha256Asset(assetName: String): String? = runCatching {
+    ctx.assets.open(assetName).bufferedReader().use { it.readText() }
+      .trim()
+      .split(Regex("\\s+"))
+      .firstOrNull()
+      ?.lowercase(Locale.US)
+      ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+  }.getOrNull()
+
+  private fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+      val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+      while (true) {
+        val read = input.read(buffer)
+        if (read <= 0) break
+        digest.update(buffer, 0, read)
+      }
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+  }
+
+  private fun extractZipFile(zipFile: File, destDir: File, log: StringBuilder): Boolean {
+    zipFile.inputStream().use { input ->
+      return extractZipStream(input, destDir, log)
+    }
+  }
+
   private fun extractAssetZip(assetName: String, destDir: File, log: StringBuilder): Boolean {
-    val base = destDir.canonicalFile
     ctx.assets.open(assetName).use { input ->
-      java.util.zip.ZipInputStream(input).use { zis ->
-        while (true) {
-          val e = zis.nextEntry ?: break
-          val name = e.name
-          if (name.startsWith("META-INF/")) continue
-          if (name.isBlank()) continue
+      return extractZipStream(input, destDir, log)
+    }
+  }
 
-          val outFile = File(destDir, name)
-          val canon = outFile.canonicalFile
-          if (!canon.path.startsWith(base.path)) {
-            log.append("skip suspicious entry: ").append(name).append("\n")
-            continue
-          }
+  private fun extractZipStream(input: InputStream, destDir: File, log: StringBuilder): Boolean {
+    val base = destDir.canonicalFile
+    java.util.zip.ZipInputStream(input).use { zis ->
+      while (true) {
+        val e = zis.nextEntry ?: break
+        val name = e.name
+        if (name.startsWith("META-INF/")) continue
+        if (name.isBlank()) continue
 
-          if (e.isDirectory) {
-            canon.mkdirs()
-          } else {
-            canon.parentFile?.mkdirs()
-            canon.outputStream().use { os ->
-              zis.copyTo(os)
-            }
+        val outFile = File(destDir, name)
+        val canon = outFile.canonicalFile
+        if (!canon.path.startsWith(base.path)) {
+          log.append("skip suspicious entry: ").append(name).append("\n")
+          continue
+        }
+
+        if (e.isDirectory) {
+          canon.mkdirs()
+        } else {
+          canon.parentFile?.mkdirs()
+          canon.outputStream().use { os ->
+            zis.copyTo(os)
           }
         }
       }
@@ -4227,6 +4587,7 @@ private fun shQuote(s: String): String {
     log.append("extracted to: ").append(destDir.absolutePath).append("\n")
     return true
   }
+
 
   private fun startStatusPolling() {
     statusJob?.cancel()
@@ -5131,15 +5492,33 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun fetchEnergySaverState(): ApiModels.EnergySaverState {
+    return runCatching { api.getEnergySaver() }
+      .getOrElse {
+        log("ERR", "energy saver load failed: ${it.message ?: it}")
+        ApiModels.EnergySaverState()
+      }
+  }
+
   private suspend fun refreshDaemonSettingsNow() {
     val settings = runCatching { api.getDaemonSettings() }
       .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
     val singboxProfiles = fetchHotspotSingBoxProfiles()
     val wireproxyProfiles = fetchHotspotWireproxyProfiles()
+    val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+    val energySaver = fetchEnergySaverState()
+    val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+    val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
+    val proxyPrograms = programs.filter { it.id in proxyIds || (it.id == "sing-box") }
+    val vpnPrograms = programs.filter { it.id in vpnIds }
     _appUpdate.update {
       it.copy(
         protectorMode = settings.protectorMode,
+        energySaver = energySaver,
         hotspotT2sEnabled = settings.hotspotT2sEnabled,
+        hotspotMode = settings.hotspotMode,
+        hotspotProgram = settings.hotspotProgram,
+        hotspotProfile = settings.hotspotProfile,
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
@@ -5148,6 +5527,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         ipForwardEnabled = settings.ipForwardEnabled,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
+        hotspotProxyPrograms = proxyPrograms,
+        hotspotVpnPrograms = vpnPrograms,
       )
     }
   }
@@ -5155,6 +5536,39 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   override fun refreshDaemonSettings() {
     launchIO {
       refreshDaemonSettingsNow()
+    }
+  }
+
+  override fun refreshEnergySaver() {
+    launchIO {
+      _appUpdate.update { it.copy(energySaverBusy = true) }
+      val state = fetchEnergySaverState()
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+    }
+  }
+
+  override fun saveEnergySaver(config: ApiModels.EnergySaverConfig) {
+    _appUpdate.update { it.copy(energySaverBusy = true, energySaver = it.energySaver.copy(settings = config)) }
+    launchIO {
+      var success = true
+      val state = runCatching {
+        val saved = api.saveEnergySaver(config)
+        runCatching { api.applyEnergySaver() }
+        saved
+      }.getOrElse {
+        success = false
+        log("ERR", "energy saver save failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_save_failed))
+        }
+        fetchEnergySaverState()
+      }
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+      if (success) {
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_saved))
+        }
+      }
     }
   }
 
@@ -5187,6 +5601,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         current.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5437,10 +5854,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5450,36 +5871,31 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun setHotspotT2sEnabled(enabled: Boolean) {
-    if (enabled) {
-      _appUpdate.update {
-        it.copy(
-          hotspotT2sEnabled = true,
-          hotspotT2sTarget = "",
-          hotspotT2sSingboxProfile = "",
-          hotspotT2sWireproxyProfile = "",
-        )
-      }
-      return
-    }
-
     _appUpdate.update {
       it.copy(
-        hotspotT2sEnabled = false,
+        hotspotT2sEnabled = enabled,
+        ipForwardEnabled = if (enabled) true else it.ipForwardEnabled,
+        hotspotMode = "proxy",
+        hotspotProgram = "",
+        hotspotProfile = "",
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
         hotspotT2sWireproxyProfile = "",
       )
     }
+
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(
-          enabled = false,
-          target = "",
-          singboxProfile = "",
-          wireproxyProfile = "",
-        )
+        hotspotSettingsMutex.withLock {
+          if (enabled) api.setHotspotMode("proxy") else api.setHotspotT2s(
+            enabled = false,
+            target = "",
+            singboxProfile = "",
+            wireproxyProfile = "",
+          )
+        }
       }.getOrElse {
-        log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
+        log("ERR", "hotspot toggle failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_hotspot_save_failed))
         }
@@ -5490,15 +5906,106 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_hotspot_saved))
       }
+    }
+  }
+
+  override fun setHotspotMode(mode: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = "",
+        hotspotProfile = "",
+        hotspotT2sTarget = "",
+        hotspotT2sSingboxProfile = "",
+        hotspotT2sWireproxyProfile = "",
+      )
+    }
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotMode(safeMode) }
+      }.getOrElse {
+        log("ERR", "hotspot mode failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
+        )
+      }
+    }
+  }
+
+  override fun setHotspotSelection(mode: String, program: String, profile: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val safeProgram = program.trim().lowercase()
+    val safeProfile = profile.trim()
+    val proxyTarget = if (safeMode == "proxy") safeProgram else ""
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = safeProgram,
+        hotspotProfile = safeProfile,
+        hotspotT2sTarget = proxyTarget,
+        hotspotT2sSingboxProfile = if (proxyTarget == "singbox") safeProfile else "",
+        hotspotT2sWireproxyProfile = if (proxyTarget == "wireproxy") safeProfile else "",
+      )
+    }
+    val needsProfile = safeMode == "vpn" || safeProgram == "singbox" || safeProgram == "wireproxy"
+    if (needsProfile && safeProfile.isBlank()) return
+    if (safeProgram.isBlank()) return
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotSelection(safeMode, safeProgram, safeProfile) }
+      }.getOrElse {
+        log("ERR", "hotspot selection failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
     }
   }
 
@@ -5527,7 +6034,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "", wireproxyProfile = "")
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", safeTarget, "") }
       }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5540,10 +6047,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5567,7 +6078,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile, wireproxyProfile = "")
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "singbox", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5580,10 +6091,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5607,7 +6122,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "wireproxy", singboxProfile = "", wireproxyProfile = safeProfile)
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "wireproxy", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot wireproxy profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5620,10 +6135,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5640,7 +6159,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2sCaptureAll(enabled)
+        hotspotSettingsMutex.withLock { api.setHotspotT2sCaptureAll(enabled) }
       }.getOrElse {
         log("ERR", "hotspot capture-all failed: ${it.message ?: it}")
         _appUpdate.update { it.copy(hotspotT2sCaptureAll = previous) }
@@ -5654,6 +6173,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,

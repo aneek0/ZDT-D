@@ -20,6 +20,7 @@ interface ZdtdActions {
   fun confirmInstallZygisk()
   fun dismissInstallZygiskConfirm()
   fun dismissZygiskInstallRecoveryDialog()
+  fun dismissMetamoduleInstallBlockedDialog()
   fun retryInstallWithoutZygisk()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
@@ -277,11 +278,23 @@ interface ZdtdActions {
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 
+  /** Reload advanced energy saver settings. */
+  fun refreshEnergySaver()
+
+  /** Save advanced energy saver settings and apply CPU affinity immediately. */
+  fun saveEnergySaver(config: com.android.zdtd.service.api.ApiModels.EnergySaverConfig)
+
   /** Toggle advanced daemon/system setting by API field name. */
   fun setAdvancedDaemonSetting(key: String, enabled: Boolean)
 
-  /** Enable/disable hotspot routing through t2s. */
+  /** Enable/disable hotspot routing. Enabling starts with an empty program/profile selection. */
   fun setHotspotT2sEnabled(enabled: Boolean)
+
+  /** Choose hotspot mode: proxy | vpn. */
+  fun setHotspotMode(mode: String)
+
+  /** Choose the single hotspot backend program/profile for the selected mode. */
+  fun setHotspotSelection(mode: String, program: String, profile: String = "")
 
   /** Choose which program receives hotspot traffic: operaproxy | singbox | wireproxy. */
   fun setHotspotT2sTarget(target: String)

@@ -131,6 +131,18 @@ class ApiClient(
     val obj = requestJson("GET", "/api/setting", null)
     return ApiModels.parseDaemonSettings(obj)
   }
+  fun getEnergySaver(): ApiModels.EnergySaverState {
+    val obj = requestJson("GET", "/api/energy-saver", null)
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun saveEnergySaver(config: ApiModels.EnergySaverConfig): ApiModels.EnergySaverState {
+    val obj = requestJson("POST", "/api/energy-saver", ApiModels.energySaverConfigToJson(config))
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun applyEnergySaver(): Boolean = requestOk("POST", "/api/energy-saver/apply", JSONObject())
+
 
   fun setProtectorMode(mode: String): ApiModels.DaemonSettings {
     val safe = when (mode.trim().lowercase()) {
@@ -161,8 +173,44 @@ class ApiClient(
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
       .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
+    if (enabled) body.put("ip_forward_enabled", true)
     captureAll?.let { body.put("hotspot_t2s_capture_all", it) }
     val obj = requestJson("POST", "/api/setting", body)
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+
+  fun setHotspotMode(mode: String): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", "")
+        .put("hotspot_profile", ""),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun setHotspotSelection(
+    mode: String,
+    program: String,
+    profile: String = "",
+  ): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", program.trim())
+        .put("hotspot_profile", profile.trim()),
+    )
     return ApiModels.parseDaemonSettings(obj)
   }
 

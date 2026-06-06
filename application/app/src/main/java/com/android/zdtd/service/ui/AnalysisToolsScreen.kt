@@ -89,20 +89,6 @@ fun AnalysisToolsScreen(
 }
 
 @Composable
-private fun TrailingNavIcon(enabled: Boolean, accent: Color) {
-  if (enabled) {
-    Icon(
-      imageVector = Icons.Outlined.ChevronRight,
-      contentDescription = null,
-      tint = accent.copy(alpha = 0.90f),
-      modifier = Modifier.size(24.dp),
-    )
-  } else {
-    Spacer(Modifier.size(24.dp))
-  }
-}
-
-@Composable
 private fun AnalysisIntroCard(compact: Boolean) {
   Card(
     modifier = Modifier.fillMaxWidth(),
@@ -163,6 +149,11 @@ private fun AnalysisToolCard(
   onClick: (() -> Unit)?,
 ) {
   val enabled = onClick != null
+  val containerAlpha = if (enabled) 0.70f else 0.48f
+  val accentBorderAlpha = if (enabled) 0.34f else 0.14f
+  val accentGradientAlpha = if (enabled) 0.13f else 0.06f
+  val accentSurfaceAlpha = if (enabled) 0.18f else 0.10f
+  val subtitleAlpha = if (enabled) 0.70f else 0.48f
   Card(
     modifier = Modifier
       .fillMaxWidth()
@@ -170,16 +161,16 @@ private fun AnalysisToolCard(
       .then(if (enabled) Modifier.clickable { onClick?.invoke() } else Modifier),
     shape = RoundedCornerShape(20.dp),
     colors = CardDefaults.cardColors(
-      containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (enabled) 0.70f else 0.48f),
+      containerColor = MaterialTheme.colorScheme.surface.copy(alpha = containerAlpha),
     ),
-    border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) 0.34f else 0.14f)),
+    border = BorderStroke(1.dp, accent.copy(alpha = accentBorderAlpha)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
         .background(
           Brush.horizontalGradient(
-            listOf(accent.copy(alpha = if (enabled) 0.13f else 0.06f), Color.Transparent),
+            listOf(accent.copy(alpha = accentGradientAlpha), Color.Transparent),
           ),
         )
         .padding(14.dp),
@@ -188,7 +179,7 @@ private fun AnalysisToolCard(
     ) {
       Surface(
         shape = RoundedCornerShape(16.dp),
-        color = accent.copy(alpha = if (enabled) 0.18f else 0.10f),
+        color = accent.copy(alpha = accentSurfaceAlpha),
         contentColor = accent,
       ) {
         Icon(
@@ -229,12 +220,21 @@ private fun AnalysisToolCard(
         Text(
           text = subtitle,
           style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.70f else 0.48f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = subtitleAlpha),
           maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
       }
-      TrailingNavIcon(enabled = enabled, accent = accent)
+      if (enabled) {
+        Icon(
+          imageVector = Icons.Outlined.ChevronRight,
+          contentDescription = null,
+          tint = accent.copy(alpha = 0.90f),
+          modifier = Modifier.size(24.dp),
+        )
+      } else {
+        Spacer(Modifier.size(24.dp))
+      }
     }
   }
 }

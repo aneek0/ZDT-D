@@ -9,7 +9,39 @@ sec() { ui_print "## $1"; }
 ok() { ui_print "- OK: $1"; }
 warn() { ui_print "! $1"; }
 
+ZDTD_PROGRESS_DIR="${ZDTD_INSTALL_STATUS_DIR:-/data/user/0/com.android.zdtd.service/install_status}"
+ZDTD_PROGRESS_FILE="${ZDTD_INSTALL_PROGRESS_FILE:-$ZDTD_PROGRESS_DIR/progress.properties}"
+ZDTD_PROGRESS_LOG="${ZDTD_INSTALL_PROGRESS_LOG:-$ZDTD_PROGRESS_DIR/progress.log}"
+
+zdt_progress() {
+  percent="$1"
+  shift
+  message="$*"
+
+  if [ -n "${ZDTD_PROGRESS_FILE:-}" ]; then
+    progress_dir="$(dirname "$ZDTD_PROGRESS_FILE" 2>/dev/null)"
+    [ -n "$progress_dir" ] && mkdir -p "$progress_dir" 2>/dev/null || true
+    {
+      echo "percent=$percent"
+      echo "message=$message"
+      echo "time=$(date +%s 2>/dev/null || echo 0)"
+    } > "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
+    chmod 0644 "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
+  fi
+
+  if [ -n "${ZDTD_PROGRESS_LOG:-}" ]; then
+    progress_log_dir="$(dirname "$ZDTD_PROGRESS_LOG" 2>/dev/null)"
+    [ -n "$progress_log_dir" ] && mkdir -p "$progress_log_dir" 2>/dev/null || true
+    printf '%s
+' "ZDTD_PROGRESS:$percent:$message" >> "$ZDTD_PROGRESS_LOG" 2>/dev/null || true
+    chmod 0644 "$ZDTD_PROGRESS_LOG" 2>/dev/null || true
+  fi
+
+  ui_print "ZDTD_PROGRESS:$percent:$message"
+}
+
 fail() {
+  zdt_progress 98 "Installation aborted"
   hr
   ui_print "!! INSTALLATION ABORTED !!"
   ui_print "! Reason: $1"
@@ -20,6 +52,7 @@ fail() {
 ################################################################################
 # Pre-checks: Android 9+ (SDK >= 28) and arm64 only
 ################################################################################
+zdt_progress 65 "Running module pre-checks"
 hr
 sec "Magisk Module Pre-checks"
 ui_print "## Requirements:"
@@ -58,6 +91,7 @@ if [ -f "$ZYGISK_MARKER" ]; then
   [ "${KERNELPATCH:-}" = "true" ] && IS_APATCH=1
   [ -n "${APATCH_VER_CODE:-}" ] && IS_APATCH=1
 
+  zdt_progress 68 "Checking Zygisk requirements"
   ui_print "## Zygisk component requested"
 
   if [ "$IS_APATCH" -eq 1 ]; then
@@ -100,6 +134,7 @@ case "$SDK" in
     ;;
 esac
 
+zdt_progress 72 "Checking Android version"
 ui_print "## Device:"
 ui_print "## - Android: ${REL:-unknown}"
 ui_print "## - SDK:     $SDK"
@@ -117,6 +152,7 @@ else
   ok "Android version is supported (SDK >= 30)"
 fi
 
+zdt_progress 78 "Checking CPU architecture"
 ABI64="$(getprop ro.product.cpu.abilist64 2>/dev/null)"
 ABI="$(getprop ro.product.cpu.abi 2>/dev/null)"
 ABILIST="$(getprop ro.product.cpu.abilist 2>/dev/null)"
@@ -140,19 +176,39 @@ else
   fail "arm64 required (arm64-v8a/aarch64). Detected ABI64='${ABI64:-unknown}' ABI='${ABI:-unknown}' uname='${UNAME_M:-unknown}'"
 fi
 
+zdt_progress 82 "Pre-checks passed"
 hr
 sec "Checks passed"
 ui_print "## * Proceeding with installation..."
 hr
 
+MODDIR="${MODPATH:-$PWD}"
+
+################################################################################
+# Verify extracted module files before applying permissions
+################################################################################
+zdt_progress 84 "Verifying module files"
+hr
+sec "Module file verification"
+
+VERIFY_SH="$MODDIR/verify.sh"
+if [ ! -f "$VERIFY_SH" ]; then
+  fail "File not found: $VERIFY_SH"
+fi
+
+. "$VERIFY_SH"
+zdt_verify_module_files "$MODDIR" || fail "Module file verification failed"
+rm -f "$VERIFY_SH" 2>/dev/null || fail "Unable to remove installer verification script: $VERIFY_SH"
+ok "Module file verification completed"
+hr
+
 ################################################################################
 # Permissions: chmod 755 for bin/* and service.sh
 ################################################################################
+zdt_progress 86 "Applying module permissions"
 hr
 sec "Permissions"
 ui_print "## Setting executable permissions (755)..."
-
-MODDIR="${MODPATH:-$PWD}"
 
 # bin directory inside module
 BINDIR="$MODDIR/bin"
@@ -179,6 +235,8 @@ else
   ok "bin/* permissions set ($COUNT file(s))"
 fi
 
+zdt_progress 90 "Preparing service scripts"
+
 # chmod service.sh (required)
 if [ -f "$SERVICE" ]; then
   chmod 755 "$SERVICE" 2>/dev/null || fail "chmod 755 failed: $SERVICE"
@@ -187,6 +245,7 @@ else
   fail "File not found: $SERVICE"
 fi
 
+zdt_progress 93 "Preparing optional Zygisk component"
 ZYGISK_DIR="$MODDIR/zygisk"
 ZYGISK_SO="$ZYGISK_DIR/arm64-v8a.so"
 if [ -f "$ZYGISK_MARKER" ]; then
@@ -205,6 +264,7 @@ else
 fi
 
 
+zdt_progress 96 "Finalizing module installation"
 hr
 sec "Done"
 ui_print "## Installation steps completed."

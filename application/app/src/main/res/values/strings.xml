@@ -253,6 +253,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="setup_install_conflict_zapret_message">Warning: conflicting modules were detected. Please remove these modules, as incorrect operation of ZDT-D is possible.</string>
     <string name="setup_install_conflict_dnscrypt_message">A DNSCrypt module was detected. It is recommended to remove this module. If you need DNSCrypt, it is already included in ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">This module has a high level of conflict. The functionality of this module is already available in ZDT-D.</string>
+    <string name="setup_install_conflict_vpn_tether_message">This module conflicts with ZDT-D. This module functionality is already available in ZDT-D. Please remove the conflicting module.</string>
     <string name="setup_zygisk_install_title">Install Zygisk?</string>
     <string name="setup_zygisk_install_short">Optional interface-hiding component</string>
     <string name="setup_zygisk_install_details_cd">Zygisk details</string>
@@ -273,6 +274,12 @@ Install the Zygisk component?</string>
 Minimum versions:
 KernelSU: 10940+
 APatch: 10700+</string>
+    <string name="setup_metamodule_blocked_title">Installation blocked by metamodule</string>
+    <string name="setup_metamodule_blocked_body">It looks like a KernelSU/APatch metamodule is installed on this device, but it is disabled, broken, or not working correctly.
+
+Because of this, the module manager blocked the ZDT-D installation.
+
+To install ZDT-D correctly, the metamodule must be working properly or be completely removed. Please check the metamodule state in KernelSU/APatch: re-enable it or uninstall it, then reboot the device and try again.</string>
     <string name="setup_zygisk_recovery_title">Zygisk component was not installed</string>
     <string name="setup_zygisk_recovery_body">The install log says the Zygisk component could not be installed. You can repeat ZDT-D installation without the Zygisk component.</string>
     <string name="setup_zygisk_recovery_no">No</string>
@@ -780,11 +787,20 @@ Install the module again.</string>
     <string name="settings_hotspot_body">Allows routing hotspot traffic through the selected tool.</string>
     <string name="settings_hotspot_capture_all_title">Capture all hotspot traffic</string>
     <string name="settings_hotspot_capture_all_body">When enabled, all incoming TCP traffic in hotspot mode is redirected to the selected tool. When disabled, known reverse-proxy service ports are bypassed before redirecting the rest.</string>
+    <string name="settings_hotspot_mode_title">Hotspot mode</string>
+    <string name="settings_hotspot_mode_proxy">Proxy</string>
+    <string name="settings_hotspot_mode_vpn">VPN</string>
     <string name="settings_hotspot_program_title">Hotspot tool</string>
+    <string name="settings_hotspot_program_proxy_title">Proxy program</string>
+    <string name="settings_hotspot_program_vpn_title">VPN program</string>
+    <string name="settings_hotspot_profile_title">Profile</string>
+    <string name="settings_hotspot_profile_missing">Select a profile to continue.</string>
+    <string name="settings_hotspot_profile_selected_fmt">Selected profile: %1$s</string>
+    <string name="settings_hotspot_profiles_empty">No enabled profiles found for this program.</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
     <string name="settings_hotspot_warning_title">Security warning</string>
-    <string name="settings_hotspot_warning_body">Enabling this feature may reduce device security because the tool port will be exposed. Anyone on the network may try to connect to your proxy.</string>
+    <string name="settings_hotspot_warning_body">Enabling this feature may reduce device security because hotspot clients will be routed through the selected Proxy or VPN backend. Use it only on trusted networks.</string>
     <string name="settings_hotspot_warning_accept">Accept</string>
     <string name="settings_hotspot_saved">Hotspot setting saved</string>
     <string name="settings_hotspot_save_failed">Failed to save hotspot setting</string>
@@ -1721,4 +1737,25 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="widget_action_stop_hint">Tap to stop</string>
     <string name="widget_cpu_value_fmt">%1$.1f%%</string>
     <string name="widget_ram_value_fmt">%1$.1f MB</string>
+    <string name="settings_energy_saver_title">Advanced energy saver</string>
+    <string name="settings_energy_saver_body">Choose how programs behave after screen off and which processor cores they may use.</string>
+    <string name="settings_energy_saver_open">Open</string>
+    <string name="settings_energy_saver_subtitle">Save battery after screen off and control program load.</string>
+    <string name="settings_energy_saver_global_title">Enable advanced energy saver</string>
+    <string name="settings_energy_saver_global_body">When disabled, settings from this screen will not be applied.</string>
+    <string name="settings_energy_saver_delay_title">Pause delay after screen off</string>
+    <string name="settings_energy_saver_delay_body">Selected programs will be paused after this delay and resumed when the screen turns on.</string>
+    <string name="settings_energy_saver_warning">Pausing a program may temporarily stop internet access for profiles that use it. Use this mode only for programs that can be safely paused.</string>
+    <string name="settings_energy_saver_no_programs">No supported programs were found.</string>
+    <string name="settings_energy_saver_running_pids">Program is available for tuning</string>
+    <string name="settings_energy_saver_freeze_title">Pause after screen off</string>
+    <string name="settings_energy_saver_freeze_body">Pause the program after screen off and resume it when the screen turns on.</string>
+    <string name="settings_energy_saver_affinity_title">Use selected processor cores</string>
+    <string name="settings_energy_saver_affinity_body">Run this program only on selected cores to reduce load and power usage.</string>
+    <string name="settings_energy_saver_cores_selected">Selected: %1$d of %2$d cores</string>
+    <string name="settings_energy_saver_core_chip">Core %1$d</string>
+    <string name="settings_energy_saver_cores_title">Processor cores</string>
+    <string name="settings_energy_saver_saved">Energy saver settings saved</string>
+    <string name="settings_energy_saver_save_failed">Failed to save energy saver settings</string>
+
 </resources>
