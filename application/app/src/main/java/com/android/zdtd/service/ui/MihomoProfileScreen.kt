@@ -871,7 +871,7 @@ private fun validateMihomoYaml(yaml: String): List<String> {
       // Remove inline comments
       val ruleClean = rule.substringBefore('#').trim()
       if (ruleClean.isBlank()) continue
-      val prefix = ruleClean.substringBefore(',').trim().uppercase()
+      val prefix = ruleClean.removePrefix("- ").substringBefore(',').trim().uppercase()
       if (prefix !in validRulePrefixes) {
         errors += "rule line ${i + 1}: unknown rule type '$prefix' in '$ruleClean'"
       }
