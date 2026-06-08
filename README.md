@@ -1,25 +1,3 @@
-<div align="center">
-
-# ⚠️ WARNING!
-
-</div>
-
-> [!WARNING]
-> A modified version of this project is being distributed on the internet.
->
-> **Do not download it, do not install it, and never grant root access to unknown builds.**
->
-> Warn people close to you. This is very important: your data may be stolen.
->
-> Download ZDT-D only from the official GitHub repository.
-
-<p align="center">
-  <a href="README.md"><b>English</b></a> ·
-  <a href="README.ru.md"><b>Русский</b></a>
-</p>
-
----
-
 # ZDT-D Root Module (Magisk / KernelSU / APatch)
 
 > **⚠️ Disclaimer — Personal Fork**
@@ -37,7 +15,6 @@
 <p align="center">
   <b>ZDT-D</b> is an Android root module for traffic routing, DPI bypass, proxy chaining, DNS control, and per-app network management.
 </p>
-## Description
 
 **ZDT-D** is a root-based Android network orchestration project for advanced traffic routing, DPI circumvention, DNS handling, local proxy pipelines, and selective VPN/TUN binding.
 
@@ -188,10 +165,6 @@ ZDT-D is intended for advanced users, network compatibility research, routing co
 ## License
 
 GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE).
-
-## Downloads
-
-- [Releases (original)](https://github.com/GAME-OVER-op/ZDT-D/releases)
 
 ---
 
