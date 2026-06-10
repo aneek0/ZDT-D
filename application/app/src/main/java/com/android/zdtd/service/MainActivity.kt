@@ -113,9 +113,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     setContent {
+      val themeMode by vm.themeMode.collectAsStateWithLifecycle()
       var conflictDialog by remember { mutableStateOf<MainViewModel.ProfileConflictDialog?>(null) }
 
-      ZdtdTheme {
+      ZdtdTheme(themeMode = themeMode) {
         Surface {
           val rootState by vm.rootState.collectAsStateWithLifecycle()
 
