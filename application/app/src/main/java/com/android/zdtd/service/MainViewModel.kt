@@ -5662,6 +5662,10 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     return base.copy(appsContent = apps)
   }
 
+  private suspend fun fetchHidingStatus(): ApiModels.HidingStatus {
+    return runCatching { api.getHidingStatus() }.getOrDefault(ApiModels.HidingStatus())
+  }
+
   private suspend fun fetchBlockedQuicState(): ApiModels.ProxyInfoState {
     val base = runCatching { api.getBlockedQuic() }.getOrDefault(ApiModels.ProxyInfoState())
     val apps = base.appsContent.ifBlank {
@@ -5681,11 +5685,13 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           active = false,
         )
       }
+      val hiding = fetchHidingStatus()
       _appUpdate.update {
         it.copy(
           proxyInfoEnabled = state.enabled,
           proxyInfoAppsContent = state.appsContent,
           proxyInfoBusy = false,
+          hidingStatus = hiding,
         )
       }
     }
@@ -5741,6 +5747,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(hidingStatus = hiding) }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
       }
@@ -5771,7 +5779,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
-      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
       scheduleProxyInfoApply("apps-save")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
@@ -5805,7 +5814,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
-      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
       scheduleProxyInfoApply("apps-save-resolved")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
