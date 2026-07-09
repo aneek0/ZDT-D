@@ -47,6 +47,7 @@ fun AnalysisToolsScreen(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -65,6 +66,16 @@ fun AnalysisToolsScreen(
   ) {
     item {
       AnalysisIntroCard(compact = compact)
+    }
+    item {
+      AnalysisToolCard(
+        title = "Auto Blockcheck",
+        subtitle = "Automatically test all DPI bypass strategies",
+        badge = "Recommended",
+        icon = Icons.Outlined.PlaylistPlay,
+        accent = MaterialTheme.colorScheme.primary,
+        onClick = onOpenBlockcheck,
+      )
     }
     item {
       AnalysisToolCard(

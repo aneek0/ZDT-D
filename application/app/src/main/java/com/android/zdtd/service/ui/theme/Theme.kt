@@ -18,18 +18,21 @@ import androidx.compose.ui.unit.dp
 enum class ZdtdThemeMode {
   SYSTEM,
   LIGHT,
-  DARK;
+  DARK,
+  AMOLED;
 
   fun storageValue(): String = when (this) {
     SYSTEM -> "system"
     LIGHT -> "light"
     DARK -> "dark"
+    AMOLED -> "amoled"
   }
 
   companion object {
     fun fromStorage(value: String?): ZdtdThemeMode = when (value?.trim()?.lowercase()) {
       "light" -> LIGHT
       "dark" -> DARK
+      "amoled" -> AMOLED
       else -> SYSTEM
     }
   }
@@ -144,6 +147,60 @@ private val LightScheme = lightColorScheme(
   surfaceDim = Color(0xFFDBDBDF),
 )
 
+// ----- AmberOLED scheme -----
+// True black (#000000) background: OLED pixels emit zero light,
+// reducing power draw on phones with AMOLED panels. Amber
+// accent avoids blue light for low-light usage.
+private val AmberSeed = Color(0xFFFFB300)
+private val AmberDeep = Color(0xFFFFD54F)
+private val AmberContainer = Color(0xFF3D2E00)
+
+private val AmoledScheme = darkColorScheme(
+  primary = AmberSeed,
+  onPrimary = Color(0xFF1F1600),
+  primaryContainer = Color(0xFF5C4400),
+  onPrimaryContainer = AmberDeep,
+
+  secondary = BrandBlue,
+  onSecondary = Color(0xFF00253D),
+  secondaryContainer = Color(0xFF124A73),
+  onSecondaryContainer = Color(0xFFCDE7FF),
+
+  tertiary = AmberDeep,
+  onTertiary = Color(0xFF1F1600),
+  tertiaryContainer = AmberContainer,
+  onTertiaryContainer = Color(0xFFFFE9A6),
+
+  error = Color(0xFFFFB4AB),
+  onError = Color(0xFF690005),
+  errorContainer = Color(0xFF93000A),
+  onErrorContainer = Color(0xFFFFDAD6),
+
+  background = Color.Black,
+  onBackground = Color(0xFFE3E2E6),
+  surface = Color(0xFF0A0A0A),
+  onSurface = Color(0xFFE3E2E6),
+  surfaceVariant = Color(0xFF2A2A28),
+  onSurfaceVariant = Color(0xFFC9C9C3),
+  surfaceTint = AmberSeed,
+
+  inverseSurface = Color(0xFFE3E2E6),
+  inverseOnSurface = Color(0xFF1A1C20),
+  inversePrimary = AmberSeed,
+
+  outline = Color(0xFF464644),
+  outlineVariant = Color(0xFF2A2A28),
+  scrim = Color.Black,
+
+  surfaceContainerLowest = Color.Black,
+  surfaceContainerLow = Color(0xFF080808),
+  surfaceContainer = Color(0xFF0C0C0C),
+  surfaceContainerHigh = Color(0xFF141414),
+  surfaceContainerHighest = Color(0xFF1A1A1A),
+  surfaceBright = Color(0xFF1E1E1E),
+  surfaceDim = Color.Black,
+)
+
 // Material 3 style rounded shapes (Google-like soft corners).
 private val ZdtdShapes = Shapes(
   extraSmall = RoundedCornerShape(8.dp),
@@ -163,13 +220,14 @@ fun ZdtdTheme(
   themeMode: ZdtdThemeMode = ZdtdThemeMode.SYSTEM,
   content: @Composable () -> Unit,
 ) {
-  val useDark = when (themeMode) {
-    ZdtdThemeMode.SYSTEM -> isSystemInDarkTheme()
-    ZdtdThemeMode.LIGHT -> false
-    ZdtdThemeMode.DARK -> true
+  val scheme = when (themeMode) {
+    ZdtdThemeMode.SYSTEM -> if (isSystemInDarkTheme()) DarkScheme else LightScheme
+    ZdtdThemeMode.LIGHT -> LightScheme
+    ZdtdThemeMode.DARK -> DarkScheme
+    ZdtdThemeMode.AMOLED -> AmoledScheme
   }
   MaterialTheme(
-    colorScheme = if (useDark) DarkScheme else LightScheme,
+    colorScheme = scheme,
     typography = MaterialTheme.typography,
     shapes = ZdtdShapes,
     content = content,

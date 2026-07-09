@@ -1,9 +1,11 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::hash::Hasher;
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -87,6 +89,19 @@ fn entry() -> Result<()> {
         }
         "stop" | "cleanup" => stop_session(),
         "status" => print_status(),
+        "auto" => {
+            let program = parse_named_value(&args[1..], "--program")?;
+            let hosts_file = parse_named_value(&args[1..], "--hosts")?;
+            let qnum = match parse_named_value(&args[1..], "--qnum") {
+                Ok(v) => v.parse::<u16>().context("invalid --qnum")?,
+                Err(_) => DEFAULT_QNUM,
+            };
+            let timeout_secs = match parse_named_value(&args[1..], "--timeout") {
+                Ok(v) => v.parse::<u64>().context("invalid --timeout")?,
+                Err(_) => 6,
+            };
+            run_auto(&normalize_program(&program)?, &hosts_file, qnum, timeout_secs)
+        }
         "usage" => {
             let pid_raw = parse_named_value(&args[1..], "--pid")?;
             let pid = pid_raw.parse::<u32>().context("invalid --pid")?;
@@ -700,4 +715,334 @@ fn format_ranges(ranges: &[PortRange]) -> String {
         .map(|r| if r.start == r.end { r.start.to_string() } else { format!("{}-{}", r.start, r.end) })
         .collect::<Vec<_>>()
         .join(",")
+}
+
+// ---------------------------------------------------------------------------
+// Automatic blockcheck — runs every strategy, probes hosts, reports NDJSON
+// ---------------------------------------------------------------------------
+
+fn load_hosts(path: &str) -> Result<Vec<String>> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("read hosts file: {path}"))?;
+    let mut hosts = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Extract host from "domain" or "domain:port" or "http(s)://domain..."
+        let host = trimmed
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        let host = host.split('/').next().unwrap_or(host);
+        let host = host.split(':').next().unwrap_or(host);
+        let host = host.trim();
+        if !host.is_empty() {
+            hosts.push(host.to_string());
+        }
+    }
+    if hosts.is_empty() {
+        bail!("no hosts found in {path}");
+    }
+    Ok(hosts)
+}
+
+fn resolve_ip(host: &str) -> Option<String> {
+    let out = capture(&format!("getent hosts {host} 2>/dev/null | awk '{{print $1; exit}}'")).ok()?;
+    let ip = out.trim();
+    if ip.is_empty() {
+        None
+    } else {
+        Some(ip.to_string())
+    }
+}
+
+fn hash_body(body: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(body.as_bytes());
+    format!("{:016x}", hasher.finish())
+}
+
+fn curl_probe(host: &str, ip: &str, timeout_secs: u64) -> Result<(u32, String, String)> {
+    let url = format!("https://{host}/");
+    let connect_to = format!("{host}:443:{ip}");
+    let timeout_ms = timeout_secs * 1000;
+    let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
+    let args = vec![
+        "-sS", "-o", "/dev/null",
+        "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
+        "--max-time", &timeout_secs.to_string(),
+        "--connect-timeout", &timeout_secs.to_string(),
+        "--connect-to", &connect_to,
+        "-H", &format!("Host: {host}"),
+        "-A", user_agent,
+        "--compressed",
+        "-L",
+        "--max-redirs", "3",
+        &url,
+    ];
+
+    let (code, out) = run("sh", &["-c", &format!("curl {}", args.iter().map(|a| shQuote(a)).collect::<Vec<_>>().join(" "))])?;
+    let mut lines: Vec<&str> = out.lines().collect();
+    let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
+    let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    let size = lines.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+
+    Ok((http_code, location, size))
+}
+
+fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, String)> {
+    let url = format!("https://{host}/");
+    let timeout_ms = timeout_secs * 1000;
+    let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
+    let args = vec![
+        "-sS", "-o", "/dev/null",
+        "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
+        "--max-time", &timeout_secs.to_string(),
+        "--connect-timeout", &timeout_secs.to_string(),
+        "-A", user_agent,
+        "--compressed",
+        "-L",
+        "--max-redirs", "3",
+        &url,
+    ];
+
+    let (code, out) = run("sh", &["-c", &format!("curl {}", args.iter().map(|a| shQuote(a)).collect::<Vec<_>>().join(" "))])?;
+    let mut lines: Vec<&str> = out.lines().collect();
+    let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
+    let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    let size = lines.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+
+    Ok((http_code, location, size))
+}
+
+fn emit_event(event: &serde_json::Value) {
+    println!("{event}");
+}
+
+fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Result<()> {
+    let hosts = load_hosts(hosts_file)?;
+    let strategies = {
+        let dir = strategic_dir(program);
+        let mut items: Vec<String> = Vec::new();
+        if dir.is_dir() {
+            for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+                let entry = entry?;
+                let path = entry.path();
+                if !path.is_file() { continue; }
+                let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+                if !name.ends_with(".txt") { continue; }
+                items.push(name.to_string());
+            }
+        }
+        items.sort();
+        items
+    };
+
+    if strategies.is_empty() {
+        bail!("no strategies found for program {program}");
+    }
+
+    let total = strategies.len();
+    emit_event(&json!({
+        "type": "auto_started",
+        "ok": true,
+        "program": program,
+        "qnum": qnum,
+        "total_strategies": total,
+        "total_hosts": hosts.len(),
+        "hosts": hosts,
+        "ts": now_unix_ms(),
+    }));
+
+    // Phase 1: baseline — probe all hosts without any strategy
+    emit_event(&json!({
+        "type": "auto_phase",
+        "phase": "baseline",
+        "ts": now_unix_ms(),
+    }));
+
+    let mut baseline_results: std::collections::HashMap<String, (u32, String, String)> = std::collections::HashMap::new();
+    for host in &hosts {
+        let ip = resolve_ip(host);
+        let result = match ip {
+            Some(ref ip) => curl_probe(host, ip, timeout_secs),
+            None => curl_probe_baseline(host, timeout_secs),
+        };
+        match result {
+            Ok(res) => {
+                baseline_results.insert(host.clone(), res.clone());
+                emit_event(&json!({
+                    "type": "auto_baseline_probe",
+                    "host": host,
+                    "http_code": res.0,
+                    "location": res.1,
+                    "size": res.2,
+                    "ts": now_unix_ms(),
+                }));
+            }
+            Err(err) => {
+                emit_event(&json!({
+                    "type": "auto_baseline_probe",
+                    "host": host,
+                    "error": format!("{err}"),
+                    "ts": now_unix_ms(),
+                }));
+                baseline_results.insert(host.clone(), (0, String::new(), String::new()));
+            }
+        }
+    }
+
+    // Phase 2: test each strategy
+    emit_event(&json!({
+        "type": "auto_phase",
+        "phase": "strategies",
+        "ts": now_unix_ms(),
+    }));
+
+    let mut working: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+
+    for (idx, strategy) in strategies.iter().enumerate() {
+        let config_path = strategic_dir(program).join(strategy);
+        if !config_path.is_file() {
+            emit_event(&json!({
+                "type": "auto_strategy_skip",
+                "strategy": strategy,
+                "reason": "config not found",
+                "ts": now_unix_ms(),
+            }));
+            continue;
+        }
+
+        emit_event(&json!({
+            "type": "auto_strategy_start",
+            "strategy": strategy,
+            "index": idx,
+            "total": total,
+            "ts": now_unix_ms(),
+        }));
+
+        // Start strategy
+        let raw = fs::read_to_string(&config_path)
+            .with_context(|| format!("read {}", config_path.display()))?;
+        let config_args = normalize_config_args(&raw);
+        let filter = extract_proto_port_filter(&raw);
+        let bin = program_bin(program);
+
+        if !bin.is_file() {
+            emit_event(&json!({
+                "type": "auto_strategy_error",
+                "strategy": strategy,
+                "error": format!("binary not found: {}", bin.display()),
+                "ts": now_unix_ms(),
+            }));
+            failed.push(strategy.clone());
+            continue;
+        }
+
+        ensure_work_dir()?;
+        cleanup_all()?;
+
+        let pid = match spawn_program(program, &bin, config_path.parent().unwrap_or(Path::new("/")), qnum, &config_args) {
+            Ok(p) => p,
+            Err(err) => {
+                emit_event(&json!({
+                    "type": "auto_strategy_error",
+                    "strategy": strategy,
+                    "error": format!("spawn failed: {err}"),
+                    "ts": now_unix_ms(),
+                }));
+                failed.push(strategy.clone());
+                continue;
+            }
+        };
+
+        if let Err(err) = apply_nfqueue_rules(program, qnum, &filter) {
+            let _ = kill_program(program);
+            let _ = cleanup_rules_for_program(program);
+            emit_event(&json!({
+                "type": "auto_strategy_error",
+                "strategy": strategy,
+                "error": format!("nfqueue rules failed: {err}"),
+                "ts": now_unix_ms(),
+            }));
+            failed.push(strategy.clone());
+            continue;
+        }
+
+        // Wait for nfqws to stabilize
+        thread::sleep(Duration::from_millis(500));
+
+        // Probe all hosts through the strategy
+        let mut all_match = true;
+        let mut any_match = false;
+
+        for host in &hosts {
+            let ip = resolve_ip(host);
+            let result = match ip {
+                Some(ref ip) => curl_probe(host, ip, timeout_secs),
+                None => curl_probe_baseline(host, timeout_secs),
+            };
+
+            let (code, location, size) = match result {
+                Ok(res) => res,
+                Err(_) => (0, String::new(), String::new()),
+            };
+
+            let baseline = baseline_results.get(host).cloned().unwrap_or((0, String::new(), String::new()));
+
+            let code_match = code == baseline.0 || (code >= 200 && code < 400 && baseline.0 >= 200 && baseline.0 < 400);
+            let size_match = !size.is_empty() && !baseline.2.is_empty() && size == baseline.2;
+            let works = code_match || size_match;
+
+            if works { any_match = true; }
+            if !works { all_match = false; }
+
+            emit_event(&json!({
+                "type": "auto_strategy_probe",
+                "strategy": strategy,
+                "host": host,
+                "http_code": code,
+                "baseline_code": baseline.0,
+                "size": size,
+                "baseline_size": baseline.2,
+                "works": works,
+                "ts": now_unix_ms(),
+            }));
+        }
+
+        // Stop strategy
+        cleanup_all()?;
+
+        let verdict = if all_match { "works" } else if any_match { "partial" } else { "failed" };
+        emit_event(&json!({
+            "type": "auto_strategy_result",
+            "strategy": strategy,
+            "verdict": verdict,
+            "all_match": all_match,
+            "any_match": any_match,
+            "ts": now_unix_ms(),
+        }));
+
+        match verdict {
+            "works" => working.push(strategy.clone()),
+            _ => failed.push(strategy.clone()),
+        }
+    }
+
+    // Final summary
+    emit_event(&json!({
+        "type": "auto_finished",
+        "ok": true,
+        "program": program,
+        "total_strategies": total,
+        "working": working,
+        "failed": failed,
+        "ts": now_unix_ms(),
+    }));
+
+    Ok(())
 }

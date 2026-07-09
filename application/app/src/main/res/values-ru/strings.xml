@@ -514,10 +514,11 @@
     <string name="language_ko">한국어</string>
     <string name="language_ja">日本語</string>
     <string name="settings_theme_title">Тема</string>
-    <string name="settings_theme_body">Выберите оформление приложения. «Система» следует светлой/тёмной теме устройства.</string>
+    <string name="settings_theme_body">Выберите оформление приложения. «Система» следует светлой/тёмной теме устройства. AmberOLED — настоящий чёрный и янтарный акцент для экономии заряда на OLED-экранах.</string>
     <string name="theme_system">Система</string>
     <string name="theme_light">Светлая</string>
     <string name="theme_dark">Тёмная</string>
+    <string name="theme_amoled">AmberOLED</string>
     <string name="permission_required_title">Разрешение требуется</string>
     <string name="permission_required_body">Для онлайн-обновления приложения требуется разрешить установку обновлений из этого приложения. Это нужно только для установки APK после загрузки.</string>
     <string name="app_speed_zero">0 КБ/с</string>
@@ -657,7 +658,7 @@ APatch: 10700+</string>
     <string name="log_service_stopped">Служба остановлена</string>
     <string name="start_blocked_profile_overlap">Запуск невозможен: отключите конфликтующие профили</string>
     <string name="enable_blocked_profile_overlap">Включение невозможно: отключите конфликтующие профили</string>
-    <string name="enable_blocked_profile_overlap_detail">Невозможно включить профиль \"%1$s\" — он использует те же приложения что и активный профиль \"%2$s\" (%3$s). Сначала отключите другой профиль.</string>
+    <string name="enable_blocked_profile_overlap_detail">Нельзя включить профиль «%1$s» из программы «%2$s» — он использует те же приложения, что и активный профиль «%3$s» в программе «%4$s» (%5$s). Сначала отключите конфликтующий профиль.</string>
 
     <string name="mv_backup_restore_reopen_hint">Перед повторным восстановлением заново выберите бэкап (или переоткройте это окно).</string>
     <string name="settings_delete_module_title">Удаление</string>

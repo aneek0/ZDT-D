@@ -638,6 +638,7 @@ private fun SettingsThemeSection(
       "system" to stringResource(R.string.theme_system),
       "light" to stringResource(R.string.theme_light),
       "dark" to stringResource(R.string.theme_dark),
+      "amoled" to stringResource(R.string.theme_amoled),
     )
 
     Surface(

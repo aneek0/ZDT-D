@@ -210,10 +210,11 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="language_ko">한국어</string>
     <string name="language_ja">日本語</string>
     <string name="settings_theme_title">Theme</string>
-    <string name="settings_theme_body">Choose the app appearance. System follows your device light/dark setting.</string>
+    <string name="settings_theme_body">Choose the app appearance. System follows your device light/dark setting. AmberOLED uses a true-black OLED panel with amber accent to conserve battery.</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="theme_amoled">AmberOLED</string>
     <string name="permission_required_title">Permission required</string>
     <string name="permission_required_body">To update the app online, you need to allow installing updates from this app. This is only required to install the APK after download.</string>
     <string name="app_speed_zero">0 KB/s</string>
@@ -659,7 +660,7 @@ Use another editor to modify it.</string>
     <string name="log_service_stopped">Service stopped</string>
     <string name="start_blocked_profile_overlap">Start blocked: disable overlapping profiles</string>
     <string name="enable_blocked_profile_overlap">Enable blocked: disable overlapping profiles</string>
-    <string name="enable_blocked_profile_overlap_detail">Cannot enable profile \"%1$s\" — it shares apps with enabled profile \"%2$s\" (%3$s). Disable the other profile first.</string>
+    <string name="enable_blocked_profile_overlap_detail">Cannot enable profile \"%1$s\" from program \"%2$s\" — it shares apps with enabled profile \"%3$s\" in program \"%4$s\" (%5$s). Disable the conflicting profile first.</string>
 
     <string name="mv_backup_restore_reopen_hint">Select the backup again (or reopen this window) before restoring again.</string>
     <string name="settings_delete_module_title">Module removal</string>

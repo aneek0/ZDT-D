@@ -166,6 +166,8 @@ fun ZdtdApp(
               appUpdateFlow = appUpdateFlow,
               backupFlow = backupFlow,
               programUpdatesFlow = programUpdatesFlow,
+              onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
               actions = actions,
             )
           }
@@ -727,6 +729,8 @@ private fun MainShell(
   appUpdateFlow: StateFlow<AppUpdateUiState>,
   backupFlow: StateFlow<BackupUiState>,
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
+  onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
 ) {
   var tab by remember { mutableStateOf(Tab.HOME) }
@@ -1254,6 +1258,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.Blockcheck -> "Auto Blockcheck"
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1376,6 +1381,7 @@ private fun MainShell(
           onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+          onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1401,6 +1407,7 @@ private fun MainShell(
               onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
               actions = actions,
               snackHost = snackHost,
               landscapeControl = false,
@@ -1514,6 +1521,7 @@ private fun LandscapeShellContent(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -1552,6 +1560,7 @@ private fun LandscapeShellContent(
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
+          onOpenBlockcheck = onOpenBlockcheck,
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,
@@ -2301,6 +2310,7 @@ private fun TabBody(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   landscapeControl: Boolean = false,
@@ -2341,6 +2351,7 @@ private fun TabBody(
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,
+            onOpenBlockcheck = onOpenBlockcheck,
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,

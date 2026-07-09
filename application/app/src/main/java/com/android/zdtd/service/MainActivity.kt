@@ -143,7 +143,9 @@ class MainActivity : AppCompatActivity() {
                   ctx.getString(
                     R.string.enable_blocked_profile_overlap_detail,
                     dialog.profileName,
+                    dialog.programId.uppercase(),
                     dialog.conflictingProfile,
+                    dialog.conflictingProgram.uppercase(),
                     "${dialog.commonApps} ${if (dialog.commonApps == 1) "app" else "apps"}"
                   )
                 )

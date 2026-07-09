@@ -38,7 +38,7 @@ data class AppUpdateUiState(
   val enabled: Boolean = true,
   /** App UI language mode: auto or one of the supported BCP-47 language tags. */
   val languageMode: String = "auto",
-  /** App theme mode: system | light | dark */
+  /** App theme mode: system | light | dark | amoled */
   val themeMode: String = "system",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",

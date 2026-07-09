@@ -83,12 +83,12 @@ class RootConfigManager(private val context: Context) {
     }
 
     // ----- App theme -----
-    /** "system" | "light" | "dark" */
+    /** "system" | "light" | "dark" | "amoled" */
     fun getThemeMode(): String = prefs.getString("app_theme_mode", "system") ?: "system"
 
     fun setThemeMode(mode: String) {
         val v = mode.trim().lowercase()
-        val safe = if (v == "light" || v == "dark" || v == "system") v else "system"
+        val safe = if (v == "light" || v == "dark" || v == "system" || v == "amoled") v else "system"
         prefs.edit().putString("app_theme_mode", safe).apply()
     }
 
