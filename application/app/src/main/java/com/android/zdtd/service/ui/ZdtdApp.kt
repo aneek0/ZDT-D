@@ -736,6 +736,13 @@ private fun MainShell(
 ) {
   var tab by remember { mutableStateOf(Tab.HOME) }
   var appsRoute by remember { mutableStateOf<AppsRoute>(AppsRoute.List) }
+  val internalOnOpenNfqwsTester: () -> Unit = { appsRoute = AppsRoute.NfqwsTester }
+  val internalOnOpenBlockcheck: () -> Unit = { appsRoute = AppsRoute.Blockcheck }
+  val internalOnOpenAnalysisTools: () -> Unit = { appsRoute = AppsRoute.AnalysisTools }
+  val internalOnOpenConstructionStudio: () -> Unit = { appsRoute = AppsRoute.ConstructionStudio }
+  val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
+  val internalOnOpenProgram: (String) -> Unit = internalOnOpenProgram
+  val internalOnOpenProfile: (String, String) -> Unit = internalOnOpenProfile
   var showLogs by remember { mutableStateOf(false) }
   var showBackup by remember { mutableStateOf(false) }
   var showProgramUpdates by remember { mutableStateOf(false) }
@@ -1282,6 +1289,7 @@ private fun MainShell(
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
+        AppsRoute.Blockcheck -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
@@ -1299,6 +1307,7 @@ private fun MainShell(
             null
           }
         }
+        else -> null
       }
     }
   }
@@ -1376,13 +1385,13 @@ private fun MainShell(
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
-          onOpenProgram = { appsRoute = AppsRoute.Program(it) },
-          onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
-          onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
-          onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
-          onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
-          onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
-          onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
+          onOpenProgram = internalOnOpenProgram,
+          onOpenProfile = internalOnOpenProfile,
+          onOpenAnalysisTools = internalOnOpenAnalysisTools,
+          onOpenConstructionStudio = internalOnOpenConstructionStudio,
+          onOpenDpiDetector = internalOnOpenDpiDetector,
+          onOpenNfqwsTester = internalOnOpenNfqwsTester,
+          onOpenBlockcheck = internalOnOpenBlockcheck,
           actions = actions,
           snackHost = snackHost,
         )
@@ -1402,13 +1411,13 @@ private fun MainShell(
               tab = tab,
               uiStateFlow = uiStateFlow,
               appsRoute = appsRoute,
-              onOpenProgram = { appsRoute = AppsRoute.Program(it) },
-              onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
-              onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
-              onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
-              onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
-              onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
-              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
+              onOpenProgram = internalOnOpenProgram,
+              onOpenProfile = internalOnOpenProfile,
+              onOpenAnalysisTools = internalOnOpenAnalysisTools,
+              onOpenConstructionStudio = internalOnOpenConstructionStudio,
+              onOpenDpiDetector = internalOnOpenDpiDetector,
+              onOpenNfqwsTester = internalOnOpenNfqwsTester,
+              onOpenBlockcheck = internalOnOpenBlockcheck,
               actions = actions,
               snackHost = snackHost,
               landscapeControl = false,
@@ -1555,13 +1564,13 @@ private fun LandscapeShellContent(
           tab = tab,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
-          onOpenProgram = onOpenProgram,
-          onOpenProfile = onOpenProfile,
-          onOpenAnalysisTools = onOpenAnalysisTools,
-          onOpenConstructionStudio = onOpenConstructionStudio,
-          onOpenDpiDetector = onOpenDpiDetector,
-          onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
-          onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
+          onOpenProgram = internalOnOpenProgram,
+          onOpenProfile = internalOnOpenProfile,
+          onOpenAnalysisTools = internalOnOpenAnalysisTools,
+          onOpenConstructionStudio = internalOnOpenConstructionStudio,
+          onOpenDpiDetector = internalOnOpenDpiDetector,
+          onOpenNfqwsTester = internalOnOpenNfqwsTester,
+          onOpenBlockcheck = internalOnOpenBlockcheck,
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,
@@ -2351,8 +2360,8 @@ private fun TabBody(
             onOpenAnalysisTools = onOpenAnalysisTools,
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
-            onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
-            onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
+            onOpenNfqwsTester = onOpenNfqwsTester,
+            onOpenBlockcheck = onOpenBlockcheck,
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,
