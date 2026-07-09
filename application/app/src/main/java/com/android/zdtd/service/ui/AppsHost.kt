@@ -26,7 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
-import com.android.zdtd.service.diagnostics.blockcheck.BlockcheckScreen
+import com.android.zdtd.service.ui.BlockcheckScreen
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map

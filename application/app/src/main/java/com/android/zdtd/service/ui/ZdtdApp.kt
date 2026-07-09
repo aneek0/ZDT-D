@@ -115,7 +115,6 @@ fun ZdtdApp(
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
   actions: ZdtdActions,
 ) {
-  var appsRoute by remember { mutableStateOf<AppsRoute>(AppsRoute.List) }
   val setup by setupFlow.collectAsStateWithLifecycle()
 
   Crossfade(
@@ -167,8 +166,8 @@ fun ZdtdApp(
               appUpdateFlow = appUpdateFlow,
               backupFlow = backupFlow,
               programUpdatesFlow = programUpdatesFlow,
-              onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
-              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
+      onOpenNfqwsTester = { },
+      onOpenBlockcheck = { },
               actions = actions,
             )
           }
