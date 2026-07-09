@@ -67,6 +67,10 @@ fn main() -> ExitCode {
     }
 }
 
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 fn entry() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.is_empty() || args.iter().any(|it| it == "-h" || it == "--help") {
@@ -783,7 +787,19 @@ fn curl_probe(host: &str, ip: &str, timeout_secs: u64) -> Result<(u32, String, S
         &url,
     ];
 
-    let (code, out) = run("sh", &["-c", &format!("curl {}", args.iter().map(|a| shQuote(a)).collect::<Vec<_>>().join(" "))])?;
+    let (code, out) = run(
+        "sh",
+        &[
+            "-c",
+            &format!(
+                "curl {}",
+                args.iter()
+                    .map(|a| sh_quote(a))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+        ],
+    )?;
     let mut lines: Vec<&str> = out.lines().collect();
     let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
     let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -809,7 +825,19 @@ fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, St
         &url,
     ];
 
-    let (code, out) = run("sh", &["-c", &format!("curl {}", args.iter().map(|a| shQuote(a)).collect::<Vec<_>>().join(" "))])?;
+    let (code, out) = run(
+        "sh",
+        &[
+            "-c",
+            &format!(
+                "curl {}",
+                args.iter()
+                    .map(|a| sh_quote(a))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+        ],
+    )?;
     let mut lines: Vec<&str> = out.lines().collect();
     let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
     let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
