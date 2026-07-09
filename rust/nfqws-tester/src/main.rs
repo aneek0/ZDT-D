@@ -770,16 +770,17 @@ fn hash_body(body: &str) -> String {
 fn curl_probe(host: &str, ip: &str, timeout_secs: u64) -> Result<(u32, String, String)> {
     let url = format!("https://{host}/");
     let connect_to = format!("{host}:443:{ip}");
-    let timeout_ms = timeout_secs * 1000;
+    let timeout_str = timeout_secs.to_string();
+    let host_header = format!("Host: {host}");
     let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
     let args = vec![
         "-sS", "-o", "/dev/null",
         "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
-        "--max-time", &timeout_secs.to_string(),
-        "--connect-timeout", &timeout_secs.to_string(),
+        "--max-time", &timeout_str,
+        "--connect-timeout", &timeout_str,
         "--connect-to", &connect_to,
-        "-H", &format!("Host: {host}"),
+        "-H", &host_header,
         "-A", user_agent,
         "--compressed",
         "-L",
@@ -810,14 +811,14 @@ fn curl_probe(host: &str, ip: &str, timeout_secs: u64) -> Result<(u32, String, S
 
 fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, String)> {
     let url = format!("https://{host}/");
-    let timeout_ms = timeout_secs * 1000;
+    let timeout_str = timeout_secs.to_string();
     let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
     let args = vec![
         "-sS", "-o", "/dev/null",
         "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
-        "--max-time", &timeout_secs.to_string(),
-        "--connect-timeout", &timeout_secs.to_string(),
+        "--max-time", &timeout_str,
+        "--connect-timeout", &timeout_str,
         "-A", user_agent,
         "--compressed",
         "-L",
