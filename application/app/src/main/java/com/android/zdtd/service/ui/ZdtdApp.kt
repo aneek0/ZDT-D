@@ -741,8 +741,8 @@ private fun MainShell(
   val internalOnOpenAnalysisTools: () -> Unit = { appsRoute = AppsRoute.AnalysisTools }
   val internalOnOpenConstructionStudio: () -> Unit = { appsRoute = AppsRoute.ConstructionStudio }
   val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
-  val internalOnOpenProgram: (String) -> Unit = internalOnOpenProgram
-  val internalOnOpenProfile: (String, String) -> Unit = internalOnOpenProfile
+  val internalOnOpenProgram: (String) -> Unit = { appsRoute = AppsRoute.Program(it) }
+  val internalOnOpenProfile: (String, String) -> Unit = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) }
   var showLogs by remember { mutableStateOf(false) }
   var showBackup by remember { mutableStateOf(false) }
   var showProgramUpdates by remember { mutableStateOf(false) }
