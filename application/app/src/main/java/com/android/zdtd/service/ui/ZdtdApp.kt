@@ -115,6 +115,7 @@ fun ZdtdApp(
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
   actions: ZdtdActions,
 ) {
+  var appsRoute by remember { mutableStateOf<AppsRoute>(AppsRoute.List) }
   val setup by setupFlow.collectAsStateWithLifecycle()
 
   Crossfade(
@@ -717,6 +718,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
+  AppsRoute.Blockcheck -> AppsRoute.AnalysisTools
   is AppsRoute.Program -> AppsRoute.List
   is AppsRoute.Profile -> AppsRoute.Program(route.programId)
 }
@@ -1559,8 +1561,8 @@ private fun LandscapeShellContent(
           onOpenAnalysisTools = onOpenAnalysisTools,
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
-          onOpenNfqwsTester = onOpenNfqwsTester,
-          onOpenBlockcheck = onOpenBlockcheck,
+          onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+          onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,
@@ -2350,8 +2352,8 @@ private fun TabBody(
             onOpenAnalysisTools = onOpenAnalysisTools,
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
-            onOpenNfqwsTester = onOpenNfqwsTester,
-            onOpenBlockcheck = onOpenBlockcheck,
+            onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+            onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,

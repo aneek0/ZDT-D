@@ -1,6 +1,7 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,8 +58,8 @@ fun BlockcheckScreen(
                 }
                 is BlockcheckEvent.StrategyResult -> {
                     BlockcheckStore.update {
-                        val working = if (event.result.isWorking) it.workingStrategies + event.strategy else it.workingStrategies
-                        val failed = if (!event.result.isWorking) it.failedStrategies + event.strategy else it.failedStrategies
+                        val working = if (event.result.isWorking) it.workingStrategies + event.result.strategy else it.workingStrategies
+                        val failed = if (!event.result.isWorking) it.failedStrategies + event.result.strategy else it.failedStrategies
                         it.copy(workingStrategies = working, failedStrategies = failed)
                     }
                 }

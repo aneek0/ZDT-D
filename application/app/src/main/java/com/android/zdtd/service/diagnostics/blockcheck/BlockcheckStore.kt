@@ -14,20 +14,20 @@ data class BlockcheckSession(
     val phase: String = "",
     val workingStrategies: List<String> = emptyList(),
     val failedStrategies: List<String> = emptyList(),
-    val probeResults: List<StrategyProbe> = emptyList(),
-    val baselineResults: List<BaselineProbe> = emptyList(),
+    val probeResults: List<BlockcheckStrategyProbe> = emptyList(),
+    val baselineResults: List<BlockcheckBaselineProbe> = emptyList(),
     val isFinished: Boolean = false,
     val isError: Boolean = false,
     val errorMessage: String? = null,
 )
 
-data class BaselineProbe(
+data class BlockcheckBaselineProbe(
     val host: String,
     val httpCode: Int,
     val size: String,
 )
 
-data class StrategyProbe(
+data class BlockcheckStrategyProbe(
     val strategy: String,
     val host: String,
     val httpCode: Int,
@@ -35,7 +35,7 @@ data class StrategyProbe(
     val works: Boolean,
 )
 
-data class StrategyResult(
+data class BlockcheckStrategyResult(
     val strategy: String,
     val verdict: String,  // "works", "partial", "failed"
     val allMatch: Boolean,
@@ -47,10 +47,10 @@ data class StrategyResult(
 sealed class BlockcheckEvent {
     data class Started(val session: BlockcheckSession) : BlockcheckEvent()
     data class Phase(val phase: String, val session: BlockcheckSession) : BlockcheckEvent()
-    data class BaselineProbe(val probe: BaselineProbe, val session: BlockcheckSession) : BlockcheckEvent()
+    data class BaselineProbe(val probe: BlockcheckBaselineProbe, val session: BlockcheckSession) : BlockcheckEvent()
     data class StrategyStarted(val strategy: String, val index: Int, val total: Int, val session: BlockcheckSession) : BlockcheckEvent()
-    data class StrategyProbe(val probe: StrategyProbe, val session: BlockcheckSession) : BlockcheckEvent()
-    data class StrategyResult(val result: StrategyResult, val session: BlockcheckSession) : BlockcheckEvent()
+    data class StrategyProbe(val probe: BlockcheckStrategyProbe, val session: BlockcheckSession) : BlockcheckEvent()
+    data class StrategyResult(val result: BlockcheckStrategyResult, val session: BlockcheckSession) : BlockcheckEvent()
     data class StrategySkipped(val strategy: String, val reason: String, val session: BlockcheckSession) : BlockcheckEvent()
     data class StrategyError(val strategy: String, val error: String, val session: BlockcheckSession) : BlockcheckEvent()
     data class Finished(val working: List<String>, val failed: List<String>, val session: BlockcheckSession) : BlockcheckEvent()

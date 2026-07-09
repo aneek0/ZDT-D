@@ -5,16 +5,12 @@ import android.util.Log
 import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterBinary
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 /**
  * Runs the `nfqws-tester auto` command (automatic blockcheck) and emits
@@ -46,10 +42,13 @@ class BlockcheckRunner(
 
         Log.d(TAG, "blockcheck: starting ${binary.absolutePath} ${args.joinToString(" ")}")
 
-        val (code, out) = withContext(Dispatchers.IO) {
+        val result = withContext(Dispatchers.IO) {
             val cmd = buildShellCommand(binary.absolutePath, args)
             rootConfigManager.execRootSh(cmd)
         }
+
+        val code = result.code
+        val out = (result.out + result.err).joinToString("\n")
 
         if (code != 0 && out.isBlank()) {
             trySend(BlockcheckEvent.Error("nfqws-tester auto exited with code $code"))
@@ -81,12 +80,12 @@ class BlockcheckRunner(
                         trySend(BlockcheckEvent.Phase(json.optString("phase", ""), session!!))
                     }
                     "auto_baseline_probe" -> {
-                        val probe = BaselineProbe(
+                        val probe = BlockcheckBaselineProbe(
                             host = json.optString("host", ""),
                             httpCode = json.optInt("http_code", 0),
                             size = json.optString("size", ""),
                         )
-                        trySend(BlockcheckEvent.BaselineProbe(probe, session!!))
+                        trySend(BlockcheckEvent.BaselineProbe(probe = probe, session = session!!))
                     }
                     "auto_strategy_start" -> {
                         val strategy = json.optString("strategy", "")
@@ -95,23 +94,23 @@ class BlockcheckRunner(
                         trySend(BlockcheckEvent.StrategyStarted(strategy, index, total, session!!))
                     }
                     "auto_strategy_probe" -> {
-                        val probe = StrategyProbe(
+                        val probe = BlockcheckStrategyProbe(
                             strategy = json.optString("strategy", ""),
                             host = json.optString("host", ""),
                             httpCode = json.optInt("http_code", 0),
                             baselineCode = json.optInt("baseline_code", 0),
                             works = json.optBoolean("works", false),
                         )
-                        trySend(BlockcheckEvent.StrategyProbe(probe, session!!))
+                        trySend(BlockcheckEvent.StrategyProbe(probe = probe, session = session!!))
                     }
                     "auto_strategy_result" -> {
-                        val result = StrategyResult(
+                        val result = BlockcheckStrategyResult(
                             strategy = json.optString("strategy", ""),
                             verdict = json.optString("verdict", "unknown"),
                             allMatch = json.optBoolean("all_match", false),
                             anyMatch = json.optBoolean("any_match", false),
                         )
-                        trySend(BlockcheckEvent.StrategyResult(result, session!!))
+                        trySend(BlockcheckEvent.StrategyResult(result = result, session = session!!))
                     }
                     "auto_finished" -> {
                         val working = mutableListOf<String>()
