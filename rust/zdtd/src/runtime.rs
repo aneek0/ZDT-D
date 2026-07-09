@@ -50,8 +50,10 @@ pub fn start_full() -> Result<()> {
     wait_android_runtime_ready_best_effort();
 
     settings::ensure_minimal_program_layouts()?;
+    crate::runtime_sanitize::sanitize_runtime_files_best_effort();
 
     if can_adopt_existing_runtime() {
+        final_sync_runtime_settings_best_effort("adopted runtime");
         crate::runtime_state::write_running(false, true).ok();
         crate::logging::user_info("Инициализация завершена");
         return Ok(());
@@ -91,6 +93,7 @@ pub fn start_full() -> Result<()> {
     } else {
         log::warn!("iptables backup missing -> skipping restore baseline");
     }
+    crate::runtime_refresh::clear_routing_cache();
 
     // Start dnscrypt first (must be before other programs).
         std::thread::spawn(|| {
@@ -120,24 +123,34 @@ pub fn start_full() -> Result<()> {
         ],
     );
 
-    // wireproxy (may start multiple profiles + optional t2s)
-    start_best_effort("wireproxy", wireproxy::start_if_enabled);
-
-    // myproxy (profile-based upstream socks5 via t2s)
-    start_best_effort("myproxy", myproxy::start_if_enabled);
-
-    // myprogram (custom launched program profiles)
-    start_best_effort("myprogram", myprogram::start_if_enabled);
+    // Independent proxy helpers can start together after the DPI stack is ready.
+    // VPN/netd and operaproxy still remain ordered after this group.
+    let wireproxy_handle = thread::spawn(wireproxy::start_if_enabled);
+    let myproxy_handle = thread::spawn(myproxy::start_if_enabled);
+    let myprogram_handle = thread::spawn(myprogram::start_if_enabled);
+    wait_start_group(
+        "proxy-programs",
+        vec![
+            ("wireproxy", wireproxy_handle),
+            ("myproxy", myproxy_handle),
+            ("myprogram", myprogram_handle),
+        ],
+    );
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles()
-        || amneziawg::has_enabled_profiles()
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_vpn_selection = api_settings
+        .hotspot_vpn_selection()
+        .map(|(program, profile)| (program.to_string(), profile.to_string()));
+    let vpn_expected = openvpn::has_profiles_requiring_netd()
+        || amneziawg::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
-        || singbox::has_enabled_vpn_profiles();
+        || singbox::has_enabled_vpn_profiles()
+        || hotspot_vpn_selection.is_some();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
@@ -204,6 +217,37 @@ pub fn start_full() -> Result<()> {
                     crate::logging::user_warn("VPN/netd: ошибка применения, запуск продолжен");
                 }
             }
+
+            let vpn_tether_profile = match hotspot_vpn_selection.as_ref().map(|(p, n)| (p.as_str(), n.as_str())) {
+                Some(("openvpn", profile)) => match openvpn::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether openvpn startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("amneziawg", profile)) => match amneziawg::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether amneziawg startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("mihomo", profile)) => match mihomo::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether mihomo startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("mieru", profile)) => match mieru::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether mieru startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some((program, profile)) => {
+                    log::warn!("vpn_tether unsupported selection program={} profile={}", program, profile);
+                    None
+                }
+                None => None,
+            };
+            if let Err(e) = crate::vpn_tether::sync(vpn_tether_profile) {
+                log::warn!("vpn_tether apply failed, continuing: {e:#}");
+                mark_start_partial();
+                if hotspot_vpn_selection.is_some() {
+                    crate::logging::user_warn("VPN-раздача: ошибка применения, запуск продолжен");
+                }
+            }
         }
         Err(e) => {
             log::warn!("vpn profile claim conflict, skipping VPN/netd profiles and continuing: {e:#}");
@@ -211,6 +255,7 @@ pub fn start_full() -> Result<()> {
             if vpn_expected {
                 crate::logging::user_warn("VPN/netd: конфликт профилей, запуск продолжен");
             }
+            let _ = crate::vpn_tether::sync(None);
         }
     }
 
@@ -239,6 +284,7 @@ if !any_main_service_running() {
     // Stop services and restore baseline iptables; always restore captive portal settings.
     crate::runtime_state::clear();
     let stop_res = stop::stop_services();
+    crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
@@ -302,6 +348,8 @@ if !any_main_service_running() {
         log::info!("startup: starting proxyinfo scan detector");
         crate::scan_detector::start();
     }
+
+    final_sync_runtime_settings_best_effort("startup finalization");
 
     crate::logging::user_info("Запуск завершён");
     if let Err(e) = crate::runtime_state::write_running(last_start_partial(), false) {
@@ -427,6 +475,12 @@ fn read_app_packages(path: &Path) -> Result<BTreeSet<String>> {
     Ok(out)
 }
 
+fn final_sync_runtime_settings_best_effort(context: &str) {
+    log::info!("runtime: final settings sync ({})", context);
+    crate::android::sysctl::sync_ipv4_forward_from_settings_best_effort();
+
+}
+
 /// Stop all services and restore baseline iptables.
 pub fn stop_full() -> Result<()> {
     crate::logging::user_info("Остановка: начало");
@@ -443,6 +497,7 @@ pub fn stop_full() -> Result<()> {
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
     let stop_res = stop::stop_services();
+    crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
@@ -487,8 +542,8 @@ fn can_adopt_existing_runtime() -> bool {
         return false;
     }
 
-    let vpn_expected = openvpn::has_enabled_profiles()
-        || amneziawg::has_enabled_profiles()
+    let vpn_expected = openvpn::has_profiles_requiring_netd()
+        || amneziawg::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
@@ -496,6 +551,12 @@ fn can_adopt_existing_runtime() -> bool {
         || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
+        return false;
+    }
+
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    if api_settings.hotspot_vpn_selection().is_some() && !crate::vpn_tether::applied_state_path().is_file() {
+        log::info!("runtime adoption: hotspot VPN tether is expected but vpn_tether/applied.json is missing");
         return false;
     }
 
@@ -605,7 +666,7 @@ fn active_profiles_enabled(program: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn simple_enabled_json(program: &str, file: &str) -> bool {
+pub fn simple_enabled_json(program: &str, file: &str) -> bool {
     let path = settings::working_program_root_path(program).join(file);
     let Ok(raw) = std::fs::read_to_string(path) else { return false; };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };
@@ -764,34 +825,48 @@ fn iptables_runtime_anchors_present() -> bool {
 
 fn wait_android_runtime_ready_best_effort() {
     // Android can report sys.boot_completed before package manager/netd are fully
-    // responsive, especially on cold boot. Keep this guard soft: it improves
-    // startup stability, but a temporary PM/netd issue must not block unrelated
-    // programs forever.
-    const STABILIZE_SECS: u64 = 3;
-    log::info!("boot guard: stabilization sleep {STABILIZE_SECS}s after sys.boot_completed");
-    std::thread::sleep(Duration::from_secs(STABILIZE_SECS));
+    // responsive, especially on cold boot. Keep this guard soft: probe both
+    // services immediately and only wait when they are not ready yet.
+    log::info!("boot guard: probing package-manager and netd after sys.boot_completed");
 
-    if !wait_shell_probe_ready(
-        "package-manager",
-        &[
-            "cmd package list packages >/dev/null 2>&1",
-            "pm list packages >/dev/null 2>&1",
-        ],
-        Duration::from_secs(20),
-        Duration::from_secs(1),
-        Duration::from_secs(5),
-    ) {
+    let package_manager = thread::spawn(|| {
+        wait_shell_probe_ready(
+            "package-manager",
+            &[
+                "cmd package list packages >/dev/null 2>&1",
+                "pm list packages >/dev/null 2>&1",
+            ],
+            Duration::from_secs(20),
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+    });
+
+    let netd = thread::spawn(|| {
+        wait_shell_probe_ready(
+            "netd",
+            &["ndc network list >/dev/null 2>&1"],
+            Duration::from_secs(20),
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+    });
+
+    if !join_boot_probe("package-manager", package_manager) {
         mark_start_partial();
     }
-
-    if !wait_shell_probe_ready(
-        "netd",
-        &["ndc network list >/dev/null 2>&1"],
-        Duration::from_secs(20),
-        Duration::from_secs(1),
-        Duration::from_secs(5),
-    ) {
+    if !join_boot_probe("netd", netd) {
         mark_start_partial();
+    }
+}
+
+fn join_boot_probe(name: &str, handle: thread::JoinHandle<bool>) -> bool {
+    match handle.join() {
+        Ok(ready) => ready,
+        Err(_) => {
+            log::warn!("boot guard: {name} probe thread panicked; startup will continue");
+            false
+        }
     }
 }
 

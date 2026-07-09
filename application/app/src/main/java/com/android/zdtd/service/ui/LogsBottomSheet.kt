@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -192,6 +194,25 @@ private fun PortraitLogsShelf(
 }
 
 @Composable
+private fun LogsHeaderButtons(
+  compact: Boolean,
+  onClear: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  if (compact) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
+      Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_close)) }
+    }
+  } else {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
+      Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+    }
+  }
+}
+
+@Composable
 private fun LogsSheetContent(
   logs: List<LogLine>,
   compact: Boolean,
@@ -202,18 +223,12 @@ private fun LogsSheetContent(
     if (compact) {
       Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
-          Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_close)) }
-        }
+        LogsHeaderButtons(compact = true, onClear = onClear, onDismiss = onDismiss)
       }
     } else {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
-          Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
-        }
+        LogsHeaderButtons(compact = false, onClear = onClear, onDismiss = onDismiss)
       }
     }
     Spacer(Modifier.height(12.dp))
@@ -226,7 +241,7 @@ private fun LogsSheetContent(
         modifier = Modifier.fillMaxWidth().weight(1f),
       ) {
         items(logs, key = { it.ts + it.msg }, contentType = { "log_entry" }) { l ->
-          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))) {
+          Card(colors = CardDefaults.cardColors(containerColor = logsSheetCardContainerColor())) {
             Column(Modifier.padding(12.dp)) {
               Text("${l.ts} • ${l.level}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
               Spacer(Modifier.height(4.dp))
@@ -238,3 +253,14 @@ private fun LogsSheetContent(
     }
   }
 }
+
+@Composable
+private fun logsSheetCardContainerColor(): Color {
+  val scheme = MaterialTheme.colorScheme
+  return if (scheme.background.luminance() > 0.5f) {
+    scheme.surfaceVariant.copy(alpha = 0.46f)
+  } else {
+    scheme.surface.copy(alpha = 0.65f)
+  }
+}
+

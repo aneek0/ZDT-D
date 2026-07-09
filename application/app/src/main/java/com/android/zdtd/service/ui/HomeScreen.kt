@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Power
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -33,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -179,12 +181,9 @@ fun HomeScreen(
             .clip(CircleShape)
             .clickable(enabled = !busy) { actions.toggleService() },
         ) {
-          Image(
-            painter = painterResource(powerPainter),
-            contentDescription = null,
-            modifier = Modifier
-              .fillMaxSize()
-              .clip(CircleShape),
+          ThemeAwarePowerButtonContent(
+            on = on,
+            painterRes = powerPainter,
           )
         }
 
@@ -494,13 +493,7 @@ fun HomeScreen(
               ) { idx ->
                 val item: DaemonLogRenderLine = display[idx]
                 val line: DaemonLogUiLine = item.line
-                val backgroundColor = when (line.level) {
-                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
-                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
-                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
-                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
-                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                }
+                val backgroundColor = daemonLogLineBackground(line.level)
                 val rowVisibleState = remember {
                   MutableTransitionState(false).apply { targetState = true }
                 }
@@ -554,6 +547,91 @@ fun HomeScreen(
     }
   }
 }
+
+@Composable
+private fun isLightColorScheme(): Boolean =
+  MaterialTheme.colorScheme.background.luminance() > 0.5f
+
+@Composable
+private fun ThemeAwarePowerButtonContent(
+  on: Boolean,
+  painterRes: Int,
+) {
+  if (isLightColorScheme()) {
+    LightThemePowerButtonContent(on = on)
+  } else {
+    Image(
+      painter = painterResource(painterRes),
+      contentDescription = null,
+      modifier = Modifier
+        .fillMaxSize()
+        .clip(CircleShape),
+    )
+  }
+}
+
+@Composable
+private fun LightThemePowerButtonContent(on: Boolean) {
+  val scheme = MaterialTheme.colorScheme
+  val accent = if (on) Color(0xFF16A34A) else scheme.primary
+  val outerBorder = if (on) accent.copy(alpha = 0.42f) else scheme.outline.copy(alpha = 0.34f)
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .clip(CircleShape)
+      .background(
+        Brush.radialGradient(
+          colors = listOf(
+            Color.White,
+            scheme.surfaceContainerLowest,
+            scheme.surfaceContainerLow,
+          ),
+          radius = 720f,
+        )
+      )
+      .border(2.dp, outerBorder, CircleShape),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize(0.72f)
+        .clip(CircleShape)
+        .background(accent.copy(alpha = if (on) 0.13f else 0.10f))
+        .border(1.dp, accent.copy(alpha = if (on) 0.34f else 0.24f), CircleShape),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = Icons.Filled.Power,
+        contentDescription = null,
+        tint = accent,
+        modifier = Modifier.fillMaxSize(0.50f),
+      )
+    }
+  }
+}
+
+@Composable
+private fun daemonLogLineBackground(level: DaemonLogLevel): Color {
+  val scheme = MaterialTheme.colorScheme
+  return if (isLightColorScheme()) {
+    when (level) {
+      DaemonLogLevel.WARN -> Color(0xFFFFF4D6)
+      DaemonLogLevel.INFO -> Color(0xFFFFE8E8)
+      DaemonLogLevel.ERROR -> Color(0xFFFFDAD6)
+      DaemonLogLevel.NOTICE -> scheme.surfaceVariant.copy(alpha = 0.56f)
+      DaemonLogLevel.OTHER -> scheme.surface.copy(alpha = 0.78f)
+    }
+  } else {
+    when (level) {
+      DaemonLogLevel.WARN -> Color(0xFF2F3136)
+      DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
+      DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
+      DaemonLogLevel.NOTICE -> scheme.surfaceVariant.copy(alpha = 0.70f)
+      DaemonLogLevel.OTHER -> scheme.surface.copy(alpha = 0.55f)
+    }
+  }
+}
+
 
 @Composable
 private fun LandscapeHomeContent(
@@ -628,10 +706,9 @@ private fun LandscapeHomeContent(
             .clip(CircleShape)
             .clickable(enabled = !busy) { actions.toggleService() },
         ) {
-          Image(
-            painter = painterResource(powerPainter),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().clip(CircleShape),
+          ThemeAwarePowerButtonContent(
+            on = on,
+            painterRes = powerPainter,
           )
         }
         Spacer(Modifier.height(10.dp))
@@ -723,13 +800,7 @@ private fun LandscapeHomeContent(
             items(lines.size) { index ->
               val line = lines[index]
               Surface(
-                color = when (line.level) {
-                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
-                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
-                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
-                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
-                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                },
+                color = daemonLogLineBackground(line.level),
                 shape = RoundedCornerShape(12.dp),
               ) {
                 Text(

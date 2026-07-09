@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -29,6 +30,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -46,11 +50,21 @@ import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.net.URLEncoder
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import androidx.annotation.StringRes
 import kotlin.random.Random
+
+private const val ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG = 0x0001
+private const val ZIP_EOCD_MIN_SIZE = 22
+private const val ZIP_EOCD_MAX_SEARCH = 65557
+private const val LSPOSED_HIDE_PREFS_NAME = "zdtd_hide_targets"
+private const val LSPOSED_HIDE_PREF_ENABLED = "enabled"
+private const val LSPOSED_HIDE_PREF_PACKAGES = "packages"
+private const val LSPOSED_HIDE_PREF_UIDS = "uids"
+private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
 
 enum class RootState {
   CHECKING,
@@ -101,6 +115,7 @@ data class SetupUiState(
   val showZygiskInstallConfirm: Boolean = false,
   val showKsuApatchZygiskWarning: Boolean = false,
   val showZygiskInstallRecoveryDialog: Boolean = false,
+  val showMetamoduleInstallBlockedDialog: Boolean = false,
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -196,6 +211,11 @@ data class BackupUiState(
   // Version mismatch: allow user to force restore (advanced).
   val forceRestoreAvailable: Boolean = false,
   val forceRestoreName: String? = null,
+
+  // Backup file opened externally by Android file manager (.zdtb ACTION_VIEW).
+  val externalRestorePromptVisible: Boolean = false,
+  val externalRestoreName: String? = null,
+  val externalRestoreDisplayName: String = "",
 )
 
 
@@ -256,6 +276,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     tokenProvider = { _uiState.value.token },
   )
 
+  private val hotspotSettingsMutex = Mutex()
+
   private val githubHttp = OkHttpClient.Builder()
     .retryOnConnectionFailure(true)
     .build()
@@ -294,6 +316,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private val _backupEvents = MutableSharedFlow<BackupEvent>(extraBufferCapacity = 8)
   val backupEvents: SharedFlow<BackupEvent> = _backupEvents.asSharedFlow()
+  private var externalBackupOpenJob: Job? = null
 
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
   private val _programUpdates = MutableStateFlow(ProgramUpdatesUiState())
@@ -304,6 +327,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     AppUpdateUiState(
       enabled = root.isAppUpdateCheckEnabled(),
       languageMode = root.getAppLanguageMode(),
+      themeMode = root.getThemeMode(),
       protectorMode = "off",
       hotspotT2sEnabled = false,
       hotspotT2sTarget = "",
@@ -316,6 +340,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     )
   )
   val appUpdate: StateFlow<AppUpdateUiState> = _appUpdate.asStateFlow()
+
+  // ----- App theme (system | light | dark) -----
+  private val _themeMode =
+    MutableStateFlow(com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode()))
+  val themeMode: StateFlow<com.android.zdtd.service.ui.theme.ZdtdThemeMode> = _themeMode.asStateFlow()
 
   private val _appUpdateEvents = MutableSharedFlow<AppUpdateEvent>(extraBufferCapacity = 8)
   val appUpdateEvents: SharedFlow<AppUpdateEvent> = _appUpdateEvents.asSharedFlow()
@@ -360,6 +389,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
+  private var appReleaseBuildPollJob: Job? = null
 
   private var pendingEnableDaemonNotification: Boolean = false
 
@@ -463,6 +493,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
   }
 
+  private fun markGitHubApiOnline(online: Boolean) {
+    _appUpdate.update { it.copy(githubApiOnline = online) }
+  }
+
+  private fun isGitHubApiUrl(url: String): Boolean =
+    runCatching { Uri.parse(url).host.equals("api.github.com", ignoreCase = true) }.getOrDefault(false)
+
   private fun normalizeTagToVersion(tag: String): String {
     var s = tag.trim()
     if (s.startsWith("v", ignoreCase = true)) s = s.substring(1)
@@ -471,7 +508,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private fun releaseApkUrl(tag: String): String {
     // Asset name is stable by design.
-    return "https://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
+    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
   }
 
   private suspend fun httpGetMaybeCached(
@@ -486,28 +523,292 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       }
       .build()
 
-    githubHttp.newCall(req).execute().use { resp ->
-      val code = resp.code
-      val newEtag = resp.header("ETag")
-      val body = if (code == 200) resp.body?.string() else null
-      return Triple(code, body, newEtag)
+    try {
+      githubHttp.newCall(req).execute().use { resp ->
+        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+        val code = resp.code
+        val newEtag = resp.header("ETag")
+        val body = if (code == 200) resp.body?.string() else null
+        return Triple(code, body, newEtag)
+      }
+    } catch (e: Exception) {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
+      throw e
+    }
+  }
+
+
+  private suspend fun httpGetText(url: String): String? {
+    val req = Request.Builder()
+      .url(url)
+      .header("User-Agent", "ZDT-D-Android")
+      .build()
+    return try {
+      githubHttp.newCall(req).execute().use { resp ->
+        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+        if (!resp.isSuccessful) return null
+        return resp.body?.string()
+      }
+    } catch (e: Exception) {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
+      null
+    }
+  }
+
+  private data class ReleaseMeta(
+    val version: String? = null,
+    val versionCode: Int? = null,
+    val commit: String? = null,
+    val workflowRunId: Long? = null,
+    val assetReady: Boolean = false,
+  )
+
+  private data class WorkflowRunInfo(
+    val id: Long,
+    val htmlUrl: String,
+    val headSha: String,
+    val status: String,
+    val conclusion: String?,
+  )
+
+  private data class WorkflowJobInfo(
+    val name: String,
+    val status: String,
+    val conclusion: String?,
+  )
+
+
+
+  private suspend fun fetchReleaseJsonByTag(tag: String): JSONObject? {
+    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/tags/${tag}") ?: return null
+    return runCatching { JSONObject(body) }.getOrNull()
+  }
+
+  private fun releaseHasApkAsset(js: JSONObject?): Boolean {
+    val assets = js?.optJSONArray("assets") ?: return true
+    for (i in 0 until assets.length()) {
+      val asset = assets.optJSONObject(i) ?: continue
+      if (asset.optString("name") == "app-release.apk") return true
+    }
+    return false
+  }
+
+  private fun parseReleaseMeta(body: String?): ReleaseMeta? {
+    if (body.isNullOrBlank()) return null
+    val start = body.indexOf("ZDTD_APP_UPDATE_META_START")
+    val end = body.indexOf("ZDTD_APP_UPDATE_META_END")
+    if (start >= 0 && end > start) {
+      val raw = body.substring(start + "ZDTD_APP_UPDATE_META_START".length, end)
+        .replace("```json", "")
+        .replace("```", "")
+        .trim()
+        .trim('-', '>', '<', '!', ' ', '\n', '\r', '\t')
+      val js = runCatching { JSONObject(raw) }.getOrNull()
+      if (js != null) {
+        return ReleaseMeta(
+          version = js.optString("version").takeIf { it.isNotBlank() },
+          versionCode = js.optInt("versionCode", 0).takeIf { it > 0 },
+          commit = js.optString("commit").takeIf { it.isNotBlank() },
+          workflowRunId = js.optLong("workflowRunId", 0L).takeIf { it > 0L },
+          assetReady = js.optBoolean("assetReady", false),
+        )
+      }
+    }
+    return ReleaseMeta(versionCode = parseVersionCodeFromReleaseBody(body), assetReady = true)
+  }
+
+  private fun parseVersionCodeFromReleaseBody(body: String?): Int? {
+    if (body.isNullOrBlank()) return null
+    val tableMatch = Regex("(?im)^\\|\\s*(?:Version code|Код версии)\\s*\\|\\s*`?([0-9]+)`?\\s*\\|").find(body)
+    if (tableMatch != null) return tableMatch.groupValues.getOrNull(1)?.toIntOrNull()
+    val jsonMatch = Regex("\\\"versionCode\\\"\\s*:\\s*([0-9]+)").find(body)
+    return jsonMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+  }
+
+  private fun defaultReleaseBuildStages(status: AppReleaseStageStatus = AppReleaseStageStatus.WAITING): List<AppReleaseBuildStageUi> = listOf(
+    AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, status),
+    AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, AppReleaseStageStatus.WAITING),
+    AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.WAITING),
+    AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.WAITING),
+    AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
+  )
+
+  private suspend fun fetchModulePropCommitSha(): String? {
+    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
+    val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
+    return arr.optJSONObject(0)?.optString("sha")?.takeIf { it.isNotBlank() }
+  }
+
+  private suspend fun fetchRelevantBuildRun(expectedSha: String?, publishedSha: String?): WorkflowRunInfo? {
+    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
+    val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
+    val runs = buildList {
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        add(WorkflowRunInfo(
+          id = o.optLong("id", 0L),
+          htmlUrl = o.optString("html_url"),
+          headSha = o.optString("head_sha"),
+          status = o.optString("status"),
+          conclusion = o.optString("conclusion").takeIf { it.isNotBlank() && it != "null" },
+        ))
+      }
+    }.filter { it.id > 0L }
+    return runs.firstOrNull { expectedSha != null && it.headSha.equals(expectedSha, ignoreCase = true) }
+      ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
+      ?: runs.firstOrNull()
+  }
+
+  private suspend fun fetchWorkflowJobs(runId: Long): List<WorkflowJobInfo> {
+    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
+    val arr = runCatching { JSONObject(body).optJSONArray("jobs") }.getOrNull() ?: return emptyList()
+    return buildList {
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        add(WorkflowJobInfo(
+          name = o.optString("name"),
+          status = o.optString("status"),
+          conclusion = o.optString("conclusion").takeIf { it.isNotBlank() && it != "null" },
+        ))
+      }
+    }
+  }
+
+  private fun jobIsFailed(job: WorkflowJobInfo): Boolean = job.conclusion in setOf("failure", "cancelled", "timed_out")
+  private fun jobIsDone(job: WorkflowJobInfo): Boolean = job.status == "completed" && job.conclusion == "success"
+  private fun jobIsRunning(job: WorkflowJobInfo): Boolean = job.status in setOf("queued", "in_progress", "waiting", "requested", "pending")
+
+  private fun stageStatusForJobs(jobs: List<WorkflowJobInfo>): AppReleaseStageStatus {
+    if (jobs.isEmpty()) return AppReleaseStageStatus.WAITING
+    if (jobs.any { jobIsFailed(it) }) return AppReleaseStageStatus.FAILED
+    if (jobs.all { jobIsDone(it) }) return AppReleaseStageStatus.DONE
+    if (jobs.any { jobIsRunning(it) }) return AppReleaseStageStatus.RUNNING
+    return AppReleaseStageStatus.WAITING
+  }
+
+  private suspend fun fetchReleaseBuildUi(expectedSha: String?, publishedSha: String?): AppReleaseBuildUi {
+    val run = fetchRelevantBuildRun(expectedSha, publishedSha)
+      ?: return AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.PREPARING,
+        messageRes = R.string.app_update_release_preparing_body,
+        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+      )
+    val jobs = fetchWorkflowJobs(run.id)
+
+    fun named(predicate: (String) -> Boolean): List<WorkflowJobInfo> = jobs.filter { predicate(it.name.lowercase(Locale.ROOT)) }
+
+    val binaries = named { n ->
+      n.startsWith("build ") ||
+        n.contains("core ready") ||
+        n.contains("module binaries ready") ||
+        n.contains("module zygisk ready") ||
+        n.contains("apk tools ready")
+    }.filter { job ->
+      val n = job.name.lowercase(Locale.ROOT)
+      !n.contains("build apk") && !n.contains("pack module")
+    }
+    val archives = named { it.contains("pack module zip") }
+    val apk = named { it.contains("build apk") }
+    val release = named { it.contains("publish service") }
+
+    fun stageStatus(jobsForStage: List<WorkflowJobInfo>): AppReleaseStageStatus = stageStatusForJobs(jobsForStage)
+
+    var binariesStatus = stageStatus(binaries)
+    var archivesStatus = stageStatus(archives)
+    var apkStatus = stageStatus(apk)
+    var releaseStatus = stageStatus(release)
+    val readyStatus = AppReleaseStageStatus.WAITING
+
+    fun promotePreviousStages() {
+      if (archivesStatus == AppReleaseStageStatus.RUNNING || archivesStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+      }
+      if (apkStatus == AppReleaseStageStatus.RUNNING || apkStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+        if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
+      }
+      if (releaseStatus == AppReleaseStageStatus.RUNNING || releaseStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+        if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
+        if (apkStatus == AppReleaseStageStatus.WAITING) apkStatus = AppReleaseStageStatus.DONE
+      }
+    }
+
+    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) {
+      binariesStatus = AppReleaseStageStatus.RUNNING
+    }
+    promotePreviousStages()
+    if (run.status in setOf("queued", "in_progress") &&
+      listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.RUNNING || it == AppReleaseStageStatus.FAILED }
+    ) {
+      when {
+        binariesStatus == AppReleaseStageStatus.WAITING -> binariesStatus = AppReleaseStageStatus.RUNNING
+        archivesStatus == AppReleaseStageStatus.WAITING -> archivesStatus = AppReleaseStageStatus.RUNNING
+        apkStatus == AppReleaseStageStatus.WAITING -> apkStatus = AppReleaseStageStatus.RUNNING
+        releaseStatus == AppReleaseStageStatus.WAITING -> releaseStatus = AppReleaseStageStatus.RUNNING
+      }
+    }
+
+    if (run.status == "completed" && run.conclusion == "success") {
+      if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+      if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
+      if (apkStatus == AppReleaseStageStatus.WAITING) apkStatus = AppReleaseStageStatus.DONE
+      releaseStatus = if (releaseStatus == AppReleaseStageStatus.DONE) AppReleaseStageStatus.DONE else AppReleaseStageStatus.RUNNING
+    }
+    if (run.status == "completed" && run.conclusion in setOf("failure", "cancelled", "timed_out")) {
+      if (listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.FAILED }) {
+        when {
+          release.isNotEmpty() -> releaseStatus = AppReleaseStageStatus.FAILED
+          apk.isNotEmpty() -> apkStatus = AppReleaseStageStatus.FAILED
+          archives.isNotEmpty() -> archivesStatus = AppReleaseStageStatus.FAILED
+          else -> binariesStatus = AppReleaseStageStatus.FAILED
+        }
+      }
+    }
+
+    val failed = listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).any { it == AppReleaseStageStatus.FAILED }
+    return AppReleaseBuildUi(
+      status = if (failed) AppReleaseBuildStatus.FAILED else AppReleaseBuildStatus.PREPARING,
+      runId = run.id,
+      runUrl = run.htmlUrl.takeIf { it.isNotBlank() },
+      messageRes = if (failed) R.string.app_update_release_failed_body else R.string.app_update_release_preparing_body,
+      stages = listOf(
+        AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, binariesStatus),
+        AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, archivesStatus),
+        AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, apkStatus),
+        AppReleaseBuildStageUi("release", R.string.app_update_stage_release, releaseStatus),
+        AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, readyStatus),
+      ),
+    )
+  }
+
+  private fun startReleaseBuildPolling() {
+    appReleaseBuildPollJob?.cancel()
+    appReleaseBuildPollJob = viewModelScope.launch(Dispatchers.IO + ceh) {
+      while (isActive && _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
+        delay(15_000L)
+        checkAppUpdateInternal(force = true, silent = true)
+      }
     }
   }
 
   private fun maybeCheckAppUpdate(force: Boolean) {
     if (!_appUpdate.value.enabled) return
-    if (!force && appUpdateCheckedThisSession) return
+    val liveBuildVisible = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)
+    if (!force && appUpdateCheckedThisSession && !liveBuildVisible) return
     appUpdateCheckedThisSession = true
-    launchIO { checkAppUpdateInternal(force = force) }
+    launchIO { checkAppUpdateInternal(force = force || liveBuildVisible, silent = liveBuildVisible) }
   }
 
-  private suspend fun checkAppUpdateInternal(force: Boolean) {
-    val manual = force
+  private suspend fun checkAppUpdateInternal(force: Boolean, silent: Boolean = false) {
+    val manual = force && !silent
     if (!root.isAppUpdateCheckEnabled()) {
       if (manual) toast(str(R.string.mv_auto_001))
       return
     }
     if (!isNetworkAvailable()) {
+      markGitHubApiOnline(false)
+      _appUpdate.update { it.copy(checking = false) }
       if (manual) toast(str(R.string.mv_auto_002))
       return
     }
@@ -528,6 +829,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val etagRel = root.getGitHubEtagLatestRelease()
     val (codeRel, bodyRel, newEtagRel) = runCatching { httpGetMaybeCached(latestUrl, etagRel) }
       .getOrElse {
+        markGitHubApiOnline(false)
         _appUpdate.update { it.copy(checking = false) }
         if (manual) toast(str(R.string.mv_auto_003))
         return
@@ -603,23 +905,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     // remoteCode is a var (filled through multiple branches), so keep it in a stable val for smart-casts.
     val rc = remoteCode!!
 
-    // Confirm that latest release tag matches module.prop version.
+    // Preferred stable release tag for the version currently present in module.prop.
+    // If latest release is still older, keep showing the preparation state instead of hiding the update.
     val tagVer = normalizeTagToVersion(tag)
-    if (tagVer != remoteVersion) {
-      // Tag and module.prop are out of sync: do not notify.
-      root.setAppUpdateLastCheckTs(now) // still rate-limit to avoid spamming
-      root.clearCachedAppUpdate()
-      _appUpdate.update { it.copy(checking = false) }
-      if (manual) toast(str(R.string.mv_auto_004))
-      return
-    }
+    val stableTag = if (tagVer == remoteVersion) tag else "V${remoteVersion}"
+    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/tag/${stableTag}"
 
     // Local comparison is based on the bundled module.prop inside the APK (next to the installer payload).
     // This ensures that online update checks follow the same versioning as the embedded module.
     val (localNameRaw, localCodeRaw) = readBundledModuleVersionAndCode()
     val localCode = localCodeRaw ?: BuildConfig.VERSION_CODE
     val localName = localNameRaw ?: BuildConfig.VERSION_NAME
-    val downloadUrl = releaseApkUrl(tag)
+    val downloadUrl = releaseApkUrl(stableTag)
     val updateAvailable = rc > localCode
 
     if (!updateAvailable) {
@@ -634,9 +931,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         localVersionCode = localCode,
         remoteVersionName = remoteVersion,
         remoteVersionCode = rc,
-        releaseTag = tag,
-        releaseHtmlUrl = htmlUrl,
+        releaseTag = stableTag,
+        releaseHtmlUrl = stableHtmlUrl,
         downloadUrl = downloadUrl,
+        releaseBuild = AppReleaseBuildUi(),
         errorText = null,
       ) }
       if (manual) toast(str(R.string.mv_auto_005))
@@ -644,18 +942,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
 
     val urgent = (rc / 100 == localCode / 100) && (rc % 100 != 0)
+    val releaseJson = fetchReleaseJsonByTag(stableTag)
+    val releaseMeta = parseReleaseMeta(releaseJson?.optString("body"))
+    val releaseVersionCode = releaseMeta?.versionCode ?: 0
+    val releaseAssetReady = releaseMeta?.assetReady == true && releaseHasApkAsset(releaseJson)
+    val releaseReady = releaseVersionCode >= rc && releaseAssetReady
 
     appUpdateBannerDismissedThisSession = false
-
     root.setAppUpdateLastCheckTs(now)
     root.setCachedAppUpdateAvailable(true)
     root.setCachedAppUpdateUrgent(urgent)
-    root.setCachedAppUpdateReleaseTag(tag)
-    root.setCachedAppUpdateReleaseHtmlUrl(htmlUrl)
+    root.setCachedAppUpdateReleaseTag(stableTag)
+    root.setCachedAppUpdateReleaseHtmlUrl(stableHtmlUrl)
     root.setCachedAppUpdateRemoteVersion(remoteVersion)
     root.setCachedAppUpdateRemoteVersionCode(rc)
-    root.setCachedAppUpdateDownloadUrl(downloadUrl)
     root.setCachedAppUpdateFoundTs(now)
+
+    if (!releaseReady) {
+      val expectedSha = fetchModulePropCommitSha()
+      val buildUi = fetchReleaseBuildUi(expectedSha = expectedSha, publishedSha = releaseMeta?.commit)
+      root.setCachedAppUpdateDownloadUrl(null)
+      _appUpdate.update { it.copy(
+        enabled = root.isAppUpdateCheckEnabled(),
+        checking = false,
+        bannerVisible = !appUpdateBannerDismissedThisSession,
+        urgent = urgent,
+        localVersionName = localName,
+        localVersionCode = localCode,
+        remoteVersionName = remoteVersion,
+        remoteVersionCode = rc,
+        releaseTag = stableTag,
+        releaseHtmlUrl = stableHtmlUrl,
+        downloadUrl = null,
+        releaseBuild = buildUi,
+        errorText = null,
+      ) }
+      startReleaseBuildPolling()
+      if (manual) toast(str(R.string.app_update_release_preparing_title))
+      return
+    }
+
+    appReleaseBuildPollJob?.cancel()
+    root.setCachedAppUpdateDownloadUrl(downloadUrl)
     _appUpdate.update { it.copy(
       enabled = root.isAppUpdateCheckEnabled(),
       checking = false,
@@ -665,9 +993,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       localVersionCode = localCode,
       remoteVersionName = remoteVersion,
       remoteVersionCode = rc,
-      releaseTag = tag,
-      releaseHtmlUrl = htmlUrl,
+      releaseTag = stableTag,
+      releaseHtmlUrl = stableHtmlUrl,
       downloadUrl = downloadUrl,
+      releaseBuild = AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.READY,
+        stages = listOf(
+          AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.DONE),
+        ),
+      ),
       errorText = null,
     ) }
 
@@ -715,6 +1053,7 @@ private fun restoreCachedAppUpdateState() {
       releaseTag = null,
       releaseHtmlUrl = null,
       downloadUrl = null,
+      releaseBuild = AppReleaseBuildUi(),
       errorText = null,
     ) }
     return
@@ -732,15 +1071,27 @@ private fun restoreCachedAppUpdateState() {
     releaseTag = tag,
     releaseHtmlUrl = htmlUrl,
     downloadUrl = downloadUrl,
+    releaseBuild = if (downloadUrl.isNullOrBlank()) {
+      AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.PREPARING,
+        messageRes = R.string.app_update_release_preparing_body,
+        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+      )
+    } else {
+      AppReleaseBuildUi()
+    },
     errorText = null,
   ) }
+  if (downloadUrl.isNullOrBlank()) {
+    startReleaseBuildPolling()
+  }
 }
 
 fun onAppResumed() {
-  // Re-check in background on resume if cooldown is over (or clock changed).
-  maybeCheckAppUpdate(force = false)
-  // Also re-sync banner state with current installed version (in case the app got updated).
+  // Re-sync banner state first so cached preparing states immediately enter live polling.
   restoreCachedAppUpdateState()
+  // Re-check in background on resume if cooldown is over, or force when a release build is visible.
+  maybeCheckAppUpdate(force = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED))
 }
 
 private fun clearDownloadedUpdateApk() {
@@ -1289,6 +1640,11 @@ private fun clearDownloadedUpdateApk() {
     return logText.contains("ZDTD_ZYGISK_")
   }
 
+  private fun hasMetamoduleInstallBlockedMarker(logText: String): Boolean {
+    return logText.contains("Metamodule installation blocked", ignoreCase = true) ||
+      logText.contains("A metamodule with custom installer is active", ignoreCase = true)
+  }
+
   override fun refreshZygiskInstallMarker() {
     if (_rootState.value != RootState.GRANTED) {
       _setup.update {
@@ -1388,6 +1744,7 @@ private fun clearDownloadedUpdateApk() {
           installerLabel = label,
           showKsuApatchZygiskWarning = showZygiskWarning,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showManualDialog = false,
           manualZipSaved = false,
           manualZipPath = "",
@@ -1425,7 +1782,8 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
-        val zygiskInstallError = zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
+        val metamoduleInstallBlocked = hasMetamoduleInstallBlockedMarker(out)
+        val zygiskInstallError = !metamoduleInstallBlocked && zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
         _setup.update {
           it.copy(
             installing = false,
@@ -1433,11 +1791,12 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = !zygiskInstallError,
+            showManualDialog = !metamoduleInstallBlocked && !zygiskInstallError,
             showZygiskInstallRecoveryDialog = zygiskInstallError,
+            showMetamoduleInstallBlockedDialog = metamoduleInstallBlocked,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = if (zygiskInstallError) "" else str(R.string.mv_auto_018) +
+            manualDialogText = if (metamoduleInstallBlocked || zygiskInstallError) "" else str(R.string.mv_auto_018) +
               str(R.string.mv_auto_019) +
               str(R.string.mv_auto_020),
           )
@@ -1454,6 +1813,10 @@ private fun clearDownloadedUpdateApk() {
     _setup.update { it.copy(showZygiskInstallRecoveryDialog = false) }
   }
 
+  override fun dismissMetamoduleInstallBlockedDialog() {
+    _setup.update { it.copy(showMetamoduleInstallBlockedDialog = false) }
+  }
+
   override fun retryInstallWithoutZygisk() {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     launchIO {
@@ -1464,6 +1827,7 @@ private fun clearDownloadedUpdateApk() {
         it.copy(
           installZygiskRequested = false,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showZygiskInstallConfirm = false,
         )
       }
@@ -1529,6 +1893,8 @@ private fun clearDownloadedUpdateApk() {
           kind="dnscrypt"
         elif [ "${'$'}lower" = "portguard" ]; then
           kind="portguard"
+        elif [ "${'$'}lower" = "vpn-to-hotspot-usb" ]; then
+          kind="vpn_tether"
         fi
         [ -n "${'$'}kind" ] || continue
         if [ -f "${'$'}d/remove" ]; then marked=1; else marked=0; fi
@@ -1549,6 +1915,7 @@ private fun clearDownloadedUpdateApk() {
         "zapret" -> str(R.string.setup_install_conflict_zapret_message)
         "dnscrypt" -> str(R.string.setup_install_conflict_dnscrypt_message)
         "portguard" -> str(R.string.setup_install_conflict_portguard_message)
+        "vpn_tether" -> str(R.string.setup_install_conflict_vpn_tether_message)
         else -> return@mapNotNull null
       }
       InstallConflictUi(
@@ -1947,6 +2314,117 @@ fi""".trimIndent()
 
       finishBackupProgress(text = str(R.string.mv_backup_import_done, name), percent = 100)
       refreshBackups()
+    }
+  }
+
+  override fun onExternalBackupOpen(uri: Uri) {
+    externalBackupOpenJob?.cancel()
+    externalBackupOpenJob = launchIO {
+      // ACTION_VIEW can arrive before the cold-start root check finishes.
+      val waitStartedAt = System.currentTimeMillis()
+      while (_rootState.value != RootState.GRANTED && System.currentTimeMillis() - waitStartedAt < 15_000L) {
+        currentCoroutineContext().ensureActive()
+        delay(250L)
+      }
+      if (_rootState.value != RootState.GRANTED) {
+        toast(str(R.string.mv_auto_029))
+        return@launchIO
+      }
+      if (_backup.value.progressVisible && !_backup.value.progressFinished) return@launchIO
+
+      showBackupProgress(
+        title = str(R.string.backup_external_restore_checking),
+        text = str(R.string.mv_auto_032),
+        percent = 5,
+      )
+
+      val tmp = File(ctx.cacheDir, "zdtb_external_${System.currentTimeMillis()}.zdtb")
+      val okCopy = runCatching {
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
+          FileOutputStream(tmp).use { output -> input.copyTo(output) }
+        } ?: return@runCatching false
+        true
+      }.getOrDefault(false)
+
+      if (!okCopy || !tmp.exists()) {
+        runCatching { tmp.delete() }
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(str(R.string.mv_auto_033))
+        return@launchIO
+      }
+
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 25) }
+      // Validate the archive structure here, but let restoreBackup() do the strict versionCode
+      // decision so the existing "Restore anyway" path still works for external files.
+      val validation = validateBackupFile(tmp.absolutePath, ignoreVersionCode = true)
+      if (!validation.ok) {
+        runCatching { tmp.delete() }
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(validation.error ?: str(R.string.backup_external_restore_invalid))
+        return@launchIO
+      }
+
+      root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+      val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+      val importedName = "ZDT-D_backup_${tsForFile}_external.zdtb"
+      val dest = "${backupDirPath}/${importedName}"
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 70) }
+      val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
+      runCatching { tmp.delete() }
+      if (!r.isSuccess) {
+        val err = (r.out + r.err).joinToString("\n").trim()
+        val detail = if (err.isBlank()) "copy failed" else err
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(str(R.string.mv_backup_import_save_failed, detail))
+        return@launchIO
+      }
+
+      val displayName = uri.lastPathSegment
+        ?.substringAfterLast('/')
+        ?.substringAfterLast(':')
+        ?.takeIf { it.isNotBlank() }
+        ?: importedName
+
+      _backup.update { st ->
+        st.copy(
+          progressVisible = false,
+          progressFinished = false,
+          progressError = null,
+          externalRestorePromptVisible = true,
+          externalRestoreName = importedName,
+          externalRestoreDisplayName = displayName,
+        )
+      }
+      refreshBackups()
+    }
+  }
+
+  override fun confirmExternalBackupRestore() {
+    val name = _backup.value.externalRestoreName ?: return
+    _backup.update { st ->
+      st.copy(
+        externalRestorePromptVisible = false,
+        externalRestoreName = null,
+        externalRestoreDisplayName = "",
+      )
+    }
+    restoreBackup(name, ignoreVersionCode = false)
+  }
+
+  override fun dismissExternalBackupRestore() {
+    val name = _backup.value.externalRestoreName
+    _backup.update { st ->
+      st.copy(
+        externalRestorePromptVisible = false,
+        externalRestoreName = null,
+        externalRestoreDisplayName = "",
+      )
+    }
+    if (!name.isNullOrBlank()) {
+      launchIO {
+        root.execRootSh("rm -f ${shQuote(backupDirPath + "/" + name)} 2>/dev/null || true")
+        refreshBackups()
+      }
     }
   }
 
@@ -3632,6 +4110,7 @@ if (mf.isNotBlank()) {
         installOk = false,
         installError = null,
         showZygiskInstallRecoveryDialog = false,
+        showMetamoduleInstallBlockedDialog = false,
         manualZipSaved = false,
         manualZipPath = "",
         showUpdatePrompt = false,
@@ -3656,45 +4135,182 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun installViaMagisk(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = false)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "Magisk"))
-    val r = root.execRoot("sh -c 'magisk --install-module /data/local/tmp/zdt_module.zip'")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "Magisk",
+      installCommand = "magisk --install-module /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaKsu(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, str(R.string.mv_auto_013)))
     val ksu = runCatching { root.ksuPath() }.getOrNull() ?: "ksud"
-    val r = root.execRoot("sh -c ${shQuote("${ksu} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = str(R.string.mv_auto_013),
+      installCommand = "${shQuote(ksu)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaApatch(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "APatch"))
     val apd = runCatching { root.apatchPath() }.getOrNull() ?: "apd"
-    val r = root.execRoot("sh -c ${shQuote("${apd} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "APatch",
+      installCommand = "${shQuote(apd)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
+  }
+
+  private suspend fun runRootManagerInstallWithModuleProgress(
+    installerLabel: String,
+    installCommand: String,
+    stageLog: String,
+  ): Pair<Boolean, String> {
+    val progressDir = File(ctx.applicationInfo.dataDir, "install_status")
+    runCatching { progressDir.mkdirs() }
+    val progressFile = File(progressDir, "progress.properties").absolutePath
+    val progressLog = File(progressDir, "progress.log").absolutePath
+    val installLog = File(progressDir, "install.log").absolutePath
+    val resultFile = File(progressDir, "result.properties").absolutePath
+    val runnerPath = "/data/local/tmp/zdt_module_install_runner.sh"
+    val installLabel = str(R.string.setup_install_progress_installing_fmt, installerLabel)
+    updateInstallProgress(62, installLabel)
+
+    val cleanupScript = """
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(progressFile)} ${shQuote(progressLog)} ${shQuote(installLog)} ${shQuote(resultFile)} ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true
+      chmod 0771 ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+    """.trimIndent()
+    root.execRootSh(cleanupScript)
+
+    val runnerScript = """
+      #!/system/bin/sh
+      export ZDTD_INSTALL_STATUS_DIR=${shQuote(progressDir.absolutePath)}
+      export ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)}
+      export ZDTD_INSTALL_PROGRESS_LOG=${shQuote(progressLog)}
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(resultFile)} 2>/dev/null || true
+      {
+        echo "runner_start=$(date +%s 2>/dev/null || echo 0)"
+        echo "installer=${installerLabel}"
+      } > ${shQuote(installLog)} 2>/dev/null || true
+      chmod 0644 ${shQuote(installLog)} 2>/dev/null || true
+      (${installCommand}) >> ${shQuote(installLog)} 2>&1
+      rc=$?
+      {
+        echo "rc=${'$'}rc"
+        echo "time=$(date +%s 2>/dev/null || echo 0)"
+      } > ${shQuote(resultFile)} 2>/dev/null || true
+      chmod 0644 ${shQuote(resultFile)} 2>/dev/null || true
+      exit 0
+    """.trimIndent()
+
+    val runnerB64 = Base64.encodeToString(runnerScript.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+    val startScript = """
+      set -e
+      mkdir -p /data/local/tmp 2>/dev/null || true
+      echo ${shQuote(runnerB64)} | (base64 -d 2>/dev/null || /system/bin/toybox base64 -d 2>/dev/null) > ${shQuote(runnerPath)}
+      chmod 0700 ${shQuote(runnerPath)}
+      sh ${shQuote(runnerPath)} >/dev/null 2>&1 &
+      echo "started"
+    """.trimIndent()
+
+    val start = root.execRootSh(startScript)
+    val startOut = (start.out + start.err).joinToString("\n").trim()
+    if (!start.isSuccess) {
+      return false to listOf(stageLog, startOut.ifBlank { "failed to start module installer runner" }).filter { it.isNotBlank() }.joinToString("\n")
+    }
+
+    var lastPercent = 62
+    var rc: Int? = null
+    val deadline = System.currentTimeMillis() + 10L * 60L * 1000L
+    while (currentCoroutineContext().isActive && rc == null) {
+      val text = readInstallProgressText(progressLog, progressFile)
+      val percent = parseInstallProgressPercent(text)
+      if (percent != null && percent > lastPercent) {
+        val next = percent.coerceIn(63, 98)
+        if (next > lastPercent) {
+          lastPercent = next
+          updateInstallProgress(next, installLabel)
+        }
+      }
+
+      val resultText = readInstallStatusFile(resultFile)
+      rc = parseInstallResultCode(resultText)
+      if (rc != null) break
+
+      if (System.currentTimeMillis() > deadline) {
+        val logText = root.readLogTail(installLog, 400)
+        return false to listOf(stageLog, "installer timeout", startOut, logText).filter { it.isNotBlank() }.joinToString("\n")
+      }
+      delay(450)
+    }
+
+    val installOut = root.readLogTail(installLog, 1200)
+    root.execRootSh("rm -f ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+    val ok = rc == 0
+    val finalLog = listOf(stageLog, startOut, installOut).filter { it.isNotBlank() }.joinToString("\n").trim()
+    return ok to finalLog
+  }
+
+  private fun readInstallProgressText(progressLog: String, progressFile: String): String {
+    val logText = runCatching { root.readLogTail(progressLog, 80) }.getOrDefault("")
+    if (logText.isNotBlank()) return logText
+
+    val propsText = runCatching { root.readLogTail(progressFile, 20) }.getOrDefault("")
+    if (propsText.isNotBlank()) return propsText
+
+    return runCatching {
+      val f = File(progressFile)
+      if (f.isFile && f.canRead()) f.readText() else ""
+    }.getOrDefault("")
+  }
+
+  private fun readInstallStatusFile(resultFile: String): String {
+    return runCatching { root.readLogTail(resultFile, 20) }.getOrDefault("")
+  }
+
+  private fun parseInstallResultCode(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("rc=")) return@mapNotNull null
+        trimmed.removePrefix("rc=").trim().toIntOrNull()
+      }
+      .lastOrNull()
+  }
+
+  private fun parseInstallProgressPercent(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        when {
+          trimmed.startsWith("percent=") -> trimmed.removePrefix("percent=").trim().toIntOrNull()
+          trimmed.startsWith("ZDTD_PROGRESS:") -> trimmed.removePrefix("ZDTD_PROGRESS:").substringBefore(':').trim().toIntOrNull()
+          else -> null
+        }
+      }
+      .lastOrNull()
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return Triple(false, "asset zdt_module.zip missing: ${it.message ?: it}", "")
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) {
+      return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
+    }
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return Triple(false, verify.message, "")
+
+    val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+      return Triple(false, "module zip compatibility patch failed: ${it.message ?: it}", "")
     }
 
     val src = cacheZip.absolutePath
@@ -3707,26 +4323,39 @@ if (mf.isNotBlank()) {
       append(str(R.string.mv_auto_068)).append(dst).append("\n\n")
       append(str(R.string.mv_auto_069))
     }
-    return Triple(true, (out + "\n" + msg).trim(), dst)
+    return Triple(true, listOf(verify.message, normalizeLog, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
   }
 
-  private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
+  private suspend fun stageModuleZipToTmp(
+    normalizeForStrictZipInstaller: Boolean = false,
+  ): Pair<Boolean, String> {
     updateInstallProgress(22, str(R.string.setup_install_progress_copying))
-    // Copy assets/zdt_module.zip to cache and then to /data/local/tmp
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
+    // Copy assets/zdt_module.zip to cache, verify the protected archive,
+    // optionally normalize the same temporary copy for strict ZIP parsers,
+    // then stage it for the selected root manager.
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
+    val normalizeLog = if (normalizeForStrictZipInstaller) {
+      runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+        return false to "module zip compatibility patch failed: ${it.message ?: it}"
       }
-    }.getOrElse {
-      return false to "asset zdt_module.zip missing: ${it.message ?: it}"
+    } else {
+      "module zip protection kept for Magisk installer"
     }
+
+    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
+    if (!busyBoxOk) return false to busyBoxLog
 
     val src = cacheZip.absolutePath
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
-    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip'")
+    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    return copyRes.isSuccess to out1.trim()
+    val log = listOf(verify.message, normalizeLog, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    return copyRes.isSuccess to log
   }
 
   private suspend fun installManually(): Pair<Boolean, String> {
@@ -3734,9 +4363,15 @@ if (mf.isNotBlank()) {
     runCatching { unpackDir.deleteRecursively() }
     unpackDir.mkdirs()
 
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
     val extractLog = StringBuilder()
+    extractLog.append(verify.message).append("\n")
     val extractedOk = runCatching {
-      extractAssetZip("zdt_module.zip", unpackDir, extractLog)
+      extractZipFile(cacheZip, unpackDir, extractLog)
     }.getOrElse {
       return false to "extract failed: ${it.message ?: it}"
     }
@@ -4189,30 +4824,213 @@ private fun shQuote(s: String): String {
     return "'" + s.replace("'", "'\\''") + "'"
   }
 
+  private data class ModuleZipVerification(val ok: Boolean, val message: String)
+
+  private fun copyBundledModuleZipToCache(): Pair<File?, String?> {
+    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
+    runCatching {
+      ctx.assets.open("zdt_module.zip").use { input ->
+        cacheZip.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+    }
+    return cacheZip to null
+  }
+
+  private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
+    val expected = readSha256Asset("busybox/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
+    val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
+      return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return ModuleZipVerification(false, "module zip SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    return ModuleZipVerification(true, "module zip SHA-256 verified: $actual")
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsInPlace(zipFile: File): String {
+    val data = zipFile.readBytes()
+    val eocd = findZipEocdOffset(data)
+    val diskNo = readLe16(data, eocd + 4)
+    val cdDisk = readLe16(data, eocd + 6)
+    val entriesOnDisk = readLe16(data, eocd + 8)
+    val entriesTotal = readLe16(data, eocd + 10)
+    val cdSize = readLe32(data, eocd + 12)
+    val cdOffset = readLe32(data, eocd + 16)
+
+    require(diskNo == 0 && cdDisk == 0) { "multi-disk ZIP is not supported" }
+    require(entriesOnDisk == entriesTotal) { "split Central Directory is not supported" }
+    require(entriesTotal != 0xFFFF && cdSize != 0xFFFFFFFFL && cdOffset != 0xFFFFFFFFL) {
+      "ZIP64 Central Directory is not supported"
+    }
+    require(cdOffset >= 0 && cdSize >= 0 && cdOffset + cdSize <= data.size.toLong()) {
+      "invalid Central Directory bounds"
+    }
+
+    var pos = cdOffset.toInt()
+    val end = (cdOffset + cdSize).toInt()
+    var entries = 0
+    var patched = 0
+
+    while (pos < end) {
+      require(hasZipSignature(data, pos, 0x02014b50)) {
+        "Central Directory entry signature not found at offset $pos"
+      }
+      val flagsOffset = pos + 8
+      val flags = readLe16(data, flagsOffset)
+      if ((flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG) != 0) {
+        writeLe16(data, flagsOffset, flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG.inv())
+        patched++
+      }
+      val nameLen = readLe16(data, pos + 28)
+      val extraLen = readLe16(data, pos + 30)
+      val commentLen = readLe16(data, pos + 32)
+      pos += 46 + nameLen + extraLen + commentLen
+      entries++
+    }
+
+    require(pos == end) { "Central Directory walk ended at unexpected offset" }
+    require(entries == entriesTotal) { "Central Directory entry count mismatch: expected=$entriesTotal actual=$entries" }
+
+    if (patched > 0) {
+      zipFile.writeBytes(data)
+    }
+
+    return if (patched > 0) {
+      "module zip normalized for strict installer: cleared encrypted flag in $patched Central Directory entries"
+    } else {
+      "module zip already compatible with strict installer"
+    }
+  }
+
+  private fun findZipEocdOffset(data: ByteArray): Int {
+    val minOffset = max(0, data.size - ZIP_EOCD_MAX_SEARCH)
+    var pos = data.size - ZIP_EOCD_MIN_SIZE
+    while (pos >= minOffset) {
+      if (hasZipSignature(data, pos, 0x06054b50)) return pos
+      pos--
+    }
+    error("ZIP EOCD signature not found")
+  }
+
+  private fun hasZipSignature(data: ByteArray, offset: Int, signature: Int): Boolean {
+    if (offset < 0 || offset + 4 > data.size) return false
+    return (data[offset].toInt() and 0xff) == (signature and 0xff) &&
+      (data[offset + 1].toInt() and 0xff) == ((signature shr 8) and 0xff) &&
+      (data[offset + 2].toInt() and 0xff) == ((signature shr 16) and 0xff) &&
+      (data[offset + 3].toInt() and 0xff) == ((signature shr 24) and 0xff)
+  }
+
+  private fun readLe16(data: ByteArray, offset: Int): Int {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return (data[offset].toInt() and 0xff) or
+      ((data[offset + 1].toInt() and 0xff) shl 8)
+  }
+
+  private fun readLe32(data: ByteArray, offset: Int): Long {
+    require(offset >= 0 && offset + 4 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return ((data[offset].toLong() and 0xffL) or
+      ((data[offset + 1].toLong() and 0xffL) shl 8) or
+      ((data[offset + 2].toLong() and 0xffL) shl 16) or
+      ((data[offset + 3].toLong() and 0xffL) shl 24))
+  }
+
+  private fun writeLe16(data: ByteArray, offset: Int, value: Int) {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP write out of bounds at offset $offset" }
+    data[offset] = (value and 0xff).toByte()
+    data[offset + 1] = ((value shr 8) and 0xff).toByte()
+  }
+
+  private fun preferredNativeAssetAbi(): String = when {
+    Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64"
+    Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "arm32"
+    else -> "arm64"
+  }
+
+  private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    val busyBoxAbi = preferredNativeAssetAbi()
+    val busyBoxAssetName = if (busyBoxAbi == "arm32") "busybox-arm32" else "busybox-arm64"
+    val expected = readSha256Asset("busybox/${busyBoxAssetName}.sha256")
+      ?: return@withContext (false to "asset busybox/${busyBoxAssetName}.sha256 missing or invalid")
+    val cacheBusyBox = File(ctx.cacheDir, busyBoxAssetName)
+    runCatching {
+      ctx.assets.open("busybox/${busyBoxAssetName}").use { input ->
+        cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return@withContext (false to "asset busybox/${busyBoxAssetName} missing: ${it.message ?: it}")
+    }
+    val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
+      return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return@withContext (false to "busybox SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    val src = cacheBusyBox.absolutePath
+    val r = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_busybox && chmod 755 /data/local/tmp/zdt_busybox'")
+    val out = (r.out + r.err).joinToString("\n").trim()
+    if (!r.isSuccess) return@withContext (false to out)
+    true to listOf("busybox SHA-256 verified: $actual", out).filter { it.isNotBlank() }.joinToString("\n")
+  }
+
+  private fun readSha256Asset(assetName: String): String? = runCatching {
+    ctx.assets.open(assetName).bufferedReader().use { it.readText() }
+      .trim()
+      .split(Regex("\\s+"))
+      .firstOrNull()
+      ?.lowercase(Locale.US)
+      ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+  }.getOrNull()
+
+  private fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+      val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+      while (true) {
+        val read = input.read(buffer)
+        if (read <= 0) break
+        digest.update(buffer, 0, read)
+      }
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+  }
+
+  private fun extractZipFile(zipFile: File, destDir: File, log: StringBuilder): Boolean {
+    zipFile.inputStream().use { input ->
+      return extractZipStream(input, destDir, log)
+    }
+  }
+
   private fun extractAssetZip(assetName: String, destDir: File, log: StringBuilder): Boolean {
-    val base = destDir.canonicalFile
     ctx.assets.open(assetName).use { input ->
-      java.util.zip.ZipInputStream(input).use { zis ->
-        while (true) {
-          val e = zis.nextEntry ?: break
-          val name = e.name
-          if (name.startsWith("META-INF/")) continue
-          if (name.isBlank()) continue
+      return extractZipStream(input, destDir, log)
+    }
+  }
 
-          val outFile = File(destDir, name)
-          val canon = outFile.canonicalFile
-          if (!canon.path.startsWith(base.path)) {
-            log.append("skip suspicious entry: ").append(name).append("\n")
-            continue
-          }
+  private fun extractZipStream(input: InputStream, destDir: File, log: StringBuilder): Boolean {
+    val base = destDir.canonicalFile
+    java.util.zip.ZipInputStream(input).use { zis ->
+      while (true) {
+        val e = zis.nextEntry ?: break
+        val name = e.name
+        if (name.startsWith("META-INF/")) continue
+        if (name.isBlank()) continue
 
-          if (e.isDirectory) {
-            canon.mkdirs()
-          } else {
-            canon.parentFile?.mkdirs()
-            canon.outputStream().use { os ->
-              zis.copyTo(os)
-            }
+        val outFile = File(destDir, name)
+        val canon = outFile.canonicalFile
+        if (!canon.path.startsWith(base.path)) {
+          log.append("skip suspicious entry: ").append(name).append("\n")
+          continue
+        }
+
+        if (e.isDirectory) {
+          canon.mkdirs()
+        } else {
+          canon.parentFile?.mkdirs()
+          canon.outputStream().use { os ->
+            zis.copyTo(os)
           }
         }
       }
@@ -4227,6 +5045,7 @@ private fun shQuote(s: String): String {
     log.append("extracted to: ").append(destDir.absolutePath).append("\n")
     return true
   }
+
 
   private fun startStatusPolling() {
     statusJob?.cancel()
@@ -4956,6 +5775,34 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit) {
+    launchIO {
+      val report = runCatching { api.getTrafficRules() }.getOrNull()
+      if (report == null) log("ERR", "/api/traffic/rules: load failed")
+      withContext(Dispatchers.Main.immediate) { onDone(report) }
+    }
+  }
+
+  override fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit) {
+    launchIO {
+      val endpoints = runCatching { api.getConstructionProxyEndpoints() }.getOrNull()
+      if (endpoints == null) log("ERR", "/api/construction/proxy-endpoints: load failed")
+      withContext(Dispatchers.Main.immediate) { onDone(endpoints) }
+    }
+  }
+
+  override fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
+    launchIO {
+      val result = runCatching { api.releaseConstructionProxyEndpoint(candidate) }.getOrNull()
+      if (result?.ok == true) {
+        log("OK", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} ${if (result.stopped) "stopped" else "released"}")
+      } else {
+        log("ERR", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} release failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(result) }
+    }
+  }
+
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)
@@ -5055,17 +5902,13 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   // ----- App update (GitHub) -----
 
   private fun applyAppLanguageMode(mode: String) {
-  val m = mode.trim().lowercase()
-  when (m) {
-    // Auto: clear overrides so the app follows the system locale.
-    // With only EN (default) + RU resources this matches the rule:
-    // system ru -> RU, any other -> EN (fallback).
-    "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
-    "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
-    "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
-    else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    val tag = AppLanguageSupport.languageTagForMode(mode)
+    if (tag.isNullOrBlank()) {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    } else {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+    }
   }
-}
 
   override fun setAppUpdateChecksEnabled(enabled: Boolean) {
     root.setAppUpdateCheckEnabled(enabled)
@@ -5115,6 +5958,12 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
+  override fun setThemeMode(mode: String) {
+    root.setThemeMode(mode)
+    _themeMode.value = com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode())
+    _appUpdate.update { it.copy(themeMode = root.getThemeMode()) }
+  }
+
   private suspend fun fetchHotspotSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     return runCatching { api.getSingBoxProfiles() }
       .getOrElse {
@@ -5131,15 +5980,33 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun fetchEnergySaverState(): ApiModels.EnergySaverState {
+    return runCatching { api.getEnergySaver() }
+      .getOrElse {
+        log("ERR", "energy saver load failed: ${it.message ?: it}")
+        ApiModels.EnergySaverState()
+      }
+  }
+
   private suspend fun refreshDaemonSettingsNow() {
     val settings = runCatching { api.getDaemonSettings() }
       .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
     val singboxProfiles = fetchHotspotSingBoxProfiles()
     val wireproxyProfiles = fetchHotspotWireproxyProfiles()
+    val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+    val energySaver = fetchEnergySaverState()
+    val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+    val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
+    val proxyPrograms = programs.filter { it.id in proxyIds || (it.id == "sing-box") }
+    val vpnPrograms = programs.filter { it.id in vpnIds }
     _appUpdate.update {
       it.copy(
         protectorMode = settings.protectorMode,
+        energySaver = energySaver,
         hotspotT2sEnabled = settings.hotspotT2sEnabled,
+        hotspotMode = settings.hotspotMode,
+        hotspotProgram = settings.hotspotProgram,
+        hotspotProfile = settings.hotspotProfile,
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
@@ -5148,6 +6015,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         ipForwardEnabled = settings.ipForwardEnabled,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
+        hotspotProxyPrograms = proxyPrograms,
+        hotspotVpnPrograms = vpnPrograms,
       )
     }
   }
@@ -5155,6 +6024,39 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   override fun refreshDaemonSettings() {
     launchIO {
       refreshDaemonSettingsNow()
+    }
+  }
+
+  override fun refreshEnergySaver() {
+    launchIO {
+      _appUpdate.update { it.copy(energySaverBusy = true) }
+      val state = fetchEnergySaverState()
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+    }
+  }
+
+  override fun saveEnergySaver(config: ApiModels.EnergySaverConfig) {
+    _appUpdate.update { it.copy(energySaverBusy = true, energySaver = it.energySaver.copy(settings = config)) }
+    launchIO {
+      var success = true
+      val state = runCatching {
+        val saved = api.saveEnergySaver(config)
+        runCatching { api.applyEnergySaver() }
+        saved
+      }.getOrElse {
+        success = false
+        log("ERR", "energy saver save failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_save_failed))
+        }
+        fetchEnergySaverState()
+      }
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+      if (success) {
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_saved))
+        }
+      }
     }
   }
 
@@ -5187,6 +6089,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         current.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5201,12 +6106,51 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+  @Suppress("DEPRECATION")
+  private fun syncLsposedHidePreferences(enabled: Boolean, content: String) {
+    val packages = content
+      .lineSequence()
+      .map { it.substringBefore('#').trim() }
+      .filter { it.isNotEmpty() && it != BuildConfig.APPLICATION_ID }
+      .distinct()
+      .toList()
+    val app = getApplication<Application>()
+    val pm = app.packageManager
+    val uids = packages.mapNotNull { pkg ->
+      runCatching {
+        if (Build.VERSION.SDK_INT >= 33) {
+          pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0)).uid
+        } else {
+          pm.getApplicationInfo(pkg, 0).uid
+        }
+      }.getOrNull()
+    }.map { it.toString() }.toSet()
+
+    val prefs = runCatching {
+      app.getSharedPreferences(LSPOSED_HIDE_PREFS_NAME, Context.MODE_WORLD_READABLE)
+    }.getOrElse { err ->
+      log("WARN", "LSPosed hide prefs world-readable open failed: ${err.message ?: err}")
+      app.getSharedPreferences(LSPOSED_HIDE_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    prefs.edit()
+      .putBoolean(LSPOSED_HIDE_PREF_ENABLED, enabled)
+      .putStringSet(LSPOSED_HIDE_PREF_PACKAGES, packages.toSet())
+      .putStringSet(LSPOSED_HIDE_PREF_UIDS, uids)
+      .putLong(LSPOSED_HIDE_PREF_UPDATED_AT, System.currentTimeMillis())
+      .apply()
+    log("OK", "LSPosed hide prefs synced: enabled=$enabled packages=${packages.size} uids=${uids.size}")
+  }
+
   private suspend fun fetchProxyInfoState(): ApiModels.ProxyInfoState {
     val base = runCatching { api.getProxyInfo() }.getOrDefault(ApiModels.ProxyInfoState())
     val apps = base.appsContent.ifBlank {
       runCatching { api.getProxyInfoApps() }.getOrDefault("")
     }
     return base.copy(appsContent = apps)
+  }
+
+  private suspend fun fetchHidingStatus(): ApiModels.HidingStatus {
+    return runCatching { api.getHidingStatus() }.getOrDefault(ApiModels.HidingStatus())
   }
 
   private suspend fun fetchBlockedQuicState(): ApiModels.ProxyInfoState {
@@ -5228,13 +6172,16 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           active = false,
         )
       }
+      val hiding = fetchHidingStatus()
       _appUpdate.update {
         it.copy(
           proxyInfoEnabled = state.enabled,
           proxyInfoAppsContent = state.appsContent,
           proxyInfoBusy = false,
+          hidingStatus = hiding,
         )
       }
+      syncLsposedHidePreferences(state.enabled, state.appsContent)
     }
   }
 
@@ -5288,6 +6235,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(hidingStatus = hiding) }
+      syncLsposedHidePreferences(enabled, _appUpdate.value.proxyInfoAppsContent)
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
       }
@@ -5318,7 +6268,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
-      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
+      syncLsposedHidePreferences(_appUpdate.value.proxyInfoEnabled, normalized)
       scheduleProxyInfoApply("apps-save")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
@@ -5352,7 +6304,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         }
         return@launchIO
       }
-      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      val hiding = fetchHidingStatus()
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
+      syncLsposedHidePreferences(_appUpdate.value.proxyInfoEnabled, normalized)
       scheduleProxyInfoApply("apps-save-resolved")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
@@ -5437,10 +6391,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5450,36 +6408,31 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun setHotspotT2sEnabled(enabled: Boolean) {
-    if (enabled) {
-      _appUpdate.update {
-        it.copy(
-          hotspotT2sEnabled = true,
-          hotspotT2sTarget = "",
-          hotspotT2sSingboxProfile = "",
-          hotspotT2sWireproxyProfile = "",
-        )
-      }
-      return
-    }
-
     _appUpdate.update {
       it.copy(
-        hotspotT2sEnabled = false,
+        hotspotT2sEnabled = enabled,
+        ipForwardEnabled = if (enabled) true else it.ipForwardEnabled,
+        hotspotMode = "proxy",
+        hotspotProgram = "",
+        hotspotProfile = "",
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
         hotspotT2sWireproxyProfile = "",
       )
     }
+
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(
-          enabled = false,
-          target = "",
-          singboxProfile = "",
-          wireproxyProfile = "",
-        )
+        hotspotSettingsMutex.withLock {
+          if (enabled) api.setHotspotMode("proxy") else api.setHotspotT2s(
+            enabled = false,
+            target = "",
+            singboxProfile = "",
+            wireproxyProfile = "",
+          )
+        }
       }.getOrElse {
-        log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
+        log("ERR", "hotspot toggle failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_hotspot_save_failed))
         }
@@ -5490,15 +6443,106 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_hotspot_saved))
       }
+    }
+  }
+
+  override fun setHotspotMode(mode: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = "",
+        hotspotProfile = "",
+        hotspotT2sTarget = "",
+        hotspotT2sSingboxProfile = "",
+        hotspotT2sWireproxyProfile = "",
+      )
+    }
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotMode(safeMode) }
+      }.getOrElse {
+        log("ERR", "hotspot mode failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
+        )
+      }
+    }
+  }
+
+  override fun setHotspotSelection(mode: String, program: String, profile: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val safeProgram = program.trim().lowercase()
+    val safeProfile = profile.trim()
+    val proxyTarget = if (safeMode == "proxy") safeProgram else ""
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = safeProgram,
+        hotspotProfile = safeProfile,
+        hotspotT2sTarget = proxyTarget,
+        hotspotT2sSingboxProfile = if (proxyTarget == "singbox") safeProfile else "",
+        hotspotT2sWireproxyProfile = if (proxyTarget == "wireproxy") safeProfile else "",
+      )
+    }
+    val needsProfile = safeMode == "vpn" || safeProgram == "singbox" || safeProgram == "wireproxy"
+    if (needsProfile && safeProfile.isBlank()) return
+    if (safeProgram.isBlank()) return
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotSelection(safeMode, safeProgram, safeProfile) }
+      }.getOrElse {
+        log("ERR", "hotspot selection failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
     }
   }
 
@@ -5527,7 +6571,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "", wireproxyProfile = "")
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", safeTarget, "") }
       }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5540,10 +6584,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5567,7 +6615,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile, wireproxyProfile = "")
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "singbox", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5580,10 +6628,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5607,7 +6659,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "wireproxy", singboxProfile = "", wireproxyProfile = safeProfile)
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "wireproxy", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot wireproxy profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5620,10 +6672,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5640,7 +6696,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2sCaptureAll(enabled)
+        hotspotSettingsMutex.withLock { api.setHotspotT2sCaptureAll(enabled) }
       }.getOrElse {
         log("ERR", "hotspot capture-all failed: ${it.message ?: it}")
         _appUpdate.update { it.copy(hotspotT2sCaptureAll = previous) }
@@ -5654,6 +6710,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5768,7 +6827,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     val url = _appUpdate.value.downloadUrl
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     if (url.isNullOrBlank()) {
-      _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
+      if (_appUpdate.value.releaseBuild.status !in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
+        _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
+      }
       return
     }
 

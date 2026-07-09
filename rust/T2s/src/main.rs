@@ -5,11 +5,12 @@ mod rules;
 mod stats;
 mod web;
 mod sniff;
+mod api_runtime;
 
-use anyhow::{Context, Result};
-use cli::Args;
+use anyhow::{anyhow, Context, Result};
+use cli::{Args, PriorityZeroMode};
 use parking_lot::Mutex;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, signal, sync::{broadcast, Semaphore}};
 use tracing::{error, info, warn};
 
@@ -23,6 +24,7 @@ pub struct AppState {
     pub backends: Arc<Mutex<stats::SocksBackends>>,
     pub events: broadcast::Sender<stats::Event>,
     pub semaphore: Arc<Semaphore>,
+    pub api: Arc<api_runtime::ApiRuntime>,
 }
 
 
@@ -85,6 +87,14 @@ fn conn_stats_flush_threshold() -> u64 {
     16 * 1024
 }
 
+fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
+    info.mode.as_deref() == Some("socks")
+        && info.backend.is_some()
+        && info.bytes_up >= 1024
+        && info.bytes_down == 0
+        && stats::now_ts().saturating_sub(info.started_ts) >= 3
+}
+
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
     use tokio::time::{Duration, Instant};
 
@@ -139,6 +149,8 @@ fn main() -> Result<()> {
 
 async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
+    let started_at = stats::now_ts();
+    let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
 
     let rules = rules::Rules::load_from_env();
     let stats = Arc::new(stats::Stats::default());
@@ -163,6 +175,7 @@ async fn async_main(workers: usize) -> Result<()> {
         backends,
         events,
         semaphore,
+        api,
     };
 
     // Background: periodic backend checks + stats tick
@@ -182,6 +195,20 @@ async fn async_main(workers: usize) -> Result<()> {
     }
 
 
+
+    // Keep per-instance metadata fresh for Android-side discovery.
+    {
+        let api = state.api.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                tick.tick().await;
+                if let Err(e) = api.write_metadata() {
+                    tracing::warn!("failed to refresh t2s API metadata: {:#}", e);
+                }
+            }
+        });
+    }
 
     // Web server (optional)
     if args.web_socket {
@@ -223,6 +250,7 @@ async fn async_main(workers: usize) -> Result<()> {
     info!("Started with {} Tokio worker thread(s). Press Ctrl+C to stop.", workers);
     signal::ctrl_c().await?;
     info!("Shutting down.");
+    state.api.cleanup_metadata();
     Ok(())
 }
 
@@ -317,13 +345,13 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
             state.runtime.backend_wake_throttled(250);
         }
 
-        // If a small burst of new connections arrives while all backends are
-        // reachable but currently have no confirmed Internet access, temporarily
-        // accelerate Internet rechecks until one backend turns green again.
+        // If a small burst of new connections arrives while no backend has a
+        // confirmed Internet route, temporarily accelerate full rechecks of all
+        // non-GREEN backends until one backend turns green again.
         if state.runtime.note_new_connection_spike(2, Duration::from_secs(5)) {
             let should_start_recovery_ladder = {
                 let b = state.backends.lock();
-                !b.any_green() && b.any_yellow()
+                !b.any_green() && b.len() > 0
             };
             if should_start_recovery_ladder && state.runtime.try_enter_burst_recovery_ladder() {
                 let st_burst = state.clone();
@@ -357,7 +385,7 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
 }
 
 async fn proxy_tcp(
-    client: tokio::net::TcpStream,
+    mut client: tokio::net::TcpStream,
     _peer: SocketAddr,
     cid: u64,
     state: AppState,
@@ -369,8 +397,13 @@ async fn proxy_tcp(
 
     state.conns.set_mode(cid, "pending");
 
-    // Determine target
-    let target = if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
+    // Determine target. The same listen_port is mixed-aware: if the peer speaks
+    // SOCKS5, the target comes from CONNECT and we must not call SO_ORIGINAL_DST.
+    // Otherwise keep the existing transparent/explicit-target behaviour.
+    let target = if let Some(socks_target) = try_accept_socks5_inbound(&mut client).await? {
+        state.conns.set_mode(cid, "socks_inbound");
+        socks_target
+    } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
         stats::Target::HostPort(h, p)
     } else {
         let dst = transparent::get_original_dst(&client)
@@ -479,15 +512,74 @@ async fn proxy_tcp(
     }
 
     
+    let priority_zero_mode = state.args.priority_zero_mode();
+
     // Enforce: when there is at least one GREEN backend, do NOT allow direct connections.
     // Only bypass the proxy when no GREEN backends are available.
-    if socks_available {
+    // Priority mode can explicitly put `0` at the beginning of --socks-port to make
+    // direct access the first priority before SOCKS backends.
+    if socks_available && priority_zero_mode != PriorityZeroMode::DirectFirst {
         use_direct = false;
     }
-
-let mut chosen_mode = "socks";
+    let mut chosen_mode = "socks";
     let mut chosen_backend: Option<SocketAddr> = None;
-    let upstream = if use_direct || !socks_available {
+    let upstream = if priority_zero_mode == PriorityZeroMode::DirectOnly {
+        chosen_mode = "direct";
+        if !ensure_direct_path_ready(&state, Duration::from_millis(1200)).await {
+            return Err(anyhow::anyhow!("direct-only priority mode has no confirmed direct Internet route"));
+        }
+        match connect_direct(&target, state.args.connect_timeout).await {
+            Ok(s) => s,
+            Err(e) => {
+                state.runtime.note_direct_failure(20);
+                return Err(e);
+            }
+        }
+    } else if priority_zero_mode == PriorityZeroMode::DirectFirst {
+        if ensure_direct_path_ready(&state, Duration::from_millis(1200)).await
+            && ensure_direct_target_ready(&state, &target, sniff_host.as_deref()).await
+        {
+            match connect_direct(&target, state.args.connect_timeout).await {
+                Ok(s) => {
+                    chosen_mode = "direct";
+                    s
+                }
+                Err(direct_err) => {
+                    state.runtime.note_direct_failure(20);
+                    tracing::debug!("[cid={}] direct priority failed, trying SOCKS priority: {:#}", cid, direct_err);
+
+                    if state.backends.lock().any_green()
+                        || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+                    {
+                        let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+                        chosen_backend = Some(be);
+                        s
+                    } else {
+                        return Err(direct_err);
+                    }
+                }
+            }
+        } else if state.backends.lock().any_green()
+            || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+        {
+            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+            chosen_backend = Some(be);
+            s
+        } else {
+            return Err(anyhow::anyhow!("direct priority has no confirmed direct Internet route and no GREEN SOCKS5 backends are available"));
+        }
+    } else if priority_zero_mode == PriorityZeroMode::BlockDirectFallback {
+        if state.backends.lock().any_green()
+            || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+        {
+            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+            chosen_backend = Some(be);
+            s
+        } else {
+            state.stats.inc_policy_drop();
+            return Err(anyhow::anyhow!("priority mode blocks direct fallback and no GREEN SOCKS5 backends are available"));
+        }
+    } else if use_direct || !socks_available {
         let refreshed = stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await;
         if refreshed {
             let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
@@ -578,12 +670,12 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c1.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = cr.read(&mut buf) => res?,
+                    res = cr.read(&mut buf) => res.context("proxy client read failed")?,
                 }
             } else {
                 tokio::select! {
                     _ = c1.cancelled() => break,
-                    res = cr.read(&mut buf) => res?,
+                    res = cr.read(&mut buf) => res.context("proxy client read failed")?,
                 }
             };
             if n == 0 { break; }
@@ -593,13 +685,13 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c1.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = uw.write_all(&buf[..n]) => res?,
+                    res = uw.write_all(&buf[..n]) => res.context("proxy upstream write failed")?,
                 }
                 sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
             } else {
                 tokio::select! {
                     _ = c1.cancelled() => break,
-                    res = uw.write_all(&buf[..n]) => res?,
+                    res = uw.write_all(&buf[..n]) => res.context("proxy upstream write failed")?,
                 }
             }
 
@@ -649,12 +741,12 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c2.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = ur.read(&mut buf) => res?,
+                    res = ur.read(&mut buf) => res.context("proxy upstream read failed")?,
                 }
             } else {
                 tokio::select! {
                     _ = c2.cancelled() => break,
-                    res = ur.read(&mut buf) => res?,
+                    res = ur.read(&mut buf) => res.context("proxy upstream read failed")?,
                 }
             };
             if n == 0 { break; }
@@ -687,13 +779,13 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c2.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = cw.write_all(&buf[..n]) => res?,
+                    res = cw.write_all(&buf[..n]) => res.context("proxy client write failed")?,
                 }
                 sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
             } else {
                 tokio::select! {
                     _ = c2.cancelled() => break,
-                    res = cw.write_all(&buf[..n]) => res?,
+                    res = cw.write_all(&buf[..n]) => res.context("proxy client write failed")?,
                 }
             }
             st2.stats.add_down(n as u64);
@@ -723,9 +815,137 @@ let mut chosen_mode = "socks";
         anyhow::Ok(())
     });
 
-    let _ = tokio::try_join!(t1, t2)?;
+    let (upload_res, download_res) = tokio::try_join!(t1, t2)?;
+    let mut first_error: Option<anyhow::Error> = None;
+    let mut suspect_reason: Option<String> = None;
+
+    for res in [upload_res, download_res] {
+        if let Err(e) = res {
+            let err_text = format!("{:#}", e);
+            if suspect_reason.is_none() && is_proxy_backend_suspect_error(&err_text) {
+                suspect_reason = Some(err_text.clone());
+            }
+            if first_error.is_none() {
+                first_error = Some(e);
+            }
+        }
+    }
+
+    if suspect_reason.is_none() && chosen_mode == "socks" && chosen_backend.is_some() {
+        if let Some(info) = state.conns.get(cid) {
+            if is_proxy_zero_down_suspect(&info) {
+                suspect_reason = Some(format!(
+                    "proxy completed with zero downstream: cid={}, up={}, down={}, age={}s",
+                    cid,
+                    info.bytes_up,
+                    info.bytes_down,
+                    stats::now_ts().saturating_sub(info.started_ts)
+                ));
+            }
+        }
+    }
+
+    if let (Some(backend), Some(reason)) = (chosen_backend, suspect_reason) {
+        if chosen_mode == "socks" {
+            stats::spawn_suspect_backend_recheck(state.clone(), backend, reason);
+        }
+    }
+
+    if let Some(e) = first_error {
+        return Err(e);
+    }
 
     Ok(())
+}
+
+async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result<Option<stats::Target>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut peek = [0u8; 2];
+    let Ok(Ok(n)) = tokio::time::timeout(Duration::from_millis(35), client.peek(&mut peek)).await else {
+        return Ok(None);
+    };
+    if n < 2 || peek[0] != 0x05 {
+        return Ok(None);
+    }
+
+    let nmethods = peek[1] as usize;
+    if nmethods == 0 || nmethods > 16 {
+        return Ok(None);
+    }
+
+    let mut greeting = vec![0u8; 2 + nmethods];
+    client.read_exact(&mut greeting).await.context("read SOCKS5 inbound greeting")?;
+    if greeting[0] != 0x05 {
+        return Ok(None);
+    }
+    if !greeting[2..].contains(&0x00) {
+        let _ = client.write_all(&[0x05, 0xFF]).await;
+        return Err(anyhow!("SOCKS5 inbound: no-auth method is required"));
+    }
+    client.write_all(&[0x05, 0x00]).await.context("write SOCKS5 inbound greeting reply")?;
+
+    let mut hdr = [0u8; 4];
+    client.read_exact(&mut hdr).await.context("read SOCKS5 inbound request header")?;
+    if hdr[0] != 0x05 {
+        return Err(anyhow!("SOCKS5 inbound: invalid request version {}", hdr[0]));
+    }
+    if hdr[1] != 0x01 {
+        let _ = write_socks5_inbound_reply(client, 0x07).await;
+        return Err(anyhow!("SOCKS5 inbound: only CONNECT is supported"));
+    }
+    if hdr[2] != 0x00 {
+        let _ = write_socks5_inbound_reply(client, 0x01).await;
+        return Err(anyhow!("SOCKS5 inbound: invalid reserved byte"));
+    }
+
+    let target = match hdr[3] {
+        0x01 => {
+            let mut buf = [0u8; 6];
+            client.read_exact(&mut buf).await.context("read SOCKS5 inbound IPv4 target")?;
+            let ip = IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]));
+            let port = u16::from_be_bytes([buf[4], buf[5]]);
+            stats::Target::SockAddr(SocketAddr::new(ip, port))
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            client.read_exact(&mut len).await.context("read SOCKS5 inbound domain length")?;
+            let l = len[0] as usize;
+            if l == 0 {
+                let _ = write_socks5_inbound_reply(client, 0x08).await;
+                return Err(anyhow!("SOCKS5 inbound: empty domain"));
+            }
+            let mut host = vec![0u8; l];
+            client.read_exact(&mut host).await.context("read SOCKS5 inbound domain")?;
+            let mut port_b = [0u8; 2];
+            client.read_exact(&mut port_b).await.context("read SOCKS5 inbound domain port")?;
+            let host = String::from_utf8(host).context("SOCKS5 inbound domain is not UTF-8")?;
+            let port = u16::from_be_bytes(port_b);
+            stats::Target::HostPort(host, port)
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            client.read_exact(&mut buf).await.context("read SOCKS5 inbound IPv6 target")?;
+            let ip = IpAddr::V6(std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&buf[..16]).unwrap()));
+            let port = u16::from_be_bytes([buf[16], buf[17]]);
+            stats::Target::SockAddr(SocketAddr::new(ip, port))
+        }
+        atyp => {
+            let _ = write_socks5_inbound_reply(client, 0x08).await;
+            return Err(anyhow!("SOCKS5 inbound: unsupported ATYP {}", atyp));
+        }
+    };
+
+    write_socks5_inbound_reply(client, 0x00).await?;
+    Ok(Some(target))
+}
+
+async fn write_socks5_inbound_reply(client: &mut tokio::net::TcpStream, rep: u8) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    // VER, REP, RSV, ATYP=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0
+    client.write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await
+        .context("write SOCKS5 inbound reply")
 }
 
 async fn connect_direct(target: &stats::Target, timeout_s: u32) -> Result<tokio::net::TcpStream> {
@@ -736,6 +956,52 @@ async fn connect_direct(target: &stats::Target, timeout_s: u32) -> Result<tokio:
         .context("direct connect timeout")?
         .context("direct connect failed")?;
     Ok(s)
+}
+
+async fn ensure_direct_path_ready(state: &AppState, wait: Duration) -> bool {
+    if !state.runtime.direct_allowed() {
+        return false;
+    }
+    if state.runtime.direct_internet_fresh_healthy(5) {
+        return true;
+    }
+
+    let timeout = stats::health_timeout(state);
+    let _ = stats::refresh_direct_internet_once(state.clone(), timeout).await;
+    if state.runtime.direct_path_available() {
+        return true;
+    }
+
+    if wait.is_zero() {
+        return false;
+    }
+    let deadline = tokio::time::Instant::now() + wait;
+    while tokio::time::Instant::now() < deadline {
+        let now = tokio::time::Instant::now();
+        let sleep_for = (deadline - now).min(Duration::from_millis(300));
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_for) => {},
+            _ = state.runtime.backend_wakeup.notified() => {},
+        }
+        if state.runtime.direct_path_available() {
+            return true;
+        }
+    }
+    false
+}
+
+async fn ensure_direct_target_ready(
+    state: &AppState,
+    target: &stats::Target,
+    domain_hint: Option<&str>,
+) -> bool {
+    let (_, port) = target.to_host_port_string();
+    if !matches!(port, 443 | 8443) {
+        return true;
+    }
+
+    let timeout = stats::health_timeout(state);
+    stats::check_direct_target_data_plane(target, domain_hint, timeout).await
 }
 
 fn looks_like_ip(host: &str) -> bool {
@@ -788,6 +1054,34 @@ fn is_soft_backend_failure(err: &str) -> bool {
         || e.contains("connect queue saturated")
         || e.contains("too many in-flight")
         || e.contains("timed out")
+}
+
+fn is_backend_runtime_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    // Only failures that prove the SOCKS/backend itself is unusable may change
+    // backend health.  Destination-level failures (SOCKS CONNECT REP, connect
+    // reply timeouts/resets caused by blockers, DNS/target refusal, etc.) must
+    // only fail the current client connection; health probes remain the source of
+    // truth for Internet availability.
+    e.contains("socks tcp connect timeout")
+        || e.contains("socks tcp connect failed")
+        || e.contains("socks handshake timeout: greeting")
+        || e.contains("socks handshake failed: greeting")
+        || e.contains("socks handshake timeout: userpass auth")
+        || e.contains("socks handshake failed: userpass auth")
+        || e.contains("invalid socks version")
+        || e.contains("no acceptable auth methods")
+        || e.contains("server requires auth")
+        || e.contains("unsupported auth method")
+}
+
+fn is_proxy_backend_suspect_error(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    // Established SOCKS data-plane errors are only a signal to force a full
+    // backend recheck. They do not directly change backend state; the full
+    // probe remains the source of truth for Green/Yellow/Red.
+    e.contains("proxy upstream read failed")
+        || e.contains("proxy upstream write failed")
 }
 
 async fn connect_socks(
@@ -845,7 +1139,13 @@ async fn connect_socks(
         state.conns.set_mode(cid, "socks_connecting");
         state.conns.set_backend(cid, Some(backend));
 
-        let attempt = socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await;
+        let wrapper = state.args.wrapped_socks_addr()?;
+        let wrapper_auth = state.args.wrapped_socks_auth();
+        let attempt = if let Some(wrapper) = wrapper {
+            socks5::connect_via_socks5_wrapped(wrapper, backend, taddr.clone(), wrapper_auth, auth, timeout).await
+        } else {
+            socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await
+        };
         {
             let mut b = state.backends.lock();
             b.release_connect_slot(backend_idx);
@@ -860,32 +1160,45 @@ async fn connect_socks(
             Err(e) => {
                 state.stats.inc_socks_fail();
                 let err_text = format!("{:#}", e);
-                let mut b = state.backends.lock();
-                let before_state = b.raw_state_for_addr(backend);
-                let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
-                    let prefix = if is_soft_backend_failure(&err_text) { "soft runtime failure" } else { "runtime failure" };
-                    b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
-                } else {
-                    b.mark_backend_failed(backend, err_text)
-                };
-                let after_state = b.raw_state_for_addr(backend);
-                let kill_unhealthy_backend = before_state == Some(stats::BackendState::Green)
-                    && after_state != Some(stats::BackendState::Green);
-                drop(b);
-                if kill_unhealthy_backend {
-                    let killed = state.conns.kill_backend(backend);
-                    if killed > 0 {
-                        tracing::info!(
-                            "backend {} failed at runtime ({:?} -> {:?}); cancelled {} pinned SOCKS connections",
-                            backend,
-                            before_state,
-                            after_state,
-                            killed
-                        );
+                if is_backend_runtime_failure(&err_text) {
+                    let mut b = state.backends.lock();
+                    let before_state = b.raw_state_for_addr(backend);
+                    if before_state == Some(stats::BackendState::Green) {
+                        stats::spawn_suspect_backend_recheck(state.clone(), backend, err_text.clone());
                     }
-                }
-                if wake_backend {
-                    state.runtime.backend_wake_throttled(2500);
+                    let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
+                        let prefix = if is_soft_backend_failure(&err_text) { "soft backend runtime failure" } else { "backend runtime failure" };
+                        b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
+                    } else {
+                        b.mark_backend_failed(backend, format!("backend runtime failure: {}", err_text))
+                    };
+                    let after_state = b.raw_state_for_addr(backend);
+                    let kill_unhealthy_backend = before_state == Some(stats::BackendState::Green)
+                        && after_state != Some(stats::BackendState::Green);
+                    drop(b);
+                    if kill_unhealthy_backend {
+                        let killed = state.conns.kill_backend(backend);
+                        if killed > 0 {
+                            tracing::info!(
+                                "backend {} failed at runtime ({:?} -> {:?}); cancelled {} pinned SOCKS connections: {}",
+                                backend,
+                                before_state,
+                                after_state,
+                                killed,
+                                err_text
+                            );
+                        }
+                    }
+                    if wake_backend {
+                        state.runtime.backend_wake_throttled(2500);
+                    }
+                } else {
+                    tracing::debug!(
+                        "backend {} target-level SOCKS failure for cid {} ignored for health: {}",
+                        backend,
+                        cid,
+                        err_text
+                    );
                 }
                 state.conns.set_mode(cid, "pending");
                 // try next backend
@@ -893,7 +1206,22 @@ async fn connect_socks(
         }
     }
 
+    // If every currently GREEN backend failed before an established proxy loop,
+    // the data-plane stall detectors cannot see it. Treat repeated aggregate
+    // failures as a signal to force full probes of the GREEN set, but never mutate
+    // status directly here: the full backend probe remains the source of truth.
+    if state.backends.lock().any_green()
+        && state.runtime.note_all_green_connect_failure(3, Duration::from_secs(8))
+    {
+        stats::spawn_all_green_failure_recheck(
+            state.clone(),
+            format!(
+                "all GREEN backends failed before proxy loop: cid={}, tried={} backend(s)",
+                cid,
+                tried.len()
+            ),
+        );
+    }
+
     Err(anyhow::anyhow!("all GREEN backends failed"))
 }
-
-

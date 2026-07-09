@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -60,8 +61,8 @@ import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
 
 private fun isArm64OnlySupported(): Boolean {
-  // Module binaries are built for arm64-v8a only.
-  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+  // Module binaries are built for arm64-v8a and armeabi-v7a.
+  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" || it == "armeabi-v7a" }
 }
 
 private fun isModuleInstallOsSupported(): Boolean {
@@ -72,12 +73,43 @@ private fun needsUnofficialAndroidInstallWarning(): Boolean {
   return Build.VERSION.SDK_INT in Build.VERSION_CODES.P until Build.VERSION_CODES.R
 }
 
+@Composable
+private fun setupIsLightTheme(): Boolean = MaterialTheme.colorScheme.background.luminance() > 0.5f
+
+@Composable
+private fun setupTopBarColor() = if (setupIsLightTheme()) {
+  MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f)
+} else {
+  MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+}
+
+@Composable
+private fun setupPanelColor(alpha: Float = 0.86f) = if (setupIsLightTheme()) {
+  MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha)
+} else {
+  MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)
+}
+
+@Composable
+private fun setupPanelAccentWash(accent: androidx.compose.ui.graphics.Color, alpha: Float) = if (setupIsLightTheme()) {
+  accent.copy(alpha = alpha.coerceAtMost(0.08f))
+} else {
+  accent.copy(alpha = alpha)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
+  val scheme = MaterialTheme.colorScheme
   Scaffold(
+    containerColor = scheme.background,
     topBar = {
       CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+          containerColor = setupTopBarColor(),
+          scrolledContainerColor = setupTopBarColor(),
+          titleContentColor = scheme.onSurface,
+        ),
         title = {
           Text(
             stringResource(R.string.app_name),
@@ -91,6 +123,31 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
       )
     },
     content = content,
+  )
+}
+
+@Composable
+private fun SetupAlertDialog(
+  onDismissRequest: () -> Unit,
+  titleText: String,
+  bodyText: String,
+  confirmButtonText: String,
+  onConfirm: () -> Unit,
+  dismissButtonText: String? = null,
+  onDismiss: (() -> Unit)? = null,
+) {
+  AlertDialog(
+    onDismissRequest = onDismissRequest,
+    title = { Text(titleText) },
+    text = { Text(bodyText) },
+    confirmButton = {
+      TextButton(onClick = onConfirm) { Text(confirmButtonText) }
+    },
+    dismissButton = {
+      if (dismissButtonText != null && onDismiss != null) {
+        TextButton(onClick = onDismiss) { Text(dismissButtonText) }
+      }
+    },
   )
 }
 
@@ -285,6 +342,7 @@ fun InstallModuleScreen(
   onConfirmZygiskInstall: () -> Unit,
   onDismissZygiskInstallConfirm: () -> Unit,
   onDismissZygiskInstallRecovery: () -> Unit,
+  onDismissMetamoduleInstallBlocked: () -> Unit,
   onRetryInstallWithoutZygisk: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
@@ -315,74 +373,64 @@ fun InstallModuleScreen(
     } else {
       ""
     }
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onManualDismiss,
-      title = { Text(stringResource(R.string.common_attention)) },
-      text = { Text(setup.manualDialogText + extra) },
-      confirmButton = {
-        TextButton(onClick = onManualConfirm) { Text(stringResource(R.string.setup_save_zip)) }
-      },
-      dismissButton = {
-        TextButton(onClick = onManualDismiss) { Text(stringResource(R.string.common_cancel)) }
-      },
+      titleText = stringResource(R.string.common_attention),
+      bodyText = setup.manualDialogText + extra,
+      confirmButtonText = stringResource(R.string.setup_save_zip),
+      onConfirm = onManualConfirm,
+      dismissButtonText = stringResource(R.string.common_cancel),
+      onDismiss = onManualDismiss,
     )
   }
 
   if (showUnofficialAndroidWarning) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = { showUnofficialAndroidWarning = false },
-      title = { Text(stringResource(R.string.setup_android_unofficial_title)) },
-      text = { Text(stringResource(R.string.setup_android_unofficial_body)) },
-      confirmButton = {
-        TextButton(
-          onClick = {
-            showUnofficialAndroidWarning = false
-            onInstall()
-          },
-        ) { Text(stringResource(R.string.setup_android_unofficial_accept)) }
+      titleText = stringResource(R.string.setup_android_unofficial_title),
+      bodyText = stringResource(R.string.setup_android_unofficial_body),
+      confirmButtonText = stringResource(R.string.setup_android_unofficial_accept),
+      onConfirm = {
+        showUnofficialAndroidWarning = false
+        onInstall()
       },
-      dismissButton = {
-        TextButton(onClick = { showUnofficialAndroidWarning = false }) {
-          Text(stringResource(R.string.setup_android_unofficial_decline))
-        }
-      },
+      dismissButtonText = stringResource(R.string.setup_android_unofficial_decline),
+      onDismiss = { showUnofficialAndroidWarning = false },
     )
   }
 
   if (setup.showZygiskInstallConfirm) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallConfirm,
-      title = { Text(stringResource(R.string.setup_zygisk_confirm_title)) },
-      text = { Text(stringResource(R.string.setup_zygisk_confirm_body)) },
-      confirmButton = {
-        TextButton(onClick = onConfirmZygiskInstall) {
-          Text(stringResource(R.string.setup_zygisk_confirm_yes))
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = onDismissZygiskInstallConfirm) {
-          Text(stringResource(R.string.setup_zygisk_confirm_no))
-        }
-      },
+      titleText = stringResource(R.string.setup_zygisk_confirm_title),
+      bodyText = stringResource(R.string.setup_zygisk_confirm_body),
+      confirmButtonText = stringResource(R.string.setup_zygisk_confirm_yes),
+      onConfirm = onConfirmZygiskInstall,
+      dismissButtonText = stringResource(R.string.setup_zygisk_confirm_no),
+      onDismiss = onDismissZygiskInstallConfirm,
     )
   }
 
 
   if (setup.showZygiskInstallRecoveryDialog) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallRecovery,
-      title = { Text(stringResource(R.string.setup_zygisk_recovery_title)) },
-      text = { Text(stringResource(R.string.setup_zygisk_recovery_body)) },
-      confirmButton = {
-        TextButton(onClick = onRetryInstallWithoutZygisk) {
-          Text(stringResource(R.string.setup_zygisk_recovery_retry_without))
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = onDismissZygiskInstallRecovery) {
-          Text(stringResource(R.string.setup_zygisk_recovery_no))
-        }
-      },
+      titleText = stringResource(R.string.setup_zygisk_recovery_title),
+      bodyText = stringResource(R.string.setup_zygisk_recovery_body),
+      confirmButtonText = stringResource(R.string.setup_zygisk_recovery_retry_without),
+      onConfirm = onRetryInstallWithoutZygisk,
+      dismissButtonText = stringResource(R.string.setup_zygisk_recovery_no),
+      onDismiss = onDismissZygiskInstallRecovery,
+    )
+  }
+
+  if (setup.showMetamoduleInstallBlockedDialog) {
+    SetupAlertDialog(
+      onDismissRequest = onDismissMetamoduleInstallBlocked,
+      titleText = stringResource(R.string.setup_metamodule_blocked_title),
+      bodyText = stringResource(R.string.setup_metamodule_blocked_body),
+      confirmButtonText = stringResource(R.string.common_ok),
+      onConfirm = onDismissMetamoduleInstallBlocked,
     )
   }
 
@@ -410,7 +458,7 @@ fun InstallModuleScreen(
           Spacer(Modifier.height(12.dp))
           Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
           ) {
             if (compact) {
               Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -581,7 +629,7 @@ fun InstallModuleScreen(
             Spacer(Modifier.height(14.dp))
             Card(
               modifier = Modifier.fillMaxWidth(),
-              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+              colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
             ) {
               Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -651,7 +699,7 @@ fun InstallModuleScreen(
           Spacer(Modifier.height(18.dp))
           Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
           ) {
             Column(Modifier.padding(14.dp)) {
               Text(stringResource(R.string.setup_zip_saved_title), fontWeight = FontWeight.SemiBold)
@@ -741,19 +789,25 @@ private fun SetupScreenBackground(
   padding: PaddingValues,
   content: @Composable BoxScope.() -> Unit,
 ) {
+  val scheme = MaterialTheme.colorScheme
+  val gradientStops = if (setupIsLightTheme()) {
+    listOf(
+      scheme.primaryContainer.copy(alpha = 0.34f),
+      scheme.surfaceContainerLow.copy(alpha = 0.98f),
+      scheme.secondaryContainer.copy(alpha = 0.30f),
+    )
+  } else {
+    listOf(
+      scheme.primary.copy(alpha = 0.10f),
+      scheme.surface.copy(alpha = 0.98f),
+      scheme.secondary.copy(alpha = 0.08f),
+    )
+  }
   Box(
     modifier = Modifier
       .fillMaxSize()
       .padding(padding)
-      .background(
-        Brush.linearGradient(
-          listOf(
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-            MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
-          ),
-        ),
-      ),
+      .background(Brush.linearGradient(gradientStops)),
     contentAlignment = Alignment.Center,
     content = content,
   )
@@ -763,7 +817,7 @@ private fun SetupScreenBackground(
 private fun SetupStepHeader(currentStep: Int) {
   Surface(
     shape = RoundedCornerShape(999.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
+    color = setupPanelColor(0.64f),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
   ) {
     Row(
@@ -821,18 +875,18 @@ private fun SetupHeroCard(
   Surface(
     modifier = modifier.fillMaxWidth(),
     shape = RoundedCornerShape(30.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    color = setupPanelColor(0.82f),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
-    shadowElevation = 2.dp,
+    shadowElevation = if (setupIsLightTheme()) 0.dp else 2.dp,
   ) {
     Box(
       modifier = Modifier
         .background(
           Brush.linearGradient(
             listOf(
-              accent.copy(alpha = 0.18f),
-              MaterialTheme.colorScheme.surface.copy(alpha = 0.10f),
-              MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+              setupPanelAccentWash(accent, 0.18f),
+              MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (setupIsLightTheme()) 0.34f else 0.10f),
+              setupPanelAccentWash(MaterialTheme.colorScheme.secondary, 0.08f),
             ),
           ),
         )
@@ -907,7 +961,7 @@ private fun SetupInfoCard(
   Surface(
     modifier = modifier.fillMaxWidth(),
     shape = RoundedCornerShape(24.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+    color = setupPanelColor(0.78f),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
   ) {
     Row(
@@ -915,8 +969,8 @@ private fun SetupInfoCard(
         .background(
           Brush.linearGradient(
             listOf(
-              accent.copy(alpha = 0.10f),
-              MaterialTheme.colorScheme.surface.copy(alpha = 0.04f),
+              setupPanelAccentWash(accent, 0.10f),
+              MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (setupIsLightTheme()) 0.22f else 0.04f),
             ),
           ),
         )
@@ -963,7 +1017,7 @@ private fun SetupProgressCard(text: String) {
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(24.dp),
-    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+    color = setupPanelColor(0.80f),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
   ) {
     Row(
@@ -1112,7 +1166,7 @@ private fun OptionalZygiskInstallCard(
   val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
   Card(
     modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
   ) {
     Column(
       modifier = Modifier
@@ -1187,7 +1241,7 @@ private fun InstallConflictCard(
   val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
   Card(
     modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
   ) {
     Column(
       modifier = Modifier

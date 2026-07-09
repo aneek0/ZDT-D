@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.diagnostics.blockcheck.BlockcheckScreen
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -37,8 +38,10 @@ fun AppsHost(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -57,8 +60,10 @@ fun AppsHost(
   fun AppsRoute.depth(): Int = when (this) {
     AppsRoute.List -> 0
     AppsRoute.AnalysisTools -> 1
+    AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
+    AppsRoute.Blockcheck -> 2
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -90,8 +95,18 @@ fun AppsHost(
         bottomContentPadding = bottomContentPadding,
       )
       AppsRoute.AnalysisTools -> AnalysisToolsScreen(
+        onOpenConstructionStudio = onOpenConstructionStudio,
         onOpenDpiDetector = onOpenDpiDetector,
         onOpenNfqwsTester = onOpenNfqwsTester,
+        onOpenBlockcheck = onOpenBlockcheck,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.ConstructionStudio -> ConstructionStudioScreen(
+        programs = programs,
+        actions = actions,
+        onOpenProgram = onOpenProgram,
+        onOpenProfile = onOpenProfile,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
@@ -104,6 +119,11 @@ fun AppsHost(
         actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.Blockcheck -> BlockcheckScreen(
+        program = "nfqws",
+        hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
+        onClose = { appsRoute = AppsRoute.AnalysisTools },
       )
       is AppsRoute.Program -> when (r.programId) {
         "openvpn" -> OpenVpnProgramScreen(

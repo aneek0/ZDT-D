@@ -64,11 +64,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
+import com.android.zdtd.service.T2sPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 
 private data class TorProgramStateUi(
   val enabled: Boolean = false,
@@ -101,6 +106,10 @@ private fun parseTorProgramStateUi(obj: JSONObject?): TorProgramStateUi {
 
 private data class TorSocksPort(val host: String, val port: Int)
 
+// Extract config value that may be delimited by space or equals sign.
+private fun extractConfigValue(line: String): String =
+  line.substringAfter(' ', "").trim().ifEmpty { line.substringAfter('=', "").trim() }
+
 private val TOR_BRIDGE_PROTOCOLS = setOf("obfs4", "webtunnel", "snowflake", "meek_lite")
 private const val TOR_BRIDGE_PLUGIN_LINE =
   "ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird"
@@ -115,7 +124,7 @@ private fun parseTorSocksPort(torrc: String): TorSocksPort? {
   for (raw in torrc.lines()) {
     val line = raw.trim()
     if (!line.startsWith("SocksPort", ignoreCase = true)) continue
-    val value = line.substringAfter(' ', "").trim().ifEmpty { line.substringAfter('=', "").trim() }
+    val value = extractConfigValue(line)
     val colon = value.lastIndexOf(':')
     if (colon <= 0 || colon >= value.lastIndex) continue
     val host = value.substring(0, colon).trim()
@@ -177,7 +186,7 @@ private fun extractTorBridgeLines(torrc: String): List<String> =
 
 private fun hasUseBridgesEnabled(torrc: String): Boolean = torrc.lines().any {
   val trimmed = it.trim()
-  trimmed.startsWith("UseBridges", ignoreCase = true) && trimmed.substringAfter(' ', "").trim().ifEmpty { trimmed.substringAfter('=', "").trim() } == "1"
+  trimmed.startsWith("UseBridges", ignoreCase = true) && extractConfigValue(trimmed) == "1"
 }
 
 private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {
@@ -245,6 +254,17 @@ private fun chooseTorGeneratedPorts(existingSocksPort: Int?): Pair<Int, Int> {
   var web = 8002
   while (web in reserved) web += 1
   return t2s to web
+}
+
+private fun torT2sPanelScope(): String = "program/tor"
+
+private suspend fun isTorT2sPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
 }
 
 private val TorAccent = Color(0xFFA855F7)
@@ -353,6 +373,7 @@ fun TorSection(
   var enabled by remember(program.enabled) { mutableStateOf(program.enabled) }
   var active by remember { mutableStateOf(false) }
   var toggleSaving by remember { mutableStateOf(false) }
+  var t2sPanelChecking by remember { mutableStateOf(false) }
 
   var t2sPortText by remember { mutableStateOf("") }
   var t2sWebPortText by remember { mutableStateOf("") }
@@ -593,6 +614,57 @@ fun TorSection(
                 color = MaterialTheme.colorScheme.error,
               )
             }
+          }
+        }
+      }
+    }
+
+    val torT2sWebPanelPort = parsedT2sWebPort?.takeIf { it in 1..65535 }
+    val torT2sPanelVisible = enabled && torT2sWebPanelPort != null
+    if (torT2sPanelVisible) {
+      TorSectionCard(
+        title = "t2s",
+        desc = "Нативная панель состояния Tor t2s",
+        accent = TorBlue,
+        icon = {
+          if (t2sPanelChecking) {
+            androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+          } else {
+            Icon(Icons.Filled.OpenInNew, contentDescription = null, tint = TorBlue, modifier = Modifier.size(20.dp))
+          }
+        },
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !t2sPanelChecking) {
+              val panelPort = torT2sWebPanelPort ?: return@clickable
+              scope.launch {
+                t2sPanelChecking = true
+                val available = isTorT2sPanelPortOpen(panelPort)
+                t2sPanelChecking = false
+                if (available) {
+                  context.startActivity(
+                    Intent(context, T2sPanelActivity::class.java)
+                      .putExtra(T2sPanelActivity.EXTRA_SCOPE, torT2sPanelScope())
+                      .putExtra(T2sPanelActivity.EXTRA_PORT, panelPort)
+                      .putExtra(T2sPanelActivity.EXTRA_TITLE, "tor")
+                  )
+                } else {
+                  showSnack(context.getString(R.string.web_panel_unavailable))
+                }
+              }
+            }
+            .padding(vertical = 2.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("127.0.0.1:$torT2sWebPanelPort", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("Данные обновляются автоматически в реальном времени", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
+          }
+          Surface(shape = CircleShape, color = TorBlue.copy(alpha = 0.13f), border = BorderStroke(1.dp, TorBlue.copy(alpha = 0.26f))) {
+            Icon(Icons.Filled.OpenInNew, contentDescription = null, tint = TorBlue, modifier = Modifier.padding(10.dp).size(20.dp))
           }
         }
       }

@@ -14,7 +14,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, protector, settings, stats};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats, traffic_total};
+use crate::runtime::simple_enabled_json;
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -293,6 +294,47 @@ struct EnabledReq {
 #[derive(Debug, Deserialize)]
 struct ContentReq {
     content: String,
+}
+
+
+const CONSTRUCTOR_TRIGGER_PACKAGE: &str = "com.android.zdtd.service";
+
+#[derive(Debug, Clone, Serialize)]
+struct ConstructionProxyEndpointCandidate {
+    key: String,
+    program_id: String,
+    profile: Option<String>,
+    server: Option<String>,
+    slot: String,
+    host: String,
+    port: u16,
+    label: String,
+    kind: String,
+    enabled: bool,
+    running: bool,
+    app_list_path: Option<String>,
+}
+
+
+#[derive(Debug, Deserialize)]
+struct ConstructionReleaseEndpointReq {
+    program_id: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    server: Option<String>,
+    #[serde(default)]
+    slot: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
+}
+
+fn refresh_apps_after_save_if_running(services_running: bool, program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
+    if !services_running {
+        return Ok(());
+    }
+    crate::runtime_refresh::refresh_apps(program, profile, slot)
+        .map_err(|e| anyhow::anyhow!("hot-refresh app UID routing for {}/{} failed: {e:#}", program, profile.unwrap_or("common")))
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -1465,7 +1507,8 @@ fn default_myproxy_proxy_value() -> serde_json::Value {
         "backend_priority": "",
         "priority_speed_aware": false,
         "user": "",
-        "pass": ""
+        "pass": "",
+        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" }
     })
 }
 
@@ -2347,28 +2390,36 @@ fn flatten_conflicts(map: &BTreeMap<String, Vec<AppConflictView>>) -> Vec<AppCon
 }
 
 fn find_program_conflicts(
-    _candidate: &BTreeSet<String>,
-    _current_api_path: &str,
-    _program_id: &str,
-    _slot: &str,
+    candidate: &BTreeSet<String>,
+    current_api_path: &str,
+    program_id: &str,
+    slot: &str,
 ) -> BTreeMap<String, Vec<AppConflictView>> {
-    // All programs and profiles are fully isolated — no cross-profile/cross-program conflicts.
-    // Users may freely assign the same app to multiple profiles and programs.
-    BTreeMap::new()
-}
-
-/// Returns true when two program ids are allowed to share applications
-/// without triggering a conflict. This covers:
-/// - the same program (different profiles of mihomo, nfqws, etc.)
-/// - mihomo ↔ zapret cross-domain overlap
-fn same_program_or_compatible(a: &str, b: &str) -> bool {
-    if a == b { return true; }
-    let compatible_pairs = [
-        ("mihomo", "nfqws"),
-        ("mihomo", "nfqws2"),
-        ("nfqws", "nfqws2"),
-    ];
-    compatible_pairs.iter().any(|(x, y)| (a == *x && b == *y) || (a == *y && b == *x))
+    let mut out: BTreeMap<String, Vec<AppConflictView>> = BTreeMap::new();
+    let Some(domain) = app_domain(program_id) else { return out; };
+    let lists = collect_assignment_files();
+    let current_existing = lists
+        .iter()
+        .find(|v| v.path == current_api_path)
+        .map(|v| v.packages.clone())
+        .unwrap_or_default();
+    for item in lists {
+        if item.path == current_api_path { continue; }
+        if item.slot != slot { continue; }
+        let Some(item_domain) = app_domain(&item.program_id) else { continue; };
+        if !app_domains_conflict(domain, item_domain) { continue; }
+        for pkg in candidate.intersection(&item.packages) {
+            if current_existing.contains(pkg) { continue; }
+            out.entry(pkg.clone()).or_default().push(AppConflictView {
+                package: pkg.clone(),
+                program_id: item.program_id.clone(),
+                profile: item.profile.clone(),
+                slot: item.slot.clone(),
+                path: item.path.clone(),
+            });
+        }
+    }
+    out
 }
 
 fn find_proxyinfo_conflicts(candidate: &BTreeSet<String>) -> BTreeMap<String, Vec<AppConflictView>> {
@@ -2413,16 +2464,143 @@ fn validate_program_apps_content(content: &str, current_api_path: &str, program_
         anyhow::bail!("apps are blocked by proxyInfo: {}", overlap.join(", "));
     }
 
-    let conflicts = find_program_conflicts(&candidate, current_api_path, program_id, slot);
-    if !conflicts.is_empty() {
-        let mut parts = Vec::new();
-        for (pkg, uses) in &conflicts {
-            let labels = uses.iter().map(conflict_label).collect::<Vec<_>>().join(", ");
-            parts.push(format!("{pkg} ({labels})"));
+    Ok(())
+}
+
+/// Collect all packages assigned to a profile across all slots (user, mobile, wifi).
+fn gather_profile_packages(program_id: &str, profile: &str) -> BTreeSet<String> {
+    let mut pkgs = BTreeSet::new();
+    for slot_name in &["user", "mobile", "wifi"] {
+        let uid_path = program_root(program_id)
+            .join("profile")
+            .join(profile)
+            .join("app/uid")
+            .join(&format!("{}_program", slot_name));
+        if let Ok(content) = read_text_or_empty(&uid_path) {
+            pkgs.extend(parse_package_set(&content));
         }
-        parts.sort();
-        anyhow::bail!("apps are already used in conflicting program lists: {}", parts.join("; "));
     }
+    pkgs
+}
+
+/// Check whether enabling a profile would conflict with other *enabled* profiles.
+/// Called when the user toggles a profile to enabled=true via the API.
+/// Returns an error listing the conflicting apps and which active profiles use them.
+fn check_enabled_profile_conflicts(
+    program_id: &str,
+    profile: &str,
+    profile_packages: &BTreeSet<String>,
+) -> Result<()> {
+    if profile_packages.is_empty() {
+        return Ok(());
+    }
+    let Some(domain) = app_domain(program_id) else { return Ok(()) };
+
+    let mut conflicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // Helper: check a single program's active.json for enabled profiles.
+    let profile_based = [
+        "nfqws", "nfqws2", "byedpi", "dpitunnel",
+        "openvpn", "amneziawg", "tun2socks", "myvpn",
+        "mihomo", "mieru", "sing-box", "wireproxy",
+        "myproxy", "myprogram",
+    ];
+    for pid in &profile_based {
+        let active_path = active_json_path(pid);
+        if let Ok(active) = read_json::<ProfilesActive>(&active_path) {
+            for (pname, st) in &active.profiles {
+                if !st.enabled { continue; }
+                if *pid == program_id && pname == profile { continue; }
+                let mut pkgs = BTreeSet::new();
+                for slot_name in &["user", "mobile", "wifi"] {
+                    let uid_path = program_root(pid)
+                        .join("profile")
+                        .join(pname)
+                        .join("app/uid")
+                        .join(&format!("{}_program", slot_name));
+                    if let Ok(content) = read_text_or_empty(&uid_path) {
+                        pkgs.extend(parse_package_set(&content));
+                    }
+                }
+                if pkgs.is_empty() { continue; }
+                let Some(other_domain) = app_domain(pid) else { continue; };
+                if !app_domains_conflict(domain, other_domain) { continue; }
+                for pkg in profile_packages.intersection(&pkgs) {
+                    conflicts.entry(pkg.clone())
+                        .or_default()
+                        .push(format!("{pid}/{pname}"));
+                }
+            }
+        }
+    }
+
+    // Single programs with app lists (tor, operaproxy).
+    {
+        let tor_enabled = simple_enabled_json("tor", "enabled.json");
+        if tor_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("tor")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("tor").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("tor".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        let op_enabled = simple_enabled_json("operaproxy", "enabled.json");
+        if op_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("operaproxy")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("operaproxy").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("operaproxy".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if !conflicts.is_empty() {
+        let mut parts: Vec<String> = conflicts
+            .into_iter()
+            .map(|(pkg, uses)| {
+                let mut uses_sorted = uses;
+                uses_sorted.sort();
+                format!("{} ({})", pkg, uses_sorted.join(", "))
+            })
+            .collect();
+        parts.sort();
+        anyhow::bail!(
+            "Отключите один из профилей с общими приложениями: {}",
+            parts.join("; ")
+        );
+    }
+
     Ok(())
 }
 
@@ -2720,7 +2898,7 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
 }
 
 /// Handles subroutes under /api/programs/*
-fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8]) -> Result<()> {
+fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool) -> Result<()> {
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
@@ -2776,6 +2954,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::openvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("openvpn", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("openvpn", profile);
+                    check_enabled_profile_conflicts("openvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -2869,6 +3049,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = openvpn_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "openvpn", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -2979,6 +3160,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::amneziawg::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("amneziawg", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("amneziawg", profile);
+                    check_enabled_profile_conflicts("amneziawg", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3077,6 +3260,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = amneziawg_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "amneziawg", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3180,6 +3364,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::tun2socks::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("tun2socks", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("tun2socks", profile);
+                    check_enabled_profile_conflicts("tun2socks", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3273,6 +3459,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = tun2socks_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "tun2socks", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3333,6 +3520,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::myvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("myvpn", profile, &setting.tun)?;
+                    let pkgs = gather_profile_packages("myvpn", profile);
+                    check_enabled_profile_conflicts("myvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3426,6 +3615,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myvpn_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myvpn", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3478,6 +3668,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mihomo::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mihomo", profile, &setting.tun)?;
                     crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), None, None)?;
+                    let pkgs = gather_profile_packages("mihomo", profile);
+                    check_enabled_profile_conflicts("mihomo", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3579,6 +3771,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = mihomo_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "mihomo", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -3627,6 +3820,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mieru::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mieru", profile, &setting.tun)?;
                     crate::programs::mieru::validate_port_uniqueness_with_override(Some(profile), None)?;
+                    let pkgs = gather_profile_packages("mieru", profile);
+                    check_enabled_profile_conflicts("mieru", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -3727,6 +3922,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = mieru_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "mieru", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -3775,6 +3971,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let st = active.profiles.get_mut(*profile)
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
+                if req.enabled {
+                    let pkgs = gather_profile_packages("sing-box", profile);
+                    check_enabled_profile_conflicts("sing-box", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -3864,6 +4064,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = singbox_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "sing-box", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -4079,6 +4280,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     anyhow::bail!("profile not found");
                 }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("wireproxy", profile);
+                    check_enabled_profile_conflicts("wireproxy", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4173,6 +4378,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = wireproxy_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "wireproxy", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -4346,6 +4552,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let st = active.profiles.get_mut(*profile)
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
+                if req.enabled {
+                    let pkgs = gather_profile_packages(id, profile);
+                    check_enabled_profile_conflicts(id, profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4483,10 +4693,12 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     _ => anyhow::bail!("invalid apps kind for program"),
                 };
                 let api_path = format!("/api/programs/{}/profiles/{}/apps/{}", id, profile, kind);
-                validate_program_apps_content(&req.content, &api_path, id, slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?)?;
+                let slot = slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?;
+                validate_program_apps_content(&req.content, &api_path, id, slot)?;
                 let p = profile_root(id, profile).join(format!("app/uid/{fname}"));
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, id, Some(profile), slot)?;
                 Ok(())
             })();
             match res {
@@ -4671,6 +4883,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("myproxy", profile);
+                    check_enabled_profile_conflicts("myproxy", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4750,6 +4966,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myproxy_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myproxy", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -4820,6 +5037,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                if req.enabled {
+                    let pkgs = gather_profile_packages("myprogram", profile);
+                    check_enabled_profile_conflicts("myprogram", profile, &pkgs)?;
+                }
                 write_json_pretty(&p, &active)?;
                 Ok(())
             })();
@@ -4888,6 +5109,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myprogram_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myprogram", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -5064,6 +5286,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 validate_program_apps_content(&req.content, "/api/programs/tor/apps", "tor", "common")?;
                 crate::programs::tor::write_uid_program_text(&req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "tor", None, "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -5156,6 +5379,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "common")?;
                 Ok(())
             })();
             match res {
@@ -5180,6 +5404,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/mobile_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "mobile")?;
                 Ok(())
             })();
             match res {
@@ -5204,6 +5429,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/wifi_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "wifi")?;
                 Ok(())
             })();
             match res {
@@ -5465,6 +5691,345 @@ fn write_empty_404(mut stream: TcpStream) -> Result<()> {
     Ok(())
 }
 
+
+fn handle_construction_subroutes(stream: TcpStream, method: &str, path: &str, body: &[u8], _services_running: bool) -> Result<()> {
+    match (method, path) {
+        ("GET", "/api/construction/proxy-endpoints") => {
+            let res = collect_construction_proxy_endpoint_candidates();
+            match res {
+                Ok(candidates) => write_json(stream, 200, json!({"ok": true, "candidates": candidates})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", "/api/construction/proxy-endpoints/release") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ConstructionReleaseEndpointReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                release_construction_proxy_endpoint(req)
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        _ => write_empty_404(stream),
+    }
+}
+
+fn collect_construction_proxy_endpoint_candidates() -> Result<Vec<ConstructionProxyEndpointCandidate>> {
+    let root = working_root();
+    let mut out = Vec::<ConstructionProxyEndpointCandidate>::new();
+    collect_construction_singbox_candidates(&root, &mut out);
+    collect_construction_wireproxy_candidates(&root, &mut out);
+    collect_construction_myproxy_candidates(&root, &mut out);
+    collect_construction_profile_setting_candidate(&root, "mihomo", "mixed_port", "mixed", &mihomo_active_path(), &mut out);
+    collect_construction_profile_setting_candidate(&root, "mieru", "socks5_port", "socks5", &mieru_active_path(), &mut out);
+    collect_construction_myprogram_candidates(&root, &mut out);
+    collect_construction_tor_candidate(&root, &mut out);
+    collect_construction_operaproxy_candidates(&root, &mut out);
+    collect_construction_t2s_candidates(&mut out);
+
+    out.sort_by(|a, b| {
+        a.program_id.cmp(&b.program_id)
+            .then(a.profile.cmp(&b.profile))
+            .then(a.server.cmp(&b.server))
+            .then(a.port.cmp(&b.port))
+    });
+    out.dedup_by(|a, b| a.program_id == b.program_id && a.profile == b.profile && a.server == b.server && a.port == b.port);
+    Ok(out)
+}
+
+fn collect_construction_t2s_candidates(out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let dir = Path::new("/data/adb/modules/ZDT-D/api/t2s/instances");
+    let Ok(entries) = fs::read_dir(dir) else { return; };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let Ok(raw) = fs::read_to_string(&path) else { continue; };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+        let port = v.get("listen_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+        if port == 0 { continue; }
+        let program = v.get("program").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        let profile = v.get("profile").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        let web_port = v.get("web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+        let label_parts = ["t2s".to_string(), program.clone(), profile.clone()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        let label_base = if label_parts.is_empty() { "t2s".to_string() } else { label_parts.join(" / ") };
+        out.push(ConstructionProxyEndpointCandidate {
+            key: format!("t2s:{}:{}:{}", web_port, profile, port),
+            program_id: "t2s".to_string(),
+            profile: if profile.is_empty() { None } else { Some(profile) },
+            server: if program.is_empty() { None } else { Some(program) },
+            slot: "common".to_string(),
+            host: "127.0.0.1".to_string(),
+            port,
+            label: format!("{} :{}", label_base, port),
+            kind: "t2s".to_string(),
+            enabled: true,
+            running: tcp_port_open("127.0.0.1", port),
+            app_list_path: None,
+        });
+    }
+}
+
+fn push_construction_candidate(
+    out: &mut Vec<ConstructionProxyEndpointCandidate>,
+    program_id: &str,
+    profile: Option<String>,
+    server: Option<String>,
+    port: u16,
+    kind: &str,
+    enabled: bool,
+    app_list_path: Option<PathBuf>,
+) {
+    if port == 0 { return; }
+    let app_api_path = app_list_path.map(|_| app_path_to_api_path(program_id, profile.as_deref(), "common"));
+    let label = [Some(program_id.to_string()), profile.clone(), server.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" / ");
+    let key = format!("{}:{}:{}:{}", program_id, profile.clone().unwrap_or_default(), server.clone().unwrap_or_default(), port);
+    out.push(ConstructionProxyEndpointCandidate {
+        key,
+        program_id: program_id.to_string(),
+        profile,
+        server,
+        slot: "common".to_string(),
+        host: "127.0.0.1".to_string(),
+        port,
+        label: if label.is_empty() { format!("127.0.0.1:{port}") } else { format!("{label} :{port}") },
+        kind: kind.to_string(),
+        enabled,
+        running: tcp_port_open("127.0.0.1", port),
+        app_list_path: app_api_path,
+    });
+}
+
+fn collect_construction_singbox_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(&singbox_active_path()).unwrap_or_default();
+    let profiles_root = root.join("singbox/profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let profile_enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let Some(server) = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            let setting: serde_json::Value = read_json(&server_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
+            let port = setting.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+            let server_enabled = setting.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+            push_construction_candidate(out, "sing-box", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+
+fn collect_construction_wireproxy_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(&wireproxy_active_path()).unwrap_or_default();
+    let profiles_root = root.join("wireproxy/profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let profile_enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let Some(server) = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            let port = read_text_or_empty(&server_dir.join("config.conf")).ok().and_then(|raw| parse_wireproxy_bind_port_for_construction(&raw)).unwrap_or(0);
+            let setting: serde_json::Value = read_json(&server_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
+            let server_enabled = setting.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+            push_construction_candidate(out, "wireproxy", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+
+fn collect_construction_profile_setting_candidate(root: &Path, program_id: &str, port_key: &str, kind: &str, active_path: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(active_path).unwrap_or_default();
+    let profiles_root = root.join(program_id).join("profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let setting: serde_json::Value = read_json(&profile_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
+        let port = setting.get(port_key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+        let enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        push_construction_candidate(out, program_id, Some(profile.clone()), Some(port_key.to_string()), port, kind, enabled, Some(profile_dir.join("app/uid/user_program")));
+    }
+}
+
+
+fn collect_construction_myproxy_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(&myproxy_active_path()).unwrap_or_default();
+    let profiles_root = root.join("myproxy/profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        let proxy: serde_json::Value = read_json(&profile_dir.join("proxy.json")).unwrap_or_else(|_| json!({}));
+        for port in parse_myproxy_ports_for_construction(&proxy) {
+            // myproxy upstreams are local SOCKS candidates, but myproxy cannot start the upstream server itself.
+            // If the same port belongs to a real project endpoint, the Android picker prefers that real endpoint.
+            push_construction_candidate(out, "myproxy", Some(profile.clone()), Some("upstream".to_string()), port, "socks5", enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+
+fn collect_construction_myprogram_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let active: ProfilesActive = read_json(&myprogram_active_path()).unwrap_or_default();
+    let profiles_root = root.join("myprogram/profile");
+    let Ok(profiles) = fs::read_dir(&profiles_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let enabled = active.profiles.get(&profile).map(|st| st.enabled).unwrap_or(false);
+        let raw = read_text_or_empty(&profile_dir.join("t2s_ports.txt")).unwrap_or_default();
+        for port in parse_port_list_for_construction(&raw) {
+            push_construction_candidate(out, "myprogram", Some(profile.clone()), Some("t2s_ports".to_string()), port, "socks5", enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+
+fn collect_construction_tor_candidate(_root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let enabled = crate::programs::tor::load_enabled_json().map(|v| v.is_enabled()).unwrap_or(false);
+    let torrc = crate::programs::tor::read_torrc_text().unwrap_or_default();
+    let port = parse_tor_socks_port_for_construction(&torrc).unwrap_or(9050);
+    push_construction_candidate(out, "tor", None, Some("SocksPort".to_string()), port, "socks5", enabled, Some(settings::tor_uid_program_path()));
+}
+
+fn collect_construction_operaproxy_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let enabled: EnabledActive = read_json(&program_root("operaproxy").join("active.json")).unwrap_or_default();
+    let port_json: serde_json::Value = read_json(&root.join("operaproxy/port.json")).unwrap_or_else(|_| json!({}));
+    let start = port_json.get("opera_start_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+    let count = construction_operaproxy_server_count(root).max(1).min(12);
+    for idx in 0..count {
+        let Some(port) = start.checked_add(idx as u16) else { continue; };
+        push_construction_candidate(out, "operaproxy", None, Some(format!("opera-proxy-{}", idx + 1)), port, "socks5", enabled.enabled, Some(program_root("operaproxy").join("app/uid/user_program")));
+    }
+}
+
+
+fn release_construction_proxy_endpoint(req: ConstructionReleaseEndpointReq) -> Result<serde_json::Value> {
+    let program = normalize_construction_program_id(&req.program_id);
+    let profile = req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let server = req.server.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let port = req.port.ok_or_else(|| anyhow::anyhow!("port is required"))?;
+    ensure_safe_segment(&program, "program id")?;
+    if let Some(p) = profile { ensure_safe_segment(p, "profile name")?; }
+    if let Some(srv) = server { ensure_safe_segment(srv, "server name")?; }
+    let _ = (program, profile, server, port);
+    // Non-destructive by design: removing a backend from t2s must not stop/kill
+    // the local SOCKS/proxy owner service. Keep the API as a no-op for backward
+    // compatibility with older UI calls.
+    Ok(json!({
+        "ok": true,
+        "stopped": false,
+    }))
+}
+
+
+fn normalize_construction_program_id(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "singbox" | "sing-box" => "sing-box".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn app_path_to_api_path(program: &str, profile: Option<&str>, slot: &str) -> String {
+    match (program, profile) {
+        ("operaproxy", _) => format!("/api/programs/operaproxy/apps/{slot}"),
+        ("tor", _) => "/api/programs/tor/apps".to_string(),
+        (_, Some(profile)) => format!("/api/programs/{program}/profiles/{profile}/apps/user"),
+        _ => format!("/api/programs/{program}/apps/{slot}"),
+    }
+}
+
+fn tcp_port_open(host: &str, port: u16) -> bool {
+    let Ok(addr) = format!("{host}:{port}").parse() else { return false; };
+    TcpStream::connect_timeout(&addr, Duration::from_millis(140)).is_ok()
+}
+
+
+fn parse_myproxy_ports_for_construction(v: &serde_json::Value) -> Vec<u16> {
+    let mut out = Vec::<u16>::new();
+    if let Some(arr) = v.get("ports").and_then(|x| x.as_array()) {
+        for item in arr {
+            if let Some(port) = item.as_u64().and_then(|x| u16::try_from(x).ok()).filter(|p| *p > 0) {
+                out.push(port);
+            }
+        }
+    }
+    if out.is_empty() {
+        match v.get("port") {
+            Some(serde_json::Value::Number(n)) => {
+                if let Some(port) = n.as_u64().and_then(|x| u16::try_from(x).ok()).filter(|p| *p > 0) { out.push(port); }
+            }
+            Some(serde_json::Value::String(s)) => out.extend(parse_port_list_for_construction(s)),
+            Some(serde_json::Value::Array(items)) => {
+                for item in items {
+                    if let Some(port) = item.as_u64().and_then(|x| u16::try_from(x).ok()).filter(|p| *p > 0) { out.push(port); }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn parse_port_list_for_construction(raw: &str) -> Vec<u16> {
+    raw.split(|c: char| c == ',' || c.is_whitespace())
+        .filter_map(|s| s.trim().parse::<u16>().ok())
+        .filter(|p| *p > 0)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn parse_wireproxy_bind_port_for_construction(raw: &str) -> Option<u16> {
+    for line in raw.lines() {
+        let s = line.trim();
+        if !s.to_ascii_lowercase().starts_with("bindaddress") { continue; }
+        let value = s.split_whitespace().nth(1).unwrap_or("");
+        if let Some((_, port)) = value.rsplit_once(':') { if let Ok(p) = port.parse::<u16>() { return Some(p); } }
+    }
+    None
+}
+
+fn parse_tor_socks_port_for_construction(raw: &str) -> Option<u16> {
+    for line in raw.lines() {
+        let s = line.split('#').next().unwrap_or("").trim();
+        if !s.to_ascii_lowercase().starts_with("socksport") { continue; }
+        for token in s.split_whitespace().skip(1) {
+            let port_s = token.rsplit_once(':').map(|(_, p)| p).unwrap_or(token);
+            if let Ok(p) = port_s.parse::<u16>() { return Some(p); }
+        }
+    }
+    None
+}
+
+fn construction_operaproxy_server_count(root: &Path) -> usize {
+    let path = root.join("operaproxy/config/sni.json");
+    let Ok(raw) = fs::read_to_string(path) else { return 1; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return 1; };
+    v.as_array().map(|a| a.len()).or_else(|| v.get("items").and_then(|x| x.as_array()).map(|a| a.len())).unwrap_or(1)
+}
+
 fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     let request_started = Instant::now();
     let (method, path, headers, body) = parse_http_request(&mut stream)?;
@@ -5530,12 +6095,17 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     }
 
     
+    // Construction Studio API
+    if path.starts_with("/api/construction/") {
+        return handle_construction_subroutes(stream, method.as_str(), path.as_str(), &body, services_running);
+    }
+
     // Settings API (typed, safe)
     if method == "GET" && path == "/api/programs" {
         return handle_get_programs(stream);
     }
     if path.starts_with("/api/programs/") {
-        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body);
+        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body, services_running);
     }
 
     // Strategic folders API (nfqws/nfqws2 shared lists/binaries and nfqws2 lua scripts)
@@ -5589,6 +6159,20 @@ match (method.as_str(), path.as_str()) {
             write_json(stream, 200, value)
         }
 
+        ("GET", "/api/traffic/rules") | ("GET", "/api/traffic/total") => {
+            let res = traffic_total::try_collect_rule_snapshot();
+            match res {
+                Ok(Some(report)) => write_json(stream, 200, json!({"ok": true, "busy": false, "preparing": false, "traffic": report})),
+                Ok(None) => write_json(stream, 200, json!({
+                    "ok": false,
+                    "busy": true,
+                    "preparing": true,
+                    "message": "Traffic snapshot is still preparing. Please wait."
+                })),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "busy": false, "preparing": false, "error": format!("{e:#}")})),
+            }
+        }
+
         ("GET", "/api/setting") => {
             let setting = settings::load_api_settings()?;
             write_json(stream, 200, json!({"ok": true, "setting": setting}))
@@ -5600,6 +6184,12 @@ match (method.as_str(), path.as_str()) {
                 protector_mode: Option<settings::ProtectorMode>,
                 #[serde(default)]
                 hotspot_t2s_enabled: Option<bool>,
+                #[serde(default)]
+                hotspot_mode: Option<String>,
+                #[serde(default)]
+                hotspot_program: Option<String>,
+                #[serde(default)]
+                hotspot_profile: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_target: Option<String>,
                 #[serde(default)]
@@ -5622,16 +6212,61 @@ match (method.as_str(), path.as_str()) {
             if let Some(mode) = patch.protector_mode {
                 setting.protector_mode = mode;
             }
+            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.hotspot_t2s_enabled {
                 setting.hotspot_t2s_enabled = enabled;
+                // Enabling/disabling hotspot starts from a clean selection. The UI then sets
+                // exactly one mode/program/profile explicitly.
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+                // Hotspot/tethering requires IPv4 forwarding. Persist the existing
+                // advanced setting when hotspot is enabled, but do not disable it
+                // automatically when hotspot is turned off.
+                if enabled {
+                    setting.ip_forward_enabled = true;
+                    apply_ip_forward = Some(true);
+                }
+            }
+            if let Some(mode) = patch.hotspot_mode {
+                setting.hotspot_mode = mode;
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(program) = patch.hotspot_program {
+                setting.hotspot_program = program;
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(profile) = patch.hotspot_profile {
+                setting.hotspot_profile = profile;
             }
             if let Some(target) = patch.hotspot_t2s_target {
+                setting.hotspot_mode = "proxy".to_string();
+                setting.hotspot_program = target.clone();
+                setting.hotspot_profile.clear();
                 setting.hotspot_t2s_target = target;
             }
             if let Some(profile) = patch.hotspot_t2s_singbox_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "singbox".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_singbox_profile = profile;
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "wireproxy".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_wireproxy_profile = profile;
             }
             if let Some(capture_all) = patch.hotspot_t2s_capture_all {
@@ -5643,10 +6278,13 @@ match (method.as_str(), path.as_str()) {
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;
             }
-            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.ip_forward_enabled {
                 setting.ip_forward_enabled = enabled;
                 apply_ip_forward = Some(enabled);
+            }
+            if setting.hotspot_t2s_enabled && !setting.ip_forward_enabled {
+                setting.ip_forward_enabled = true;
+                apply_ip_forward = Some(true);
             }
             settings::save_api_settings(&setting)?;
             if let Some(enabled) = apply_ip_forward {
@@ -5655,6 +6293,17 @@ match (method.as_str(), path.as_str()) {
             let saved = settings::load_api_settings().unwrap_or(setting);
             protector::refresh(services_running);
             write_json(stream, 200, json!({"ok": true, "setting": saved}))
+        }
+
+        // energy_saver module not included in this fork — endpoints disabled
+        ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {
+            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
+        }
+        ("POST", "/api/energy-saver") | ("PUT", "/api/energy-saver") => {
+            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
+        }
+        ("POST", "/api/energy-saver/apply") => {
+            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
         }
 
         ("POST", "/api/fs/read_text") => {
@@ -5797,6 +6446,8 @@ match (method.as_str(), path.as_str()) {
                 validate_program_apps_content(&req.content, "/api/blockedquic/apps", "blockedquic", "common")?;
                 crate::blockedquic::write_uid_program_text(&req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "blockedquic", None, "common")?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -5833,6 +6484,44 @@ match (method.as_str(), path.as_str()) {
                     crate::blockedquic::clear_rules()?;
                     Ok(json!({"ok": true, "active": false}))
                 }
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        ("GET", "/api/hiding/status") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let proxy_enabled = crate::proxyinfo::load_enabled_json()?.is_enabled();
+                let proxy_apps = crate::proxyinfo::read_proxy_packages()?.len();
+                let proxy_active = services_running && crate::proxyinfo::is_active();
+                let lsposed_configured = proxy_enabled && proxy_apps > 0;
+                let zygisk_requested = Path::new("/data/adb/ZDT-D/zygisk").exists();
+                let zygisk_installed = Path::new(settings::MODULE_DIR).join("zygisk/arm64-v8a.so").exists()
+                    || Path::new(settings::MODULE_DIR).join("zygisk/armeabi-v7a.so").exists();
+                Ok(json!({
+                    "ok": true,
+                    "selected_apps": proxy_apps,
+                    "zygisk": {
+                        "requested": zygisk_requested,
+                        "installed": zygisk_installed,
+                        "active": null,
+                        "status": if zygisk_installed { "installed" } else if zygisk_requested { "requested" } else { "not_installed" }
+                    },
+                    "lsposed": {
+                        "enabled": lsposed_configured,
+                        "active": lsposed_configured,
+                        "selected_apps": proxy_apps,
+                        "status": if lsposed_configured { "enabled" } else { "unknown" }
+                    },
+                    "proxyinfo": {
+                        "enabled": proxy_enabled,
+                        "active": proxy_active,
+                        "selected_apps": proxy_apps,
+                        "status": if proxy_active { "active" } else if proxy_enabled { "enabled" } else { "off" }
+                    }
+                }))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),
@@ -5885,6 +6574,8 @@ match (method.as_str(), path.as_str()) {
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 validate_proxyinfo_apps_content(&req.content)?;
                 crate::proxyinfo::write_uid_program_text(&req.content)?;
+                invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "proxyinfo", None, "common")?;
                 Ok(())
             })();
             match res {
@@ -6007,4 +6698,3 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
 
     Ok(())
 }
-

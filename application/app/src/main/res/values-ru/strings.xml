@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">ZDT-D</string>
     <string name="qs_tile_label">ZDT-D</string>
+    <string name="xposed_description">Скрытие ZDT-D от обычных пользовательских приложений</string>
     <string name="root_required_title">Требуются root-права</string>
     <string name="root_required_body">Для работы приложению нужны root-права.
 
@@ -334,6 +335,16 @@
     <string name="backup_restore_confirm_text">Текущие настройки будут полностью заменены содержимым архива. Сервис будет остановлен на время операции.</string>
     <string name="backup_restore">Восстановить</string>
     <string name="backup_cancel">Отмена</string>
+    <string name="backup_external_restore_title">Применить бэкап?</string>
+    <string name="backup_external_restore_text">Вы хотите применить этот бэкап ZDT-D сейчас?
+
+Файл: %1$s
+
+Текущие настройки будут полностью заменены, а сервис будет остановлен на время восстановления.</string>
+    <string name="backup_external_restore_apply">Применить бэкап</string>
+    <string name="backup_external_restore_checking">Проверка бэкапа…</string>
+    <string name="backup_external_restore_invalid">Этот файл не является корректным бэкапом ZDT-D.</string>
+    <string name="backup_external_restore_default_file">Выбранный бэкап</string>
     <string name="backup_delete_confirm_title">Удалить бэкап?</string>
     <string name="backup_delete_confirm_text">Файл будет удалён без возможности восстановления.</string>
     <string name="backup_delete">Удалить</string>
@@ -394,6 +405,8 @@
     <string name="common_create">Создать</string>
     <string name="common_choose">Выбрать</string>
     <string name="common_loading">Загрузка…</string>
+    <string name="common_back">Назад</string>
+    <string name="settings_screen_title">Настройки</string>
     <string name="common_ellipsis">…</string>
     <string name="common_error">Ошибка</string>
     <string name="common_refresh_cd">Обновить</string>
@@ -463,6 +476,17 @@
     <string name="app_update_available_version_prefix">Доступно: </string>
     <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
     <string name="app_update_urgent_body">Исправление ошибок предыдущего обновления.</string>
+    <string name="app_update_release_preparing_title">Подготовка релизной сборки</string>
+    <string name="app_update_release_preparing_body">Новая версия уже готовится автором. Загрузка станет доступна автоматически после публикации.</string>
+    <string name="app_update_release_failed_body">Ой, кажется авто ошибся :) Подождите, пока автор исправит или перезапустит релизную сборку.</string>
+    <string name="app_update_stage_archives">Подготовка архивов</string>
+    <string name="app_update_github_api_online">GitHub API online</string>
+    <string name="app_update_github_api_offline">GitHub API offline</string>
+    <string name="app_update_stage_binaries">Сборка бинарников</string>
+    <string name="app_update_stage_apk">Сборка APK</string>
+    <string name="app_update_stage_release">Подготовка релиза</string>
+    <string name="app_update_stage_ready">Обновление готово</string>
+    <string name="app_update_check_again">Проверить снова</string>
     <string name="settings_title">Настройки</string>
     <string name="settings_subtitle">Обновления, уведомления, язык, точка доступа и обслуживание модуля.</string>
     <string name="app_update_check_title">Проверять обновления</string>
@@ -471,10 +495,30 @@
     <string name="settings_notifications_title">Уведомления</string>
     <string name="settings_notifications_body">Показывать уведомления о состоянии службы и защитных событиях (запущена / остановлена, блокировка анализа системы).</string>
     <string name="settings_language_title">Язык</string>
-    <string name="settings_language_body">Авто: русский, если системный язык — русский, иначе английский.</string>
+    <string name="settings_language_body">Авто: использует системный язык, если он поддерживается, иначе английский.</string>
     <string name="language_auto">Авто</string>
-    <string name="language_ru">RU</string>
-    <string name="language_en">EN</string>
+    <string name="language_ru">Русский</string>
+    <string name="language_en">English</string>
+    <string name="language_fa">فارسی</string>
+    <string name="language_tr">Türkçe</string>
+    <string name="language_ar">العربية</string>
+    <string name="language_zh_cn">简体中文</string>
+    <string name="language_es">Español</string>
+    <string name="language_pt_br">Português BR</string>
+    <string name="language_id">Bahasa Indonesia</string>
+    <string name="language_hi">हिन्दी</string>
+    <string name="language_uk">Українська</string>
+    <string name="language_de">Deutsch</string>
+    <string name="language_fr">Français</string>
+    <string name="language_vi">Tiếng Việt</string>
+    <string name="language_ko">한국어</string>
+    <string name="language_ja">日本語</string>
+    <string name="settings_theme_title">Тема</string>
+    <string name="settings_theme_body">Выберите оформление приложения. «Система» следует светлой/тёмной теме устройства. AmberOLED — настоящий чёрный и янтарный акцент для экономии заряда на OLED-экранах.</string>
+    <string name="theme_system">Система</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_amoled">AmberOLED</string>
     <string name="permission_required_title">Разрешение требуется</string>
     <string name="permission_required_body">Для онлайн-обновления приложения требуется разрешить установку обновлений из этого приложения. Это нужно только для установки APK после загрузки.</string>
     <string name="app_speed_zero">0 КБ/с</string>
@@ -504,10 +548,10 @@
     <string name="setup_features_body">• Обход блокировок и ограничений скорости\n• Удобный графический интерфейс для настройки</string>
     <string name="setup_notes_title">Основные моменты</string>
     <string name="setup_notes_body">• Конфиденциальность и безопасность: модуль не собирает персональные данные и не вредит функциональности устройства.\n• Свобода и открытость: полностью бесплатно и останется таковым.</string>
-    <string name="setup_arch_unsupported_fmt">Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. Текущее устройство: %1$s.</string>
+    <string name="setup_arch_unsupported_fmt">Неподдерживаемая архитектура. ZDT-D поддерживает arm64-v8a и armeabi-v7a. Текущее устройство: %1$s.</string>
     <string name="setup_root_title">Нужен Root-доступ</string>
     <string name="setup_root_body">ZDT-D — это root-модуль (Magisk / KernelSU / APatch) для обхода DPI-блокировок и ограничений трафика. Root нужен, потому что модуль запускает системные скрипты и сетевые компоненты на уровне ОС — то, что обычным приложениям недоступно.\n\nТакже root используется для установки/обновления модуля, управления демоном и чтения файлов модуля (токен и логи). Запрос root всегда подтверждается через ваш root-менеджер (Magisk / KernelSU / APatch), а разрешение можно отозвать в любой момент.</string>
-    <string name="setup_root_waiting">Ожидание ответа от root-менеджера…</string>
+    <string name="setup_root_waiting">Ожидание ответа от root-менэджера…</string>
     <string name="setup_request_root">Запросить Root</string>
     <string name="setup_root_denied">Root не предоставлен. Если вы нажали «Отказать», попробуйте ещё раз.</string>
     <string name="setup_reboot_required_title">Требуется перезагрузка</string>
@@ -545,6 +589,7 @@
     <string name="setup_install_conflict_zapret_message">Предупреждение: обнаружены конфликтующие модули. Просьба удалить данные модули, возможна некорректная работа ZDT-D.</string>
     <string name="setup_install_conflict_dnscrypt_message">Обнаружен модуль DNSCrypt. Рекомендуется удалить данный модуль. Если вам нужен DNSCrypt, он уже есть в составе ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">Данный модуль имеет высокую конфликтность. Функционал данного модуля уже имеется в ZDT-D.</string>
+    <string name="setup_install_conflict_vpn_tether_message">Данная функция этого модуля уже имеется в проекте ZDT-D, пожалуйста удалите конфликтный модуль.</string>
     <string name="setup_zygisk_install_title">Установить Zygisk?</string>
     <string name="setup_zygisk_install_short">Дополнительный компонент скрытия интерфейсов</string>
     <string name="setup_zygisk_install_details_cd">Описание Zygisk</string>
@@ -565,6 +610,12 @@
 Минимальные версии:
 KernelSU: 10940+
 APatch: 10700+</string>
+    <string name="setup_metamodule_blocked_title">Установка заблокирована мета-модулем</string>
+    <string name="setup_metamodule_blocked_body">Похоже, на устройстве установлен мета-модуль KernelSU/APatch, но он отключён, повреждён или работает некорректно.
+
+Из-за этого менеджер заблокировал установку ZDT-D.
+
+Для корректной установки требуется рабочий мета-модуль либо его полное отсутствие. Проверьте состояние мета-модуля в KernelSU/APatch: включите его обратно или удалите, затем перезагрузите устройство и повторите установку.</string>
     <string name="setup_zygisk_recovery_title">Zygisk-компонент не установлен</string>
     <string name="setup_zygisk_recovery_body">По логу установки Zygisk-компонент не удалось установить. Можно повторить установку ZDT-D без Zygisk-компонента.</string>
     <string name="setup_zygisk_recovery_no">Нет</string>
@@ -607,7 +658,7 @@ APatch: 10700+</string>
     <string name="log_service_stopped">Служба остановлена</string>
     <string name="start_blocked_profile_overlap">Запуск невозможен: отключите конфликтующие профили</string>
     <string name="enable_blocked_profile_overlap">Включение невозможно: отключите конфликтующие профили</string>
-    <string name="enable_blocked_profile_overlap_detail">Невозможно включить профиль \"%1$s\" — он использует те же приложения что и активный профиль \"%2$s\" (%3$s). Сначала отключите другой профиль.</string>
+    <string name="enable_blocked_profile_overlap_detail">Нельзя включить профиль «%1$s» из программы «%2$s» — он использует те же приложения, что и активный профиль «%3$s» в программе «%4$s» (%5$s). Сначала отключите конфликтующий профиль.</string>
 
     <string name="mv_backup_restore_reopen_hint">Перед повторным восстановлением заново выберите бэкап (или переоткройте это окно).</string>
     <string name="settings_delete_module_title">Удаление</string>
@@ -778,11 +829,20 @@ APatch: 10700+</string>
     <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
     <string name="settings_hotspot_capture_all_title">Захват всего трафика hotspot режима</string>
     <string name="settings_hotspot_capture_all_body">Если включено, весь входящий TCP-трафик режима точки доступа направляется в выбранный инструмент. Если выключено, служебные reverse-proxy порты исключаются перед редиректом остального трафика.</string>
+    <string name="settings_hotspot_mode_title">Режим точки доступа</string>
+    <string name="settings_hotspot_mode_proxy">Proxy</string>
+    <string name="settings_hotspot_mode_vpn">VPN</string>
     <string name="settings_hotspot_program_title">Инструмент для точки доступа</string>
+    <string name="settings_hotspot_program_proxy_title">Proxy-программа</string>
+    <string name="settings_hotspot_program_vpn_title">VPN-программа</string>
+    <string name="settings_hotspot_profile_title">Профиль</string>
+    <string name="settings_hotspot_profile_missing">Выберите профиль для продолжения.</string>
+    <string name="settings_hotspot_profile_selected_fmt">Выбран профиль: %1$s</string>
+    <string name="settings_hotspot_profiles_empty">Нет включённых профилей для этой программы.</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
     <string name="settings_hotspot_warning_title">Предупреждение безопасности</string>
-    <string name="settings_hotspot_warning_body">Включение этой функции может снизить безопасность устройства, потому что порт инструмента будет открыт. Любой в сети сможет попытаться подключиться к прокси.</string>
+    <string name="settings_hotspot_warning_body">Включение этой функции может снизить безопасность устройства, потому что клиенты точки доступа будут направляться через выбранный Proxy или VPN backend. Используйте только в доверенной сети.</string>
     <string name="settings_hotspot_warning_accept">Принять</string>
     <string name="settings_hotspot_saved">Настройка точки доступа сохранена</string>
     <string name="settings_hotspot_save_failed">Не удалось сохранить настройку точки доступа</string>
@@ -812,22 +872,38 @@ APatch: 10700+</string>
     <string name="settings_blockedquic_conflict_title">Приложения уже добавлены в защиту портов</string>
     <string name="settings_blockedquic_conflict_body">Эти приложения уже находятся в списке защиты от сканирования портов. Уберите их из выбора блокировки QUIC.</string>
     <string name="settings_blockedquic_conflict_uncheck">Снять галочки</string>
-    <string name="settings_proxyinfo_title">Защита от сканирования портов</string>
-    <string name="settings_proxyinfo_body">Блокирует приложениям возможность определить открытые порты модуля.</string>
-    <string name="settings_proxyinfo_warning_title">Защита от сканирования портов</string>
-    <string name="settings_proxyinfo_warning_body">Данная функция блокирует приложениям возможность определить открытые порты модуля, из-за чего приложение не сможет определить, установлен ли ZDT-D на вашем устройстве.
+    <string name="settings_proxyinfo_title">Скрытие от приложений</string>
+    <string name="settings_proxyinfo_body">Выбрано приложений: %1$d. ZDT-D скрывает от них интерфейсы, пакет приложения и локальные proxy-порты.</string>
+    <string name="settings_proxyinfo_warning_title">Скрытие от приложений</string>
+    <string name="settings_proxyinfo_warning_body">Эта функция использует три слоя для выбранных приложений: Zygisk скрывает VPN-интерфейсы ZDT-D, LSPosed скрывает пакет приложения ZDT-D, а ProxyInfo скрывает локальные proxy-порты.
 
 Защита не работает для режима точки доступа. Если включена точка доступа и выбран sing-box, защита для него работать не будет.</string>
     <string name="settings_proxyinfo_warning_accept">Понятно</string>
-    <string name="settings_proxyinfo_configure">Настроить</string>
+    <string name="settings_proxyinfo_configure">Выбрать приложения</string>
     <string name="settings_proxyinfo_apps_title">Выбор приложений</string>
-    <string name="settings_proxyinfo_apps_body">Выбранные приложения не смогут определить наличие открытых портов модуля ZDT-D.</string>
+    <string name="settings_proxyinfo_apps_body">Выбранные приложения используются слоями скрытия Zygisk, LSPosed и ProxyInfo.</string>
     <string name="settings_proxyinfo_search_hint">Поиск приложений</string>
     <string name="settings_proxyinfo_selected_header">Выбранные приложения</string>
     <string name="settings_proxyinfo_all_apps_title">Все приложения</string>
     <string name="settings_proxyinfo_empty">Ничего не выбрано</string>
     <string name="settings_proxyinfo_saved">Настройки защиты сохранены</string>
     <string name="settings_proxyinfo_save_failed">Не удалось сохранить настройки защиты</string>
+    <string name="hiding_layer_zygisk_title">Zygisk</string>
+    <string name="hiding_layer_zygisk_short">Скрывает VPN/TUN-интерфейсы ZDT-D</string>
+    <string name="hiding_layer_zygisk_desc">Zygisk скрывает от выбранных приложений VPN/TUN/netd-интерфейсы, созданные ZDT-D. Он не скрывает root, пакеты приложений и proxy-порты.</string>
+    <string name="hiding_layer_lsposed_title">LSPosed</string>
+    <string name="hiding_layer_lsposed_short">Скрывает пакет приложения ZDT-D</string>
+    <string name="hiding_layer_lsposed_desc">LSPosed скрывает от выбранных приложений факт установки com.android.zdtd.service. Модуль должен быть включён в LSPosed со scope Android/System Framework.</string>
+    <string name="hiding_layer_proxyinfo_title">ProxyInfo</string>
+    <string name="hiding_layer_proxyinfo_short">Скрывает локальные proxy-порты</string>
+    <string name="hiding_layer_proxyinfo_desc">ProxyInfo блокирует выбранным приложениям сканирование локально созданных ZDT-D proxy/SOCKS/T2S-портов.</string>
+    <string name="hiding_layer_status_active">Активно</string>
+    <string name="hiding_layer_status_installed">Установлен</string>
+    <string name="hiding_layer_status_requested">Запрошен</string>
+    <string name="hiding_layer_status_enabled">Включено</string>
+    <string name="hiding_layer_status_stale">Устарел</string>
+    <string name="hiding_layer_status_inactive">Неактивно</string>
+
     <string name="settings_reset_identifier_title">Сбросить идентификатор модуля</string>
     <string name="settings_reset_identifier_body">Пересобрать список приложений модуля, если приложение было удалено и установлено заново.</string>
     <string name="settings_reset_identifier_action">Сбросить идентификатор модуля</string>
@@ -1007,13 +1083,20 @@ APatch: 10700+</string>
     <string name="myproxy_backend_priority_label">Приоритет backend</string>
     <string name="myproxy_backend_priority_hint">Пример: 1145,1146;1147. Оставьте пустым, чтобы использовать порядок SOCKS5 портов.</string>
     <string name="myproxy_backend_priority_invalid">Используйте только порты из списка SOCKS5. Группы разделяются через ;, порты — через запятую. Дубли не допускаются.</string>
+    <string name="myproxy_wrapped_socks_title">Wrapped SOCKS5</string>
+    <string name="myproxy_wrapped_socks_desc">Опциональная обёртка. t2s сначала подключается к локальной обёртке, а через неё достаёт SOCKS5-серверы из списка выше.</string>
+    <string name="myproxy_wrapped_host_label">Хост обёртки</string>
+    <string name="myproxy_wrapped_port_label">Порт обёртки</string>
+    <string name="myproxy_wrapped_user_label">Логин обёртки</string>
+    <string name="myproxy_wrapped_pass_label">Пароль обёртки</string>
+    <string name="myproxy_wrapped_hint">Оставьте хост и порт пустыми, чтобы сохранить обычный прямой режим SOCKS5 backend.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
 
     <string name="tab_opera_args">Аргументы</string>
     <string name="opera_args_api_proxy_title">API Прокси (-api-proxy)</string>
-    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) прокси, через который opera-proxy авторизуется на серверах Opera. Можно указать один URL прокси, несколько URL через запятую или ссылку на текстовый список прокси.</string>
-    <string name="opera_args_api_proxy_invalid">Укажите URL прокси со схемой: http://, https://, socks5:// или socks5h://. Также можно указать http(s)-ссылку на текстовый список прокси.</string>
-    <string name="opera_args_api_proxy_hint">Формат: http://, https://, socks5:// или socks5h://[логин:пароль@]хост[:порт]. Несколько прокси можно разделять запятыми. Также можно вставить http(s)-ссылку на текстовый список, где каждая строка содержит URL прокси. Список загружается заново при каждом запуске Opera-proxy. Адреса без схемы не поддерживаются. Если рабочий прокси не найден или список не удалось скачать, Opera-proxy запустится без api-proxy.</string>
+    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) прокси, через который opera-proxy авторизуется на серверах Opera. Можно указать один URL прокси, несколько URL через запятую, ссылку на текстовый список прокси или абсолютный путь к файлу со списком прокси, который уже есть на устройстве.</string>
+    <string name="opera_args_api_proxy_invalid">Укажите URL прокси со схемой: http://, https://, socks5:// или socks5h://. Также можно указать http(s)-ссылку на текстовый список прокси или абсолютный локальный путь к файлу, начинающийся с /.</string>
+    <string name="opera_args_api_proxy_hint">Формат: http://, https://, socks5:// или socks5h://[логин:пароль@]хост[:порт]. Несколько прокси можно разделять запятыми. Также можно вставить http(s)-ссылку на текстовый список или абсолютный локальный путь, например /sdcard/proxies.txt или /storage/emulated/0/proxies.txt. Локальные файлы читаются с устройства при каждом запуске Opera-proxy. Адреса без схемы не поддерживаются, кроме абсолютных путей к файлам. Если рабочий прокси не найден или список не удалось скачать/прочитать, Opera-proxy запустится без api-proxy.</string>
     <string name="opera_args_server_selection_title">Выбор сервера</string>
     <string name="opera_args_dl_limit_hint">Лимит загрузки в байтах для теста скорости серверов. По умолчанию: 204800 (200 КБ)</string>
     <string name="opera_args_misc_title">Тайминги и логирование</string>
@@ -1536,6 +1619,48 @@ APatch: 10700+</string>
     <string name="analysis_tools_header_desc">Дополнительные полезные инструменты, предоставляемые модулем ZDT-D. Здесь можно запускать функции диагностики, проверки сети и обслуживания.</string>
     <string name="analysis_tools_badge_basic">БАЗА</string>
 
+    <string name="construction_studio_title">Construction Studio</string>
+    <string name="construction_studio_short_desc">Визуальный граф активных списков приложений, правил маршрутизации, VPN-путей и счётчиков трафика.</string>
+    <string name="construction_studio_desc">Read-only конструктор runtime: списки приложений, инструменты, счётчики правил, VPN-интерфейсы и путь в интернет в одной визуальной цепочке.</string>
+    <string name="construction_studio_rules">Правила</string>
+    <string name="construction_studio_active">Активные</string>
+    <string name="construction_studio_refresh">Обновить трафик</string>
+    <string name="construction_studio_app_list">Список приложений</string>
+    <string name="construction_studio_internet">Интернет</string>
+    <string name="construction_studio_open_apps">Приложения</string>
+    <string name="construction_studio_open_settings">Настройки</string>
+    <string name="construction_studio_apps">прил.</string>
+    <string name="construction_studio_active_now">АКТИВНО</string>
+    <string name="construction_studio_idle">ПУСТО</string>
+    <string name="construction_studio_empty_title">Активный граф пока пуст</string>
+    <string name="construction_studio_empty_desc">Запустите ZDT-D или включите профиль с маршрутизацией приложений, затем обновите экран.</string>
+    <string name="construction_studio_warnings">Предупреждения сборщика трафика</string>
+    <string name="construction_studio_no_apps">Для этого маршрута пока не найдены UID-счётчики по приложениям.</string>
+    <string name="construction_studio_metric_vpn">VPN</string>
+    <string name="construction_studio_t2s_port">порт %1$s</string>
+    <string name="construction_studio_t2s_advanced_node">продвинутый узел</string>
+    <string name="construction_studio_t2s_no_backend">%1$s • нет backend • прямой выход</string>
+    <string name="construction_studio_t2s_all_backend_red">%1$s • все backend недоступны • прямой выход</string>
+    <string name="construction_studio_t2s_direct_active">%1$s • %2$d/%3$d backend активны • прямой маршрут активен</string>
+    <string name="construction_studio_t2s_mode_green">%1$s • %2$s • %3$d/%4$d backend активны</string>
+    <string name="construction_studio_t2s_mode_only">%1$s • %2$s</string>
+    <string name="construction_studio_connect_picker_title">Куда направить от «%1$s»</string>
+    <string name="construction_studio_connect_picker_desc">Показаны локальные proxy endpoints проекта: к этому t2s можно подключать только доступные уже запущенные endpoints.</string>
+    <string name="construction_studio_connect_picker_empty">Нет доступных proxy endpoints</string>
+    <string name="construction_studio_endpoint_status_connected">подключён</string>
+    <string name="construction_studio_endpoint_status_running">запущен</string>
+    <string name="construction_studio_endpoint_status_unavailable">недоступен</string>
+    <string name="construction_studio_preparing">Готовлю данные, подожди…</string>
+    <string name="construction_studio_auto_refresh_hint">Автообновление 5 сек • тяни и масштабируй</string>
+    <string name="construction_studio_no_cards">Нет карточек</string>
+    <string name="construction_studio_edit_list_title">Редактировать список: %1$s</string>
+    <string name="construction_studio_edit">Редактировать</string>
+    <string name="construction_studio_list_path_missing">Для этого списка не найден редактируемый путь apps в assignments.</string>
+    <string name="construction_studio_choose_list_to_edit">Эта карточка объединяет несколько списков приложений. Выберите, какой список редактировать.</string>
+    <string name="construction_studio_vpn_list_path_missing">Для этого VPN-профиля не найден редактируемый путь apps.</string>
+    <string name="construction_studio_proxy_endpoint_fallback">прокси-узел</string>
+    <string name="construction_studio_local_endpoint">локальный</string>
+
     <string name="dpi_detector_title">DPI Detector</string>
     <string name="dpi_detector_short_desc">Определяет возможные признаки DPI-блокировок и аномалии соединений.</string>
     <string name="dpi_detector_desc">Native DPI-диагностика: DNS, DoH, TLS/SNI, HTTP/HTTPS, TCP 12–64 КБ, whitelist SNI и проверки Telegram.</string>
@@ -1681,7 +1806,7 @@ APatch: 10700+</string>
     <string name="nfqws_tester_service_blocked_start">Сначала остановите тестер стратегий. Перед запуском службы его временные правила iptables должны быть очищены.</string>
 
     <string name="nfqws_tester_overlay_section_strategy">Стратегия</string>
-    <string name="nfqws_tester_overlay_section_progress">Прогресс</string>
+    <string name="nfqws_tester_overlay_section_progress">прогресс</string>
     <string name="nfqws_tester_overlay_section_resources">Ресурсы</string>
     <string name="nfqws_tester_overlay_section_actions">Действия</string>
     <string name="nfqws_tester_overlay_progress_running">Активно</string>
@@ -1721,4 +1846,25 @@ APatch: 10700+</string>
     <string name="widget_action_stop_hint">Нажмите для остановки</string>
     <string name="widget_cpu_value_fmt">%1$.1f%%</string>
     <string name="widget_ram_value_fmt">%1$.1f МБ</string>
+    <string name="settings_energy_saver_title">Расширенный режим энергосбережения</string>
+    <string name="settings_energy_saver_body">Настройка поведения программ при выключенном экране и выбор ядер для снижения нагрузки.</string>
+    <string name="settings_energy_saver_open">Открыть</string>
+    <string name="settings_energy_saver_subtitle">Экономия заряда при выключенном экране и управление нагрузкой программ.</string>
+    <string name="settings_energy_saver_global_title">Включить расширенное энергосбережение</string>
+    <string name="settings_energy_saver_global_body">Если выключено, настройки этого окна не будут применяться.</string>
+    <string name="settings_energy_saver_delay_title">Задержка паузы после выключения экрана</string>
+    <string name="settings_energy_saver_delay_body">Выбранные программы будут поставлены на паузу после этой задержки и продолжат работу при включении экрана.</string>
+    <string name="settings_energy_saver_warning">Пауза программы может временно остановить интернет для профилей, которые её используют. Используйте этот режим только для программ, которые можно безопасно приостанавливать.</string>
+    <string name="settings_energy_saver_no_programs">Поддерживаемые программы не найдены.</string>
+    <string name="settings_energy_saver_running_pids">Программа доступна для настройки</string>
+    <string name="settings_energy_saver_freeze_title">Приостанавливать после выключения экрана</string>
+    <string name="settings_energy_saver_freeze_body">Поставить программу на паузу после выключения экрана и продолжить работу при его включении.</string>
+    <string name="settings_energy_saver_affinity_title">Использовать выбранные ядра процессора</string>
+    <string name="settings_energy_saver_affinity_body">Запускать программу только на выбранных ядрах, чтобы снизить нагрузку и расход энергии.</string>
+    <string name="settings_energy_saver_cores_selected">Выбрано: %1$d из %2$d ядер</string>
+    <string name="settings_energy_saver_core_chip">Ядро %1$d</string>
+    <string name="settings_energy_saver_cores_title">Ядра процессора</string>
+    <string name="settings_energy_saver_saved">Настройки энергосбережения сохранены</string>
+    <string name="settings_energy_saver_save_failed">Не удалось сохранить настройки энергосбережения</string>
+
 </resources>

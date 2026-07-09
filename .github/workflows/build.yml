@@ -28,6 +28,37 @@ env:
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
   NO_DASHBOARD: "1"
+  OPENVPN_VERSION: "2.7.4"
+  MBEDTLS_VERSION: "3.6.6"
+  MBEDTLS_SHA256: "8fb65fae8dcae5840f793c0a334860a411f884cc537ea290ce1c52bb64ca007a"
+  LZO_VERSION: "2.10"
+  LZ4_VERSION: "1.10.0"
+  OPENVPN_ANDROID_API_LEVEL: 24
+  AMNEZIAWG_GO_REF: "master"
+  AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
+  AMNEZIAWG_ANDROID_API_LEVEL: 24
+  AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
+  AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
+  AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
+  WIREPROXY_REF: "v1.1.2"
+  TUN2SOCKS_REF: "v2.6.0"
+  MIHOMO_REF: "v1.19.27"
+  SING_BOX_REF: "v1.13.14"
+  BYEDPI_REF: "v0.17.3"
+  BYEDPI_ANDROID_API_LEVEL: 24
+  DNSCRYPT_PROXY_REF: "2.1.16"
+  MIERU_REF: "v3.34.0"
+  OPERA_PROXY_REF: "v1.26.0"
+  DPITUNNEL_REF: "main"
+  DPITUNNEL_ANDROID_API_LEVEL: 24
+  DPITUNNEL_OPENSSL_REF: "openssl-3.3.2"
+  TOR_REF: "tor-0.4.9.9"
+  TOR_ANDROID_API_LEVEL: 24
+  TOR_OPENSSL_REF: "openssl-3.5.7"
+  TOR_LIBEVENT_REF: "release-2.1.12-stable"
+  TOR_ZLIB_REF: "v1.3.2"
+  TOR_ZSTD_REF: "v1.5.7"
+  LYREBIRD_REF: "main"
 
 permissions:
   contents: write
@@ -80,7 +111,7 @@ jobs:
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
               reason="Tracked build paths changed"
             fi
@@ -98,6 +129,8 @@ jobs:
             echo "- rust/**"
             echo "- module_template/**"
             echo "- prebuilt/**"
+            echo "- scripts/module/**"
+            echo "- .github/workflows/build.yml"
             echo "- module.prop"
             if [[ -n "$changed_files" ]]; then
               echo
@@ -232,11 +265,40 @@ jobs:
           echo "should_build=$should_build"
           echo "reason=$reason"
 
-  build_rust_binaries:
-    name: Build Rust binaries
+  build_zdtd:
+    name: build zdtd ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -250,7 +312,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Install Android NDK cross-linker
         run: |
@@ -264,8 +326,8 @@ jobs:
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
           ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
 
@@ -280,10 +342,15 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
             echo "CC_aarch64_linux_android=$ANDROID_CC"
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
             echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
@@ -291,19 +358,22 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF2
 
-      - name: Cache Cargo registry and Rust target
+      - name: Cache Cargo registry and zdtd target
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-rust-binaries-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-zdtd-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/zdtd/Cargo.toml') }}
           restore-keys: |
-            cargo-rust-binaries-aarch64-linux-android-
-            cargo-aarch64-linux-android-
+            cargo-zdtd-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
 
       - name: Verify Android Rust cross toolchain
         run: |
@@ -311,11 +381,11 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT"
           "$CC_aarch64_linux_android" --version | head -1
           "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
           cargo -V
           rustc -V
 
-      - name: Build all Rust binaries
+      - name: Build zdtd
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
           RUSTUP_HOME: ""
@@ -325,36 +395,2996 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
 
-      - name: Collect Rust binaries
+      - name: Collect zdtd
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}"
-          DST="out/artifacts/rust"
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/zdtd"
+          DST="out/artifacts/zdtd"
+          test -s "$SRC" || { echo "::error::zdtd artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
-          cp -f "$SRC/zdtd" "$DST/zdtd"
-          cp -f "$SRC/t2s" "$DST/t2s"
-          cp -f "$SRC/dpi-detector" "$DST/dpi-detector"
-          cp -f "$SRC/nfqws-tester" "$DST/nfqws-tester"
-          chmod 755 "$DST/zdtd" "$DST/t2s" "$DST/dpi-detector" "$DST/nfqws-tester"
-          ls -lh "$DST"
+          cp -f "$SRC" "$DST/zdtd"
+          chmod 755 "$DST/zdtd"
+          ls -lh "$DST/zdtd"
 
-      - name: Upload Rust binaries
+      - name: Upload zdtd binary
         uses: actions/upload-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust/
+          name: zdtd-${{ matrix.artifact_suffix }}
+          path: out/artifacts/zdtd/zdtd
           retention-days: 1
 
-  build_zygisk:
-    name: Compile Zygisk module
+  build_t2s:
+    name: build T2S ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and t2s target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-t2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/T2s/Cargo.toml') }}
+          restore-keys: |
+            cargo-t2s-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
+          cargo -V
+          rustc -V
+
+      - name: Build t2s
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
+
+      - name: Collect t2s
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/t2s"
+          DST="out/artifacts/t2s"
+          test -s "$SRC" || { echo "::error::t2s artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/t2s"
+          chmod 755 "$DST/t2s"
+          ls -lh "$DST/t2s"
+
+      - name: Upload t2s binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: t2s-${{ matrix.artifact_suffix }}
+          path: out/artifacts/t2s/t2s
+          retention-days: 1
+
+  module_core_ready:
+    name: 1 Core ready (zdtd + T2S)
+    runs-on: ubuntu-latest
+    needs:
+      - build_zdtd
+      - build_t2s
+    if: >-
+      needs.build_zdtd.result == 'success' &&
+      needs.build_t2s.result == 'success'
+
+    steps:
+      - name: Mark core binaries ready
+        run: echo "zdtd and T2S artifacts are ready for module packaging"
+
+  build_openvpn:
+    name: build OpenVPN ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            cmake \
+            file \
+            libtool \
+            make \
+            pkg-config \
+            xz-utils
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "OPENVPN_CC=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang"
+            echo "OPENVPN_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang++"
+            echo "OPENVPN_AR=$NDK_BIN/llvm-ar"
+            echo "OPENVPN_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "OPENVPN_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build OpenVPN from official sources
+        env:
+          ANDROID_API: ${{ env.OPENVPN_ANDROID_API_LEVEL }}
+        run: |
+          set -euo pipefail
+
+          for tool in "$OPENVPN_CC" "$OPENVPN_CXX" "$OPENVPN_AR" "$OPENVPN_RANLIB" "$OPENVPN_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+
+          WORK="$PWD/out/build/openvpn-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          PREFIX="$WORK/prefix"
+          ARTIFACT_DIR="$PWD/out/artifacts/openvpn"
+          mkdir -p "$SRC" "$BUILD" "$PREFIX" "$ARTIFACT_DIR"
+
+          export CC="$OPENVPN_CC"
+          export CXX="$OPENVPN_CXX"
+          export AR="$OPENVPN_AR"
+          export RANLIB="$OPENVPN_RANLIB"
+          export STRIP="$OPENVPN_STRIP"
+          export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+          export CPPFLAGS="-I$PREFIX/include"
+          export CFLAGS="-Os -fPIC -fPIE -D__ANDROID_API__=$ANDROID_API"
+          export CXXFLAGS="$CFLAGS"
+          export LDFLAGS="-L$PREFIX/lib -pie"
+
+          download() {
+            local url="$1"
+            local out="$2"
+            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
+            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
+          }
+
+          echo "=== Download official source archives ==="
+          download "https://build.openvpn.net/downloads/releases/openvpn-${OPENVPN_VERSION}.tar.gz" "$SRC/openvpn.tar.gz"
+          download "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2" "$SRC/mbedtls.tar.bz2"
+          download "https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz" "$SRC/lzo.tar.gz"
+          download "https://github.com/lz4/lz4/releases/download/v${LZ4_VERSION}/lz4-${LZ4_VERSION}.tar.gz" "$SRC/lz4.tar.gz"
+
+          echo "${MBEDTLS_SHA256}  $SRC/mbedtls.tar.bz2" | sha256sum -c -
+
+          echo "=== Build LZO ${LZO_VERSION} ==="
+          tar -xzf "$SRC/lzo.tar.gz" -C "$BUILD"
+          pushd "$BUILD/lzo-${LZO_VERSION}" > /dev/null
+          ./configure \
+            --host=${{ matrix.tor_host }} \
+            --prefix="$PREFIX" \
+            --enable-static \
+            --disable-shared
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Build LZ4 ${LZ4_VERSION} ==="
+          tar -xzf "$SRC/lz4.tar.gz" -C "$BUILD"
+          pushd "$BUILD/lz4-${LZ4_VERSION}" > /dev/null
+          make -j"$(nproc)" -C lib \
+            CC="$CC" \
+            AR="$AR" \
+            RANLIB="$RANLIB" \
+            CFLAGS="$CFLAGS" \
+            BUILD_SHARED=no \
+            liblz4.a
+          make -C lib \
+            PREFIX="$PREFIX" \
+            BUILD_SHARED=no \
+            install
+          popd > /dev/null
+
+          echo "=== Build Mbed TLS ${MBEDTLS_VERSION} ==="
+          tar -xjf "$SRC/mbedtls.tar.bz2" -C "$BUILD"
+          cmake -S "$BUILD/mbedtls-${MBEDTLS_VERSION}" -B "$BUILD/mbedtls-build" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.android_abi }} \
+            -DANDROID_PLATFORM="android-${ANDROID_API}" \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DENABLE_PROGRAMS=OFF \
+            -DENABLE_TESTING=OFF \
+            -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
+            -DUSE_STATIC_MBEDTLS_LIBRARY=ON
+          cmake --build "$BUILD/mbedtls-build" --target install --parallel "$(nproc)"
+
+          echo "=== Build OpenVPN ${OPENVPN_VERSION} ==="
+          tar -xzf "$SRC/openvpn.tar.gz" -C "$BUILD"
+          pushd "$BUILD/openvpn-${OPENVPN_VERSION}" > /dev/null
+
+          echo "=== Patch OpenVPN configure/build layout for Android ==="
+          python3 - <<'PY_OPENVPN_ANDROID_PATCH'
+          from pathlib import Path
+          
+          configure_path = Path("configure.ac")
+          text = configure_path.read_text()
+          marker = "Depend on libcap-ng on Linux"
+          start_marker = text.find(marker)
+          if start_marker < 0:
+              raise SystemExit("libcap-ng block marker not found in configure.ac")
+          start = text.rfind("dnl\n", 0, start_marker)
+          end_marker = 'if test "${with_crypto_library}" = "openssl"; then'
+          end = text.find(end_marker, start_marker)
+          if start < 0 or end < 0:
+              raise SystemExit("unable to locate libcap-ng block bounds in configure.ac")
+          
+          replacement = '''dnl
+          dnl Depend on libcap-ng on Linux, except Android cross builds.  Android root
+          dnl modules run as root and the NDK sysroot does not provide libcap-ng.
+          dnl
+          case "$host" in
+          	*-*-linux*android*)
+          		AC_MSG_NOTICE([Skipping libcap-ng for Android cross build])
+          		;;
+          	*-*-linux*)
+          		PKG_CHECK_MODULES([LIBCAPNG],
+          				  [libcap-ng],
+          				  [],
+          				  [AC_MSG_ERROR([libcap-ng package not found.
+          Is the development package and pkg-config ${pkg_config_found} installed?])]
+          		)
+          		AC_CHECK_HEADER([sys/prctl.h],,[AC_MSG_ERROR([sys/prctl.h not found!])])
+          		OPTIONAL_LIBCAPNG_CFLAGS="${LIBCAPNG_CFLAGS}"
+          		OPTIONAL_LIBCAPNG_LIBS="${LIBCAPNG_LIBS}"
+          		AC_DEFINE(HAVE_LIBCAPNG, 1, [Enable libcap-ng support])
+          		;;
+          esac
+          
+          '''
+          configure_path.write_text(text[:start] + replacement + text[end:])
+          
+          # Android module packaging needs only the standalone openvpn binary.
+          # The upstream src/Makefile.am still recurses into plugin and Windows helper
+          # subdirectories. The bundled plugin build tries to create .so files via
+          # libtool, which is not needed for this Android binary artifact.
+          src_makefile = Path("src/Makefile.am")
+          src_text = src_makefile.read_text()
+          old_subdirs = "SUBDIRS = compat openvpn openvpnmsica openvpnserv plugins tapctl"
+          new_subdirs = "SUBDIRS = compat openvpn"
+          if old_subdirs not in src_text:
+              raise SystemExit("OpenVPN src/Makefile.am SUBDIRS layout changed")
+          src_makefile.write_text(src_text.replace(old_subdirs, new_subdirs, 1))
+          PY_OPENVPN_ANDROID_PATCH
+          autoreconf -fi
+          
+          PKG_CONFIG="pkg-config --static" ./configure \
+            --host=${{ matrix.tor_host }} \
+            --prefix="$PREFIX/openvpn" \
+            --with-crypto-library=mbedtls \
+            --enable-management \
+            --disable-shared \
+            --enable-static \
+            --disable-plugins \
+            --disable-plugin-auth-pam \
+            --disable-plugin-down-root \
+            --disable-dco \
+            --disable-pkcs11 \
+            --disable-systemd \
+            --disable-debug
+          make -j"$(nproc)" V=1
+          cp -f src/openvpn/openvpn "$ARTIFACT_DIR/openvpn"
+          popd > /dev/null
+
+          "$STRIP" --strip-unneeded "$ARTIFACT_DIR/openvpn" || true
+          chmod 755 "$ARTIFACT_DIR/openvpn"
+
+          echo "=== Verify OpenVPN artifact ==="
+          file "$ARTIFACT_DIR/openvpn"
+          readelf -h "$ARTIFACT_DIR/openvpn" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/openvpn" | tee "$ARTIFACT_DIR/openvpn.dynamic.txt" || true
+          if readelf -d "$ARTIFACT_DIR/openvpn" 2>/dev/null | grep -E 'NEEDED.*(libmbedtls|libmbedx509|libmbedcrypto|liblzo|liblz4|libssl|libcrypto)' >/dev/null; then
+            echo "::error::OpenVPN must not depend on external crypto/compression shared libraries"
+            exit 1
+          fi
+          strings "$ARTIFACT_DIR/openvpn" | grep -E 'OpenVPN|mbed TLS|LZO|LZ4' | head -40 || true
+          ls -lh "$ARTIFACT_DIR/openvpn"
+
+      - name: Upload OpenVPN binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: openvpn-${{ matrix.artifact_suffix }}
+          path: out/artifacts/openvpn/openvpn
+          retention-days: 1
+
+  build_amneziawg:
+    name: build AmneziaWG ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            file \
+            git \
+            make
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "AMNEZIAWG_CC=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
+            echo "AMNEZIAWG_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build AmneziaWG from official sources
+        env:
+          ANDROID_API: ${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}
+        run: |
+          set -euo pipefail
+
+          test -x "$AMNEZIAWG_CC" || { echo "::error::Android C compiler not found: $AMNEZIAWG_CC"; exit 1; }
+          test -x "$AMNEZIAWG_STRIP" || { echo "::error::Android strip not found: $AMNEZIAWG_STRIP"; exit 1; }
+          go version
+          "$AMNEZIAWG_CC" --version | head -1
+
+          WORK="$PWD/out/build/amneziawg-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/amneziawg"
+          export SRC ARTIFACT_DIR
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official AmneziaWG sources ==="
+          git clone --depth 1 --branch "$AMNEZIAWG_GO_REF" https://github.com/amnezia-vpn/amneziawg-go "$SRC/amneziawg-go"
+          git clone --depth 1 --branch "$AMNEZIAWG_TOOLS_REF" https://github.com/amnezia-vpn/amneziawg-tools "$SRC/amneziawg-tools"
+          git -C "$SRC/amneziawg-go" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-go.commit"
+          git -C "$SRC/amneziawg-tools" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-tools.commit"
+
+          echo "=== Patch AmneziaWG UAPI socket paths for Android module runtime ==="
+          grep -RInE '/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)' "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
+          python3 - <<'PYAMNEZIA'
+          from pathlib import Path
+          import os
+          
+          go_socket_dir = os.environ["AMNEZIAWG_GO_UAPI_SOCKET_DIR"]
+          replacements = {
+              "/var/run/amneziawg": go_socket_dir,
+              "/run/amneziawg": go_socket_dir,
+              "/var/run/wireguard": go_socket_dir,
+              "/run/wireguard": go_socket_dir,
+          }
+          # amneziawg-tools keeps its UAPI path build-time controlled through RUNSTATEDIR.
+          # Patch amneziawg-go to use a path relative to AMNEZIAWG_ROOT. The Android
+          # runtime opens the socket below cwd, so an absolute path would be doubled
+          # into .../amneziawg/data/adb/modules/... on device.
+          base = Path(os.environ["SRC"]) / "amneziawg-go"
+          changed = 0
+          for path in base.rglob("*"):
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text()
+              except UnicodeDecodeError:
+                  continue
+              updated = text
+              for old, new in replacements.items():
+                  updated = updated.replace(old, new)
+              if updated != text:
+                  path.write_text(updated)
+                  changed += 1
+          print(f"patched amneziawg-go files: {changed}")
+          PYAMNEZIA
+          grep -RInE "$AMNEZIAWG_GO_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_RUN_DIR|/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)" "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
+
+          echo "=== Build amneziawg-go (${AMNEZIAWG_GO_REF}) ==="
+          pushd "$SRC/amneziawg-go" > /dev/null
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/amneziawg-go" \
+              .
+          popd > /dev/null
+
+          echo "=== Build awg (${AMNEZIAWG_TOOLS_REF}) ==="
+          pushd "$SRC/amneziawg-tools/src" > /dev/null
+          test -f uapi/linux/linux/wireguard.h || { echo "::error::AmneziaWG Linux UAPI header missing"; exit 1; }
+          grep -q 'WGDEVICE_A_JC' uapi/linux/linux/wireguard.h || { echo "::error::AmneziaWG UAPI header does not contain AWG attributes"; exit 1; }
+          export CFLAGS="-O3 -fPIE"
+          export LDFLAGS="-pie"
+          make \
+            V=1 \
+            PLATFORM=linux \
+            CC="$AMNEZIAWG_CC" \
+            RUNSTATEDIR="$AMNEZIAWG_UAPI_RUN_DIR" \
+            WITH_WGQUICK=no \
+            WITH_BASHCOMPLETION=no \
+            WITH_SYSTEMDUNITS=no \
+            wg
+          cp -f wg "$ARTIFACT_DIR/awg"
+          popd > /dev/null
+
+          "$AMNEZIAWG_STRIP" --strip-unneeded "$ARTIFACT_DIR/awg" || true
+          chmod 755 "$ARTIFACT_DIR/amneziawg-go" "$ARTIFACT_DIR/awg"
+
+          echo "=== Verify AmneziaWG artifacts ==="
+          file "$ARTIFACT_DIR/amneziawg-go" "$ARTIFACT_DIR/awg"
+          readelf -h "$ARTIFACT_DIR/amneziawg-go" | grep -E 'Class:|Machine:'
+          readelf -h "$ARTIFACT_DIR/awg" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/amneziawg-go" | tee "$ARTIFACT_DIR/amneziawg-go.dynamic.txt" || true
+          readelf -d "$ARTIFACT_DIR/awg" | tee "$ARTIFACT_DIR/awg.dynamic.txt" || true
+          strings "$ARTIFACT_DIR/amneziawg-go" > "$ARTIFACT_DIR/amneziawg-go.strings.txt"
+          strings "$ARTIFACT_DIR/awg" > "$ARTIFACT_DIR/awg.strings.txt"
+          grep -F "$AMNEZIAWG_GO_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" | head -5
+          grep -F "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" | head -5
+          grep -Fq "$AMNEZIAWG_GO_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" || { echo "::error::amneziawg-go does not contain relative Android UAPI socket dir"; exit 1; }
+          grep -Fq "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" || { echo "::error::awg does not contain Android RUNSTATEDIR"; exit 1; }
+          if grep -Fq "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt"; then
+            echo "::error::amneziawg-go still contains absolute UAPI socket dir, this breaks Android runtime path resolution"
+            exit 1
+          fi
+          "$ARTIFACT_DIR/amneziawg-go" --version || true
+          "$ARTIFACT_DIR/awg" --version || true
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload AmneziaWG binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: amneziawg-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/amneziawg/amneziawg-go
+            out/artifacts/amneziawg/awg
+            out/artifacts/amneziawg/*.commit
+            out/artifacts/amneziawg/*.dynamic.txt
+          retention-days: 1
+
+  build_wireproxy:
+    name: build wireproxy ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build wireproxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/wireproxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/wireproxy"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official wireproxy source ==="
+          git clone --depth 1 --branch "$WIREPROXY_REF" https://github.com/windtf/wireproxy "$SRC/wireproxy"
+          git -C "$SRC/wireproxy" rev-parse HEAD | tee "$ARTIFACT_DIR/wireproxy.commit"
+
+          echo "=== Build wireproxy (${WIREPROXY_REF}) ==="
+          pushd "$SRC/wireproxy" > /dev/null
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/wireproxy" \
+              ./cmd/wireproxy
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/wireproxy"
+
+          echo "=== Verify wireproxy artifact ==="
+          file "$ARTIFACT_DIR/wireproxy"
+          readelf -h "$ARTIFACT_DIR/wireproxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/wireproxy" | tee "$ARTIFACT_DIR/wireproxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/wireproxy" --version || true
+          "$ARTIFACT_DIR/wireproxy" -h || true
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload wireproxy binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: wireproxy-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/wireproxy/wireproxy
+            out/artifacts/wireproxy/wireproxy.commit
+            out/artifacts/wireproxy/wireproxy.dynamic.txt
+          retention-days: 1
+
+  build_tun2socks:
+    name: build tun2socks ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build tun2socks from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/tun2socks-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/tun2socks"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official tun2socks source ==="
+          git clone --depth 1 --branch "$TUN2SOCKS_REF" https://github.com/xjasonlyu/tun2socks "$SRC/tun2socks"
+          TUN2SOCKS_COMMIT="$(git -C "$SRC/tun2socks" rev-parse HEAD)"
+          TUN2SOCKS_COMMIT_SHORT="$(git -C "$SRC/tun2socks" rev-parse --short HEAD)"
+          printf '%s\n' "$TUN2SOCKS_COMMIT" | tee "$ARTIFACT_DIR/tun2socks.commit"
+
+          echo "=== Build tun2socks (${TUN2SOCKS_REF}) ==="
+          pushd "$SRC/tun2socks" > /dev/null
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid= -X github.com/xjasonlyu/tun2socks/v2/internal/version.Version=${TUN2SOCKS_REF} -X github.com/xjasonlyu/tun2socks/v2/internal/version.GitCommit=${TUN2SOCKS_COMMIT_SHORT}" \
+              -o "$ARTIFACT_DIR/tun2socks" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/tun2socks"
+
+          cat > "$ARTIFACT_DIR/tun2socks.version" <<EOF_TUN2SOCKS_VERSION
+          source=https://github.com/xjasonlyu/tun2socks
+          ref=$TUN2SOCKS_REF
+          commit=$TUN2SOCKS_COMMIT
+          binary=tun2socks
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_TUN2SOCKS_VERSION
+
+          echo "=== Verify tun2socks artifact ==="
+          file "$ARTIFACT_DIR/tun2socks"
+          readelf -h "$ARTIFACT_DIR/tun2socks" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/tun2socks" | tee "$ARTIFACT_DIR/tun2socks.dynamic.txt" || true
+          "$ARTIFACT_DIR/tun2socks" -version || true
+          "$ARTIFACT_DIR/tun2socks" --help | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/tun2socks.version"
+
+      - name: Upload tun2socks binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: tun2socks-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/tun2socks/tun2socks
+            out/artifacts/tun2socks/tun2socks.version
+            out/artifacts/tun2socks/tun2socks.commit
+            out/artifacts/tun2socks/tun2socks.dynamic.txt
+          retention-days: 1
+
+  build_mihomo:
+    name: build mihomo ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build mihomo from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/mihomo-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/mihomo"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official mihomo source ==="
+          git clone --depth 1 --branch "$MIHOMO_REF" https://github.com/MetaCubeX/mihomo "$SRC/mihomo"
+          MIHOMO_COMMIT="$(git -C "$SRC/mihomo" rev-parse HEAD)"
+          MIHOMO_COMMIT_SHORT="$(git -C "$SRC/mihomo" rev-parse --short HEAD)"
+          MIHOMO_VERSION="${MIHOMO_REF#v}"
+          printf '%s\n' "$MIHOMO_COMMIT" | tee "$ARTIFACT_DIR/mihomo.commit"
+
+          echo "=== Build mihomo (${MIHOMO_REF}) ==="
+          pushd "$SRC/mihomo" > /dev/null
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -tags with_gvisor \
+              -trimpath \
+              -ldflags="-s -w -buildid= -X github.com/metacubex/mihomo/constant.Version=${MIHOMO_VERSION} -X github.com/metacubex/mihomo/constant.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/metacubex/mihomo/constant.CommitID=${MIHOMO_COMMIT_SHORT}" \
+              -o "$ARTIFACT_DIR/mihomo" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/mihomo"
+
+          cat > "$ARTIFACT_DIR/mihomo.version" <<EOF_MIHOMO_VERSION
+          source=https://github.com/MetaCubeX/mihomo
+          ref=$MIHOMO_REF
+          commit=$MIHOMO_COMMIT
+          binary=mihomo
+          target=android-arm64
+          tags=with_gvisor
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_MIHOMO_VERSION
+
+          echo "=== Verify mihomo artifact ==="
+          file "$ARTIFACT_DIR/mihomo"
+          readelf -h "$ARTIFACT_DIR/mihomo" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/mihomo" | tee "$ARTIFACT_DIR/mihomo.dynamic.txt" || true
+          "$ARTIFACT_DIR/mihomo" -v || true
+          "$ARTIFACT_DIR/mihomo" -h | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/mihomo.version"
+
+      - name: Upload mihomo binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihomo-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/mihomo/mihomo
+            out/artifacts/mihomo/mihomo.version
+            out/artifacts/mihomo/mihomo.commit
+            out/artifacts/mihomo/mihomo.dynamic.txt
+          retention-days: 1
+
+  build_singbox:
+    name: build sing-box ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build sing-box from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/sing-box-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/sing-box"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official sing-box source ==="
+          git clone --depth 1 --branch "$SING_BOX_REF" https://github.com/SagerNet/sing-box "$SRC/sing-box"
+          SING_BOX_COMMIT="$(git -C "$SRC/sing-box" rev-parse HEAD)"
+          SING_BOX_COMMIT_SHORT="$(git -C "$SRC/sing-box" rev-parse --short HEAD)"
+          SING_BOX_VERSION="${SING_BOX_REF#v}"
+          printf '%s\n' "$SING_BOX_COMMIT" | tee "$ARTIFACT_DIR/sing-box.commit"
+
+          echo "=== Build sing-box (${SING_BOX_REF}) ==="
+          pushd "$SRC/sing-box" > /dev/null
+          if [[ -f release/DEFAULT_BUILD_TAGS ]]; then
+            SING_BOX_TAGS="$(tr -d '\r\n' < release/DEFAULT_BUILD_TAGS)"
+          elif [[ -f release/DEFAULT_BUILD_TAGS_OTHERS ]]; then
+            SING_BOX_TAGS="$(tr -d '\r\n' < release/DEFAULT_BUILD_TAGS_OTHERS)"
+          else
+            SING_BOX_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_clash_api"
+          fi
+          # The upstream Android default tags include with_naive_outbound.
+          # That feature pulls cronet-go Android native bindings and breaks
+          # this pure Go cross-build with CGO_ENABLED=0. ZDT-D does not use
+          # Naive outbound in this sing-box backend, so remove only that tag.
+          SING_BOX_TAGS="$(printf '%s' "$SING_BOX_TAGS" | tr ',' '\n' | grep -v '^with_naive_outbound$' | paste -sd, -)"
+          SING_BOX_LDFLAGS=""
+          if [[ -f release/LDFLAGS ]]; then
+            SING_BOX_LDFLAGS="$(tr '\n' ' ' < release/LDFLAGS)"
+          fi
+          echo "Build tags: $SING_BOX_TAGS"
+          echo "Extra ldflags: $SING_BOX_LDFLAGS"
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -tags "$SING_BOX_TAGS" \
+              -trimpath \
+              -ldflags="-X 'github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION}' ${SING_BOX_LDFLAGS} -s -w -buildid=" \
+              -o "$ARTIFACT_DIR/sing-box" \
+              ./cmd/sing-box
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/sing-box"
+
+          cat > "$ARTIFACT_DIR/sing-box.version" <<EOF_SING_BOX_VERSION
+          source=https://github.com/SagerNet/sing-box
+          ref=$SING_BOX_REF
+          commit=$SING_BOX_COMMIT
+          binary=sing-box
+          target=android-arm64
+          tags=$SING_BOX_TAGS
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_SING_BOX_VERSION
+
+          echo "=== Verify sing-box artifact ==="
+          file "$ARTIFACT_DIR/sing-box"
+          readelf -h "$ARTIFACT_DIR/sing-box" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/sing-box" | tee "$ARTIFACT_DIR/sing-box.dynamic.txt" || true
+          "$ARTIFACT_DIR/sing-box" version || true
+          "$ARTIFACT_DIR/sing-box" help | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/sing-box.version"
+
+      - name: Upload sing-box binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: sing-box-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/sing-box/sing-box
+            out/artifacts/sing-box/sing-box.version
+            out/artifacts/sing-box/sing-box.commit
+            out/artifacts/sing-box/sing-box.dynamic.txt
+          retention-days: 1
+
+  build_byedpi:
+    name: build byedpi ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            file \
+            git \
+            make
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "BYEDPI_CC=$NDK_BIN/${{ matrix.clang_prefix }}${BYEDPI_ANDROID_API_LEVEL}-clang"
+            echo "BYEDPI_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build ByeDPI from official source
+        run: |
+          set -euo pipefail
+
+          test -x "$BYEDPI_CC" || { echo "::error::Android C compiler not found: $BYEDPI_CC"; exit 1; }
+          test -x "$BYEDPI_STRIP" || { echo "::error::Android strip not found: $BYEDPI_STRIP"; exit 1; }
+          "$BYEDPI_CC" --version | head -1
+
+          WORK="$PWD/out/build/byedpi-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/byedpi"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official ByeDPI source ==="
+          git clone --depth 1 --branch "$BYEDPI_REF" https://github.com/hufrea/byedpi "$SRC/byedpi"
+          BYEDPI_COMMIT="$(git -C "$SRC/byedpi" rev-parse HEAD)"
+          printf '%s\n' "$BYEDPI_COMMIT" | tee "$ARTIFACT_DIR/byedpi.commit"
+
+          echo "=== Build ByeDPI (${BYEDPI_REF}) ==="
+          pushd "$SRC/byedpi" > /dev/null
+          make clean || true
+          make \
+            CC="$BYEDPI_CC" \
+            CFLAGS="-O3 -fPIE -ffunction-sections -fdata-sections" \
+            LDFLAGS="-pie -Wl,--gc-sections -Wl,-z,max-page-size=16384"
+
+          BYEDPI_OUTPUT=""
+          for candidate in ./ciadpi ./ciadpi-* ./build/ciadpi ./build/ciadpi-* ./byedpi ./build/byedpi; do
+            if [[ -f "$candidate" ]]; then
+              BYEDPI_OUTPUT="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$BYEDPI_OUTPUT" ]]; then
+            BYEDPI_OUTPUT="$(find . -maxdepth 3 -type f \( -name 'ciadpi' -o -name 'ciadpi-*' -o -name 'byedpi' \) | sort | head -1 || true)"
+          fi
+          test -n "$BYEDPI_OUTPUT" || { echo "::error::ByeDPI output binary not found"; find . -maxdepth 3 -type f | sort; exit 1; }
+          cp -f "$BYEDPI_OUTPUT" "$ARTIFACT_DIR/byedpi"
+          popd > /dev/null
+
+          "$BYEDPI_STRIP" --strip-unneeded "$ARTIFACT_DIR/byedpi" || true
+          chmod 755 "$ARTIFACT_DIR/byedpi"
+
+          cat > "$ARTIFACT_DIR/byedpi.version" <<EOF_BYEDPI_VERSION
+          source=https://github.com/hufrea/byedpi
+          ref=$BYEDPI_REF
+          commit=$BYEDPI_COMMIT
+          upstream_binary=ciadpi
+          packaged_binary=byedpi
+          target=android-arm64
+          android_api=$BYEDPI_ANDROID_API_LEVEL
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_BYEDPI_VERSION
+
+          echo "=== Verify ByeDPI artifact ==="
+          file "$ARTIFACT_DIR/byedpi"
+          readelf -h "$ARTIFACT_DIR/byedpi" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/byedpi" | tee "$ARTIFACT_DIR/byedpi.dynamic.txt" || true
+          "$ARTIFACT_DIR/byedpi" --help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/byedpi.version"
+
+      - name: Upload byedpi binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: byedpi-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/byedpi/byedpi
+            out/artifacts/byedpi/byedpi.version
+            out/artifacts/byedpi/byedpi.commit
+            out/artifacts/byedpi/byedpi.dynamic.txt
+          retention-days: 1
+
+  build_dnscrypt:
+    name: build dnscrypt ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build dnscrypt-proxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/dnscrypt-proxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/dnscrypt"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official dnscrypt-proxy source ==="
+          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/DNSCrypt/dnscrypt-proxy "$SRC/dnscrypt-proxy"
+          DNSCRYPT_PROXY_COMMIT="$(git -C "$SRC/dnscrypt-proxy" rev-parse HEAD)"
+          printf '%s\n' "$DNSCRYPT_PROXY_COMMIT" | tee "$ARTIFACT_DIR/dnscrypt.commit"
+
+          echo "=== Locate dnscrypt-proxy Go module and package ==="
+          if [[ -f "$SRC/dnscrypt-proxy/go.mod" ]]; then
+            DNSCRYPT_BUILD_DIR="$SRC/dnscrypt-proxy"
+          else
+            DNSCRYPT_BUILD_DIR="$(find "$SRC/dnscrypt-proxy" -maxdepth 3 -name go.mod -type f -printf '%h\n' | sort | head -1 || true)"
+          fi
+          test -n "$DNSCRYPT_BUILD_DIR" || { echo "::error::dnscrypt-proxy go.mod not found"; find "$SRC/dnscrypt-proxy" -maxdepth 3 -type f | sort | head -200; exit 1; }
+          pushd "$DNSCRYPT_BUILD_DIR" > /dev/null
+          if [[ -d dnscrypt-proxy ]] && find dnscrypt-proxy -maxdepth 1 -name '*.go' -type f | grep -q .; then
+            DNSCRYPT_PACKAGE="./dnscrypt-proxy"
+          elif find . -maxdepth 1 -name '*.go' -type f | grep -q .; then
+            DNSCRYPT_PACKAGE="."
+          else
+            DNSCRYPT_PACKAGE="$(find . -maxdepth 3 -name '*.go' -type f -printf '%h\n' | sort -u | grep -E '(^\./dnscrypt-proxy$|/dnscrypt-proxy$|/cmd/)' | head -1 || true)"
+          fi
+          test -n "$DNSCRYPT_PACKAGE" || { echo "::error::dnscrypt-proxy Go package not found"; find . -maxdepth 3 -type f | sort | head -200; exit 1; }
+          echo "Build directory: $DNSCRYPT_BUILD_DIR"
+          echo "Build package: $DNSCRYPT_PACKAGE"
+
+          echo "=== Build dnscrypt-proxy (${DNSCRYPT_PROXY_REF}) ==="
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/dnscrypt" \
+              "$DNSCRYPT_PACKAGE"
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/dnscrypt"
+
+          cat > "$ARTIFACT_DIR/dnscrypt.version" <<EOF_DNSCRYPT_VERSION
+          source=https://github.com/DNSCrypt/dnscrypt-proxy
+          ref=$DNSCRYPT_PROXY_REF
+          commit=$DNSCRYPT_PROXY_COMMIT
+          upstream_binary=dnscrypt-proxy
+          packaged_binary=dnscrypt
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_DNSCRYPT_VERSION
+
+          echo "=== Verify dnscrypt artifact ==="
+          file "$ARTIFACT_DIR/dnscrypt"
+          readelf -h "$ARTIFACT_DIR/dnscrypt" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/dnscrypt" | tee "$ARTIFACT_DIR/dnscrypt.dynamic.txt" || true
+          "$ARTIFACT_DIR/dnscrypt" -version || true
+          "$ARTIFACT_DIR/dnscrypt" -help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/dnscrypt.version"
+
+      - name: Upload dnscrypt binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dnscrypt-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/dnscrypt/dnscrypt
+            out/artifacts/dnscrypt/dnscrypt.version
+            out/artifacts/dnscrypt/dnscrypt.commit
+            out/artifacts/dnscrypt/dnscrypt.dynamic.txt
+          retention-days: 1
+
+  build_mieru:
+    name: build mieru ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build mieru from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/mieru-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/mieru"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official mieru source ==="
+          git clone --depth 1 --branch "$MIERU_REF" https://github.com/enfein/mieru "$SRC/mieru"
+          MIERU_COMMIT="$(git -C "$SRC/mieru" rev-parse HEAD)"
+          printf '%s\n' "$MIERU_COMMIT" | tee "$ARTIFACT_DIR/mieru.commit"
+
+          echo "=== Locate mieru client package ==="
+          pushd "$SRC/mieru" > /dev/null
+          MIERU_PACKAGE=""
+          for candidate in ./cmd/mieru/mieru ./cmd/mieru ./cmd/client/mieru ./client/mieru; do
+            if [[ -d "$candidate" ]] && find "$candidate" -maxdepth 1 -name '*.go' -type f | grep -q .; then
+              MIERU_PACKAGE="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$MIERU_PACKAGE" ]]; then
+            MIERU_PACKAGE="$(find ./cmd -maxdepth 3 -name '*.go' -type f -printf '%h\n' 2>/dev/null | sort -u | grep '/mieru' | head -1 || true)"
+          fi
+          test -n "$MIERU_PACKAGE" || { echo "::error::mieru client Go package not found"; find . -maxdepth 4 -type f | sort | head -200; exit 1; }
+          echo "Build package: $MIERU_PACKAGE"
+
+          echo "=== Build mieru (${MIERU_REF}) ==="
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/mieru" \
+              "$MIERU_PACKAGE"
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/mieru"
+
+          cat > "$ARTIFACT_DIR/mieru.version" <<EOF_MIERU_VERSION
+          source=https://github.com/enfein/mieru
+          ref=$MIERU_REF
+          commit=$MIERU_COMMIT
+          binary=mieru
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_MIERU_VERSION
+
+          echo "=== Verify mieru artifact ==="
+          file "$ARTIFACT_DIR/mieru"
+          readelf -h "$ARTIFACT_DIR/mieru" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/mieru" | tee "$ARTIFACT_DIR/mieru.dynamic.txt" || true
+          "$ARTIFACT_DIR/mieru" version || true
+          "$ARTIFACT_DIR/mieru" help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/mieru.version"
+
+      - name: Upload mieru binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mieru-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/mieru/mieru
+            out/artifacts/mieru/mieru.version
+            out/artifacts/mieru/mieru.commit
+            out/artifacts/mieru/mieru.dynamic.txt
+          retention-days: 1
+
+  build_operaproxy:
+    name: build opera-proxy ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build opera-proxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/opera-proxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/opera-proxy"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official opera-proxy source ==="
+          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/Alexey71/opera-proxy "$SRC/opera-proxy"
+          OPERA_PROXY_COMMIT="$(git -C "$SRC/opera-proxy" rev-parse HEAD)"
+          printf '%s\n' "$OPERA_PROXY_COMMIT" | tee "$ARTIFACT_DIR/opera-proxy.commit"
+
+          echo "=== Build opera-proxy (${OPERA_PROXY_REF}) ==="
+          pushd "$SRC/opera-proxy" > /dev/null
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/opera-proxy" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/opera-proxy"
+
+          cat > "$ARTIFACT_DIR/opera-proxy.version" <<EOF_OPERA_PROXY_VERSION
+          source=https://github.com/Alexey71/opera-proxy
+          ref=$OPERA_PROXY_REF
+          commit=$OPERA_PROXY_COMMIT
+          binary=opera-proxy
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_OPERA_PROXY_VERSION
+
+          echo "=== Verify opera-proxy artifact ==="
+          file "$ARTIFACT_DIR/opera-proxy"
+          readelf -h "$ARTIFACT_DIR/opera-proxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/opera-proxy" | tee "$ARTIFACT_DIR/opera-proxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/opera-proxy" -version || true
+          "$ARTIFACT_DIR/opera-proxy" -help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/opera-proxy.version"
+
+      - name: Upload opera-proxy binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: opera-proxy-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/opera-proxy/opera-proxy
+            out/artifacts/opera-proxy/opera-proxy.version
+            out/artifacts/opera-proxy/opera-proxy.commit
+            out/artifacts/opera-proxy/opera-proxy.dynamic.txt
+          retention-days: 1
+
+  build_dpitunnel:
+    name: build DPITunnel ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            file \
+            git \
+            make \
+            ninja-build \
+            perl
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "DPITUNNEL_TARGET=${{ matrix.tor_host }}"
+            echo "DPITUNNEL_CC=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang"
+            echo "DPITUNNEL_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang++"
+            echo "DPITUNNEL_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build DPITunnel-cli from official source
+        run: |
+          set -euo pipefail
+
+          test -x "$DPITUNNEL_CC" || { echo "::error::Android C compiler not found: $DPITUNNEL_CC"; exit 1; }
+          test -x "$DPITUNNEL_CXX" || { echo "::error::Android C++ compiler not found: $DPITUNNEL_CXX"; exit 1; }
+          "$DPITUNNEL_CXX" --version | head -1
+
+          WORK="$PWD/out/build/dpitunnel-android"
+          SRC="$WORK/src"
+          BUILD_DIR="$WORK/build"
+          DEPS_DIR="$WORK/deps"
+          ARTIFACT_DIR="$PWD/out/artifacts/dpitunnel"
+          mkdir -p "$SRC" "$BUILD_DIR" "$DEPS_DIR" "$ARTIFACT_DIR"
+
+          echo "=== Fetch OpenSSL source ==="
+          git clone --depth 1 --branch "$DPITUNNEL_OPENSSL_REF" https://github.com/openssl/openssl "$SRC/openssl"
+
+          echo "=== Build OpenSSL for Android arm64 ==="
+          pushd "$SRC/openssl" > /dev/null
+          ./Configure ${{ matrix.openssl_target }} \
+            no-shared \
+            no-tests \
+            no-apps \
+            --prefix="$DEPS_DIR" \
+            --openssldir="$DEPS_DIR/ssl" \
+            -D__ANDROID_API__=$DPITUNNEL_ANDROID_API_LEVEL
+          make -j"$(nproc)"
+          make install_sw
+          popd > /dev/null
+
+          echo "=== Fetch official DPITunnel-cli source ==="
+          git clone --depth 1 --branch "$DPITUNNEL_REF" https://github.com/nomoresat/DPITunnel-cli "$SRC/DPITunnel-cli"
+          DPITUNNEL_COMMIT="$(git -C "$SRC/DPITunnel-cli" rev-parse HEAD)"
+          printf '%s\n' "$DPITUNNEL_COMMIT" | tee "$ARTIFACT_DIR/dpitunnel-cli.commit"
+
+          echo "=== Patch DPITunnel bundled libnl for Android pkt_sched headers ==="
+          LIBNL_TYPES="$SRC/DPITunnel-cli/libnl/include/netlink-private/types.h"
+          if [[ -f "$LIBNL_TYPES" ]] && ! grep -q 'ZDT_ANDROID_CBQ_COMPAT' "$LIBNL_TYPES"; then
+            python3 - "$LIBNL_TYPES" <<'PY_DPI_LIBNL'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          compat = '\n#ifdef __ANDROID__\n#ifndef ZDT_ANDROID_CBQ_COMPAT\n#define ZDT_ANDROID_CBQ_COMPAT 1\nstruct tc_cbq_lssopt { unsigned char zdt_dummy; };\nstruct tc_cbq_wrropt { unsigned char zdt_dummy; };\nstruct tc_cbq_ovl { unsigned char zdt_dummy; };\nstruct tc_cbq_fopt { unsigned char zdt_dummy; };\nstruct tc_cbq_police { unsigned char zdt_dummy; };\n#endif\n#endif\n'
+          insert_after = '#include <linux/pkt_sched.h>'
+          if insert_after in text:
+              text = text.replace(insert_after, insert_after + compat, 1)
+          else:
+              text = compat + text
+          path.write_text(text)
+          PY_DPI_LIBNL
+          fi
+          LIBNL_INET6="$SRC/DPITunnel-cli/libnl/lib/route/link/inet6.c"
+          if [[ -f "$LIBNL_INET6" ]] && grep -q '__ICMP6_MIB_MAX == 6' "$LIBNL_INET6"; then
+            python3 - "$LIBNL_INET6" <<'PY_DPI_INET6'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          text = text.replace('_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);', '#ifndef __ANDROID__\n\t\t_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);\n#endif')
+          path.write_text(text)
+          PY_DPI_INET6
+          fi
+          for LIBNL_ANDROID_QDISC_SRC in             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/cbq.c"             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/dsmark.c"; do
+            if [[ -f "$LIBNL_ANDROID_QDISC_SRC" ]]; then
+              cat > "$LIBNL_ANDROID_QDISC_SRC" <<'EOF_DPI_QDISC_STUB'
+          /*
+           * Android NDK headers do not expose the legacy CBQ/DSMARK qdisc
+           * constants used by these optional libnl modules. DPITunnel-cli does
+           * not use these qdisc helpers, so keep the bundled libnl buildable by
+           * compiling them as empty translation units for Android builds.
+           */
+          EOF_DPI_QDISC_STUB
+            fi
+          done
+
+          echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
+          cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.android_abi }} \
+            -DANDROID_PLATFORM=android-$DPITUNNEL_ANDROID_API_LEVEL \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_CXX_STANDARD=14 \
+            -DOPENSSL_ROOT_DIR="$DEPS_DIR" \
+            -DOPENSSL_INCLUDE_DIR="$DEPS_DIR/include" \
+            -DOPENSSL_SSL_LIBRARY="$DEPS_DIR/lib/libssl.a" \
+            -DOPENSSL_CRYPTO_LIBRARY="$DEPS_DIR/lib/libcrypto.a" \
+            -DOPENSSL_USE_STATIC_LIBS=TRUE \
+            -DSTATIC_BINARY=FALSE
+          cmake --build "$BUILD_DIR" --target DPITunnel-cli-exec --parallel "$(nproc)"
+
+          test -s "$BUILD_DIR/DPITunnel-cli-exec" || { echo "::error::DPITunnel-cli output binary not found"; find "$BUILD_DIR" -maxdepth 3 -type f | sort; exit 1; }
+          cp -f "$BUILD_DIR/DPITunnel-cli-exec" "$ARTIFACT_DIR/dpitunnel-cli"
+          "$DPITUNNEL_STRIP" --strip-unneeded "$ARTIFACT_DIR/dpitunnel-cli" || true
+          chmod 755 "$ARTIFACT_DIR/dpitunnel-cli"
+
+          cat > "$ARTIFACT_DIR/dpitunnel-cli.version" <<EOF_DPITUNNEL_VERSION
+          source=https://github.com/nomoresat/DPITunnel-cli
+          ref=$DPITUNNEL_REF
+          commit=$DPITUNNEL_COMMIT
+          upstream_binary=DPITunnel-cli-exec
+          packaged_binary=dpitunnel-cli
+          target=android-arm64
+          android_api=$DPITUNNEL_ANDROID_API_LEVEL
+          openssl_ref=$DPITUNNEL_OPENSSL_REF
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_DPITUNNEL_VERSION
+
+          echo "=== Verify DPITunnel-cli artifact ==="
+          file "$ARTIFACT_DIR/dpitunnel-cli"
+          readelf -h "$ARTIFACT_DIR/dpitunnel-cli" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/dpitunnel-cli" | tee "$ARTIFACT_DIR/dpitunnel-cli.dynamic.txt" || true
+          "$ARTIFACT_DIR/dpitunnel-cli" --help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/dpitunnel-cli.version"
+
+      - name: Upload DPITunnel binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dpitunnel-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/dpitunnel/dpitunnel-cli
+            out/artifacts/dpitunnel/dpitunnel-cli.version
+            out/artifacts/dpitunnel/dpitunnel-cli.commit
+            out/artifacts/dpitunnel/dpitunnel-cli.dynamic.txt
+          retention-days: 1
+
+  build_nfqws:
+    name: build nfqws ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            curl \
+            file \
+            libtool \
+            make \
+            pkg-config \
+            python3 \
+            xz-utils \
+            zlib1g-dev \
+            gcc-multilib \
+            g++-multilib
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "NFQWS_ANDROID_API=21"
+            echo "NFQWS_TARGET=${{ matrix.tor_host }}"
+            echo "NFQWS_CC=$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+            echo "NFQWS_AR=$NDK_BIN/llvm-ar"
+            echo "NFQWS_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "NFQWS_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build nfqws from latest zapret release tag
+        run: |
+          set -euo pipefail
+
+          for tool in "$NFQWS_CC" "$NFQWS_AR" "$NFQWS_RANLIB" "$NFQWS_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+
+          WORK="$PWD/out/build/nfqws-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          DEPS_DIR="$WORK/deps"
+          ARTIFACT_DIR="$PWD/out/artifacts/nfqws"
+          mkdir -p "$SRC" "$BUILD" "$DEPS_DIR" "$ARTIFACT_DIR"
+
+          export CC="$NFQWS_CC"
+          export AR="$NFQWS_AR"
+          export RANLIB="$NFQWS_RANLIB"
+          export STRIP="$NFQWS_STRIP"
+          export PKG_CONFIG_PATH="$DEPS_DIR/lib/pkgconfig"
+
+          download() {
+            local url="$1"
+            local out="$2"
+            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
+            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
+          }
+
+          echo "=== Resolve latest zapret release tag ==="
+          ZAPRET_REF="$(git ls-remote --tags --refs https://github.com/bol-van/zapret.git 'v*' \
+            | awk -F/ '{print $NF}' \
+            | sort -V \
+            | tail -1)"
+          if [[ -z "$ZAPRET_REF" ]]; then
+            echo "::error::Unable to resolve latest zapret tag"
+            exit 1
+          fi
+          echo "ZAPRET_REF=$ZAPRET_REF"
+
+          echo "=== Fetch zapret $ZAPRET_REF ==="
+          git clone --depth 1 --branch "$ZAPRET_REF" https://github.com/bol-van/zapret.git "$SRC/zapret"
+          ZAPRET_COMMIT="$(git -C "$SRC/zapret" rev-parse HEAD)"
+          echo "$ZAPRET_REF" | tee "$ARTIFACT_DIR/zapret.ref"
+          echo "$ZAPRET_COMMIT" | tee "$ARTIFACT_DIR/zapret.commit"
+
+          echo "=== Download netfilter/zlib dependencies ==="
+          download "https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2" "$SRC/libnfnetlink.tar.bz2"
+          download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
+          download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
+
+          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
+          download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
+
+          tar -xjf "$SRC/libnfnetlink.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libmnl.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libnetfilter_queue.tar.bz2" -C "$BUILD"
+          tar -xzf "$SRC/zlib.tar.gz" -C "$BUILD"
+
+          echo "=== Patch libnetfilter_queue for Android ==="
+          patch -p1 -d "$BUILD"/libnetfilter_queue-* -i "$SRC/zapret/.github/workflows/libnetfilter_queue-android.patch"
+
+          echo "=== Build netfilter dependencies ==="
+          for lib in libmnl libnfnetlink libnetfilter_queue; do
+            libdir="$(find "$BUILD" -maxdepth 1 -type d -name "${lib}-*" | head -1)"
+            test -d "$libdir" || { echo "::error::Source directory not found for $lib"; exit 1; }
+            pushd "$libdir" > /dev/null
+            CFLAGS="-Os -flto=auto -Wno-implicit-function-declaration" \
+              ./configure \
+                --prefix= \
+                --host="$NFQWS_TARGET" \
+                --enable-static \
+                --disable-shared \
+                --disable-dependency-tracking
+            make -j"$(nproc)"
+            make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+            popd > /dev/null
+            sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" "$DEPS_DIR/lib/pkgconfig/$lib.pc"
+          done
+
+          echo "=== Build zlib $ZLIB_REF ==="
+          zlibdir="$(find "$BUILD" -maxdepth 1 -type d -name 'zlib-*' | head -1)"
+          test -d "$zlibdir" || { echo "::error::zlib source directory not found"; exit 1; }
+          pushd "$zlibdir" > /dev/null
+          CFLAGS="-Os -flto=auto" ./configure --prefix= --static
+          make -j"$(nproc)"
+          make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+          popd > /dev/null
+
+          echo "=== Build nfqws from zapret $ZAPRET_REF ==="
+          NFQWS_VERSION_CFLAGS="-DZAPRET_GH_VER=\\\"$ZAPRET_REF\\\" -DZAPRET_GH_HASH=\\\"$ZAPRET_COMMIT\\\""
+          CFLAGS="-Os -flto=auto -I$DEPS_DIR/include $NFQWS_VERSION_CFLAGS" \
+          LDFLAGS="-L$DEPS_DIR/lib -Wl,-z,max-page-size=16384" \
+            make -C "$SRC/zapret/nfq" android -j"$(nproc)"
+
+          cp -f "$SRC/zapret/nfq/nfqws" "$ARTIFACT_DIR/nfqws"
+          chmod 755 "$ARTIFACT_DIR/nfqws"
+
+          echo "=== Clean and verify nfqws ELF ==="
+          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          if [[ -n "$CLEANER_TAG" ]]; then
+            download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
+            chmod +x "$WORK/termux-elf-cleaner"
+            "$WORK/termux-elf-cleaner" --api-level "$NFQWS_ANDROID_API" "$ARTIFACT_DIR/nfqws"
+          fi
+          "$NFQWS_STRIP" --strip-unneeded "$ARTIFACT_DIR/nfqws" || true
+
+          cat > "$ARTIFACT_DIR/nfqws.version" <<EOF_NFQWS_VERSION
+          source=https://github.com/bol-van/zapret
+          zapret_ref=$ZAPRET_REF
+          zapret_commit=$ZAPRET_COMMIT
+          binary=nfqws
+          target=android-arm64
+          android_api=$NFQWS_ANDROID_API
+          zlib_ref=$ZLIB_REF
+          libmnl_version=1.0.5
+          libnfnetlink_version=1.0.2
+          libnetfilter_queue_version=1.0.5
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_NFQWS_VERSION
+
+          file "$ARTIFACT_DIR/nfqws"
+          readelf -h "$ARTIFACT_DIR/nfqws" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/nfqws" | tee "$ARTIFACT_DIR/nfqws.dynamic.txt" || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/nfqws.version"
+
+      - name: Upload nfqws binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: nfqws-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/nfqws/nfqws
+            out/artifacts/nfqws/nfqws.version
+            out/artifacts/nfqws/zapret.ref
+            out/artifacts/nfqws/zapret.commit
+            out/artifacts/nfqws/nfqws.dynamic.txt
+          retention-days: 1
+
+  build_nfqws2:
+    name: build nfqws2 ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            curl \
+            file \
+            gcc-multilib \
+            libtool \
+            make \
+            patch \
+            pkg-config \
+            python3 \
+            tar \
+            xz-utils \
+            zlib1g-dev \
+            gcc-multilib \
+            g++-multilib
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_BIN="$TOOLCHAIN/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "NFQWS2_ANDROID_API=21"
+            echo "NFQWS2_TARGET=${{ matrix.tor_host }}"
+            echo "NFQWS2_TOOLCHAIN=$TOOLCHAIN"
+            echo "NFQWS2_CC=$NDK_BIN/clang --target=${{ matrix.clang_target_api21 }}"
+            echo "NFQWS2_AR=$NDK_BIN/llvm-ar"
+            echo "NFQWS2_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "NFQWS2_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build nfqws2 from latest zapret2 release tag
+        run: |
+          set -euo pipefail
+
+          for tool in "$NFQWS2_TOOLCHAIN/bin/clang" "$NFQWS2_AR" "$NFQWS2_RANLIB" "$NFQWS2_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+
+          WORK="$PWD/out/build/nfqws2-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          DEPS_DIR="$WORK/deps"
+          ARTIFACT_DIR="$PWD/out/artifacts/nfqws2"
+          mkdir -p "$SRC" "$BUILD" "$DEPS_DIR" "$ARTIFACT_DIR"
+
+          export CC="$NFQWS2_CC"
+          export AR="$NFQWS2_AR"
+          export AS="$NFQWS2_CC"
+          export RANLIB="$NFQWS2_RANLIB"
+          export STRIP="$NFQWS2_STRIP"
+          export PKG_CONFIG_PATH="$DEPS_DIR/lib/pkgconfig"
+
+          download() {
+            local url="$1"
+            local out="$2"
+            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
+            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
+          }
+
+          echo "=== Resolve latest zapret2 release tag ==="
+          ZAPRET2_REF="$(git ls-remote --tags --refs https://github.com/bol-van/zapret2.git 'v*' \
+            | awk -F/ '{print $NF}' \
+            | sort -V \
+            | tail -1)"
+          if [[ -z "$ZAPRET2_REF" ]]; then
+            echo "::error::Unable to resolve latest zapret2 tag"
+            exit 1
+          fi
+          echo "ZAPRET2_REF=$ZAPRET2_REF"
+
+          echo "=== Fetch zapret2 $ZAPRET2_REF ==="
+          git clone --depth 1 --branch "$ZAPRET2_REF" https://github.com/bol-van/zapret2.git "$SRC/zapret2"
+          ZAPRET2_COMMIT="$(git -C "$SRC/zapret2" rev-parse HEAD)"
+          echo "$ZAPRET2_REF" | tee "$ARTIFACT_DIR/zapret2.ref"
+          echo "$ZAPRET2_COMMIT" | tee "$ARTIFACT_DIR/zapret2.commit"
+
+          echo "=== Collect zapret2 Lua scripts from the same source checkout ==="
+          test -d "$SRC/zapret2/lua" || { echo "::error::zapret2 lua directory not found"; exit 1; }
+          mkdir -p "$ARTIFACT_DIR/lua"
+          cp -a "$SRC/zapret2/lua/." "$ARTIFACT_DIR/lua/"
+          test -s "$ARTIFACT_DIR/lua/zapret-lib.lua" || { echo "::error::zapret2 zapret-lib.lua missing"; exit 1; }
+          grep -n 'NFQWS2_COMPAT_VER_REQUIRED' "$ARTIFACT_DIR/lua/zapret-lib.lua" || true
+
+          echo "=== Build LuaJIT for Android arm64 ==="
+          LUAJIT_VER="2.1"
+          LUAJIT_RELEASE="2.1-20250826"
+          LUAJIT_LUAVER="5.1"
+          download "https://github.com/openresty/luajit2/archive/refs/tags/v${LUAJIT_RELEASE}.tar.gz" "$SRC/luajit2.tar.gz"
+          tar -xzf "$SRC/luajit2.tar.gz" -C "$BUILD"
+          luajitdir="$(find "$BUILD" -maxdepth 1 -type d -name 'luajit2-*' | head -1)"
+          test -d "$luajitdir" || { echo "::error::LuaJIT source directory not found"; exit 1; }
+          pushd "$luajitdir" > /dev/null
+          if [[ "${{ matrix.goarch }}" = "arm" ]]; then
+            LUAJIT_HOST_CC="gcc -m32"
+          else
+            LUAJIT_HOST_CC="cc"
+          fi
+          make \
+            BUILDMODE=static \
+            XCFLAGS="-DLUAJIT_DISABLE_FFI" \
+            HOST_CC="$LUAJIT_HOST_CC" \
+            CROSS= \
+            CC="$NFQWS2_CC" \
+            TARGET_AR="$NFQWS2_AR rcus" \
+            TARGET_STRIP="$NFQWS2_STRIP" \
+            TARGET_CFLAGS="-Oz -flto=auto -ffunction-sections -fdata-sections" \
+            TARGET_LDFLAGS="-Wl,--gc-sections -flto=auto" \
+            -j"$(nproc)"
+          make install PREFIX= DESTDIR="$DEPS_DIR"
+          popd > /dev/null
+          LJIT=1
+          LCFLAGS="-I${DEPS_DIR}/include/luajit-${LUAJIT_VER}"
+          LLIB="-L${DEPS_DIR}/lib -lluajit-${LUAJIT_LUAVER}"
+
+          echo "=== Download netfilter/zlib dependencies ==="
+          download "https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2" "$SRC/libnfnetlink.tar.bz2"
+          download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
+          download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
+
+          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
+          download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
+
+          tar -xjf "$SRC/libnfnetlink.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libmnl.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libnetfilter_queue.tar.bz2" -C "$BUILD"
+          tar -xzf "$SRC/zlib.tar.gz" -C "$BUILD"
+
+          echo "=== Patch libnetfilter_queue for Android ==="
+          patch -p1 -d "$BUILD"/libnetfilter_queue-* -i "$SRC/zapret2/.github/workflows/libnetfilter_queue-android.patch"
+
+          echo "=== Build netfilter dependencies ==="
+          for lib in libmnl libnfnetlink libnetfilter_queue; do
+            libdir="$(find "$BUILD" -maxdepth 1 -type d -name "${lib}-*" | head -1)"
+            test -d "$libdir" || { echo "::error::Source directory not found for $lib"; exit 1; }
+            pushd "$libdir" > /dev/null
+            CFLAGS="-Oz -flto=auto -ffunction-sections -fdata-sections -Wno-implicit-function-declaration" \
+            LDFLAGS="-Wl,--gc-sections -flto=auto" \
+              ./configure \
+                --prefix= \
+                --host="$NFQWS2_TARGET" \
+                --enable-static \
+                --disable-shared \
+                --disable-dependency-tracking
+            make -j"$(nproc)"
+            make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+            popd > /dev/null
+            sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" "$DEPS_DIR/lib/pkgconfig/$lib.pc"
+          done
+
+          echo "=== Build zlib $ZLIB_REF ==="
+          zlibdir="$(find "$BUILD" -maxdepth 1 -type d -name 'zlib-*' | head -1)"
+          test -d "$zlibdir" || { echo "::error::zlib source directory not found"; exit 1; }
+          pushd "$zlibdir" > /dev/null
+          CFLAGS="-Oz -flto=auto -ffunction-sections -fdata-sections" ./configure --prefix= --static
+          make -j"$(nproc)"
+          make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+          popd > /dev/null
+
+          echo "=== Build nfqws2 from zapret2 $ZAPRET2_REF ==="
+          NFQWS2_VERSION_CFLAGS="-DZAPRET_GH_VER=\\\"$ZAPRET2_REF\\\" -DZAPRET_GH_HASH=\\\"$ZAPRET2_COMMIT\\\""
+          CFLAGS="$NFQWS2_VERSION_CFLAGS -I$DEPS_DIR/include -Oz -flto=auto -ffunction-sections -fdata-sections" \
+          LDFLAGS="-L$DEPS_DIR/lib -Wl,--gc-sections -flto=auto -Wl,-z,max-page-size=16384" \
+            make -C "$SRC/zapret2/nfq2" \
+              LUA_JIT="$LJIT" \
+              LUA_CFLAGS="$LCFLAGS" \
+              LUA_LIB="$LLIB" \
+              -j"$(nproc)" \
+              android
+
+          cp -f "$SRC/zapret2/nfq2/nfqws2" "$ARTIFACT_DIR/nfqws2"
+          chmod 755 "$ARTIFACT_DIR/nfqws2"
+
+          echo "=== Clean and verify nfqws2 ELF ==="
+          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          if [[ -n "$CLEANER_TAG" ]]; then
+            download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
+            chmod +x "$WORK/termux-elf-cleaner"
+            "$WORK/termux-elf-cleaner" --api-level "$NFQWS2_ANDROID_API" "$ARTIFACT_DIR/nfqws2"
+          fi
+          "$NFQWS2_STRIP" --strip-unneeded "$ARTIFACT_DIR/nfqws2" || true
+
+          cat > "$ARTIFACT_DIR/nfqws2.version" <<EOF_NFQWS2_VERSION
+          source=https://github.com/bol-van/zapret2
+          zapret2_ref=$ZAPRET2_REF
+          zapret2_commit=$ZAPRET2_COMMIT
+          binary=nfqws2
+          target=android-arm64
+          android_api=$NFQWS2_ANDROID_API
+          luajit_release=$LUAJIT_RELEASE
+          zlib_ref=$ZLIB_REF
+          libmnl_version=1.0.5
+          libnfnetlink_version=1.0.2
+          libnetfilter_queue_version=1.0.5
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_NFQWS2_VERSION
+
+          file "$ARTIFACT_DIR/nfqws2"
+          readelf -h "$ARTIFACT_DIR/nfqws2" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/nfqws2" | tee "$ARTIFACT_DIR/nfqws2.dynamic.txt" || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/nfqws2.version"
+
+      - name: Upload nfqws2 binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: nfqws2-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/nfqws2/nfqws2
+            out/artifacts/nfqws2/nfqws2.version
+            out/artifacts/nfqws2/zapret2.ref
+            out/artifacts/nfqws2/zapret2.commit
+            out/artifacts/nfqws2/nfqws2.dynamic.txt
+            out/artifacts/nfqws2/lua
+          retention-days: 1
+
+  build_torproxy:
+    name: build Tor ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bison \
+            build-essential \
+            ca-certificates \
+            curl \
+            file \
+            git \
+            libtool \
+            make \
+            perl \
+            pkg-config \
+            python3
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "TOR_HOST=${{ matrix.tor_host }}"
+            echo "TOR_CC=$NDK_BIN/${{ matrix.clang_prefix }}${TOR_ANDROID_API_LEVEL}-clang"
+            echo "TOR_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${TOR_ANDROID_API_LEVEL}-clang++"
+            echo "TOR_AR=$NDK_BIN/llvm-ar"
+            echo "TOR_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "TOR_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Tor C from official source
+        run: |
+          set -euo pipefail
+
+          for tool in "$TOR_CC" "$TOR_CXX" "$TOR_AR" "$TOR_RANLIB" "$TOR_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+          "$TOR_CC" --version | head -1
+
+          WORK="$PWD/out/build/tor-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          PREFIX="$WORK/prefix"
+          ARTIFACT_DIR="$PWD/out/artifacts/torproxy"
+          mkdir -p "$SRC" "$BUILD" "$PREFIX" "$ARTIFACT_DIR"
+
+          export CC="$TOR_CC"
+          export CXX="$TOR_CXX"
+          export AR="$TOR_AR"
+          export RANLIB="$TOR_RANLIB"
+          export STRIP="$TOR_STRIP"
+          export ac_cv_prog_AR="$TOR_AR"
+          export ac_cv_prog_RANLIB="$TOR_RANLIB"
+          export ac_cv_prog_STRIP="$TOR_STRIP"
+          export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+          export CPPFLAGS="-I$PREFIX/include -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
+          export CFLAGS="-Os -fPIC -fPIE -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
+          export CXXFLAGS="$CFLAGS"
+          export LDFLAGS="-L$PREFIX/lib -pie"
+
+          echo "=== Fetch Tor dependencies ==="
+          git clone --depth 1 --branch "$TOR_ZLIB_REF" https://github.com/madler/zlib "$SRC/zlib"
+          git clone --depth 1 --branch "$TOR_ZSTD_REF" https://github.com/facebook/zstd "$SRC/zstd"
+          git clone --depth 1 --branch "$TOR_OPENSSL_REF" https://github.com/openssl/openssl "$SRC/openssl"
+          git clone --depth 1 --branch "$TOR_LIBEVENT_REF" https://github.com/libevent/libevent "$SRC/libevent"
+
+          echo "=== Build zlib (${TOR_ZLIB_REF}) ==="
+          pushd "$SRC/zlib" > /dev/null
+          CHOST="$TOR_HOST" ./configure --prefix="$PREFIX" --static
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Build zstd (${TOR_ZSTD_REF}) ==="
+          make -C "$SRC/zstd/lib" -j"$(nproc)" \
+            CC="$CC" \
+            AR="$AR" \
+            RANLIB="$RANLIB" \
+            CFLAGS="$CFLAGS" \
+            HAVE_ZLIB=0 \
+            HAVE_LZMA=0 \
+            HAVE_LZ4=0 \
+            BUILD_SHARED=no \
+            libzstd.a
+          make -C "$SRC/zstd/lib" \
+            PREFIX="$PREFIX" \
+            BUILD_SHARED=no \
+            install-static install-includes
+
+          echo "=== Build OpenSSL (${TOR_OPENSSL_REF}) ==="
+          pushd "$SRC/openssl" > /dev/null
+          ./Configure ${{ matrix.openssl_target }} \
+            no-shared \
+            no-tests \
+            no-apps \
+            --prefix="$PREFIX" \
+            --openssldir="$PREFIX/ssl" \
+            -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL
+          make -j"$(nproc)"
+          make install_sw
+          popd > /dev/null
+
+          echo "=== Build libevent (${TOR_LIBEVENT_REF}) ==="
+          pushd "$SRC/libevent" > /dev/null
+          ./autogen.sh
+          ./configure \
+            --host="$TOR_HOST" \
+            --prefix="$PREFIX" \
+            --enable-static \
+            --disable-shared \
+            --disable-openssl
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Fetch official Tor source ==="
+          git clone --depth 1 --branch "$TOR_REF" https://gitlab.torproject.org/tpo/core/tor "$SRC/tor"
+          TOR_COMMIT="$(git -C "$SRC/tor" rev-parse HEAD)"
+          printf '%s\n' "$TOR_COMMIT" | tee "$ARTIFACT_DIR/torproxy.commit"
+
+          echo "=== Build Tor C (${TOR_REF}) ==="
+          pushd "$SRC/tor" > /dev/null
+          ./autogen.sh
+          ./configure \
+            --host="$TOR_HOST" \
+            --prefix="$PREFIX" \
+            --disable-tool-name-check \
+            --disable-asciidoc \
+            --disable-manpage \
+            --disable-html-manual \
+            --disable-system-torrc \
+            --disable-unittests \
+            --disable-module-dirauth \
+            --disable-seccomp \
+            --disable-systemd \
+            --enable-static-openssl \
+            --with-openssl-dir="$PREFIX" \
+            --with-libevent-dir="$PREFIX" \
+            --with-zlib-dir="$PREFIX" \
+            --with-zstd-dir="$PREFIX"
+          make -j"$(nproc)"
+          popd > /dev/null
+
+          TOR_OUTPUT=""
+          for candidate in \
+            "$SRC/tor/src/app/tor" \
+            "$SRC/tor/src/or/tor" \
+            "$SRC/tor/src/tor"; do
+            if [[ -s "$candidate" ]]; then
+              TOR_OUTPUT="$candidate"
+              break
+            fi
+          done
+          test -n "$TOR_OUTPUT" || { echo "::error::Tor output binary not found"; find "$SRC/tor" -maxdepth 4 -type f -perm -111 | sort | head -200; exit 1; }
+          cp -f "$TOR_OUTPUT" "$ARTIFACT_DIR/torproxy"
+          "$TOR_STRIP" --strip-unneeded "$ARTIFACT_DIR/torproxy" || true
+          chmod 755 "$ARTIFACT_DIR/torproxy"
+
+          cat > "$ARTIFACT_DIR/torproxy.version" <<EOF_TOR_VERSION
+          source=https://gitlab.torproject.org/tpo/core/tor
+          ref=$TOR_REF
+          commit=$TOR_COMMIT
+          upstream_binary=tor
+          packaged_binary=torproxy
+          target=android-arm64
+          android_api=$TOR_ANDROID_API_LEVEL
+          openssl_ref=$TOR_OPENSSL_REF
+          libevent_ref=$TOR_LIBEVENT_REF
+          zlib_ref=$TOR_ZLIB_REF
+          zstd_ref=$TOR_ZSTD_REF
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_TOR_VERSION
+
+          echo "=== Verify torproxy artifact ==="
+          file "$ARTIFACT_DIR/torproxy"
+          readelf -h "$ARTIFACT_DIR/torproxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/torproxy" | tee "$ARTIFACT_DIR/torproxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/torproxy" --version || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/torproxy.version"
+
+      - name: Upload Tor binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: torproxy-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/torproxy/torproxy
+            out/artifacts/torproxy/torproxy.version
+            out/artifacts/torproxy/torproxy.commit
+            out/artifacts/torproxy/torproxy.dynamic.txt
+          retention-days: 1
+
+  build_lyrebird:
+    name: build lyrebird ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.12'
+          cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
+
+      - name: Build lyrebird from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/lyrebird-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/lyrebird"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official lyrebird source ==="
+          git clone --depth 1 --branch "$LYREBIRD_REF" https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird "$SRC/lyrebird"
+          LYREBIRD_COMMIT="$(git -C "$SRC/lyrebird" rev-parse HEAD)"
+          printf '%s\n' "$LYREBIRD_COMMIT" | tee "$ARTIFACT_DIR/lyrebird.commit"
+
+          echo "=== Build lyrebird (${LYREBIRD_REF}) ==="
+          pushd "$SRC/lyrebird" > /dev/null
+          LYREBIRD_PACKAGE="./cmd/lyrebird"
+          if [[ ! -d "$LYREBIRD_PACKAGE" ]]; then
+            LYREBIRD_PACKAGE="$(find ./cmd -maxdepth 3 -name '*.go' -type f -printf '%h\n' 2>/dev/null | sort -u | grep '/lyrebird' | head -1 || true)"
+          fi
+          test -n "$LYREBIRD_PACKAGE" || { echo "::error::lyrebird command package not found"; find . -maxdepth 4 -type f | sort | head -200; exit 1; }
+          echo "Build package: $LYREBIRD_PACKAGE"
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/lyrebird" \
+              "$LYREBIRD_PACKAGE"
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/lyrebird"
+
+          cat > "$ARTIFACT_DIR/lyrebird.version" <<EOF_LYREBIRD_VERSION
+          source=https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird
+          ref=$LYREBIRD_REF
+          commit=$LYREBIRD_COMMIT
+          binary=lyrebird
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_LYREBIRD_VERSION
+
+          echo "=== Verify lyrebird artifact ==="
+          file "$ARTIFACT_DIR/lyrebird"
+          readelf -h "$ARTIFACT_DIR/lyrebird" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/lyrebird" | tee "$ARTIFACT_DIR/lyrebird.dynamic.txt" || true
+          "$ARTIFACT_DIR/lyrebird" -version || true
+          "$ARTIFACT_DIR/lyrebird" -h | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/lyrebird.version"
+
+      - name: Upload lyrebird binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: lyrebird-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/lyrebird/lyrebird
+            out/artifacts/lyrebird/lyrebird.version
+            out/artifacts/lyrebird/lyrebird.commit
+            out/artifacts/lyrebird/lyrebird.dynamic.txt
+          retention-days: 1
+
+  module_binaries_ready:
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
+    runs-on: ubuntu-latest
+    needs:
+      - build_openvpn
+      - build_amneziawg
+      - build_wireproxy
+      - build_tun2socks
+      - build_mihomo
+      - build_singbox
+      - build_byedpi
+      - build_dnscrypt
+      - build_mieru
+      - build_operaproxy
+      - build_dpitunnel
+      - build_torproxy
+      - build_lyrebird
+      - build_nfqws
+      - build_nfqws2
+    if: >-
+      needs.build_openvpn.result == 'success' &&
+      needs.build_amneziawg.result == 'success' &&
+      needs.build_wireproxy.result == 'success' &&
+      needs.build_tun2socks.result == 'success' &&
+      needs.build_mihomo.result == 'success' &&
+      needs.build_singbox.result == 'success' &&
+      needs.build_byedpi.result == 'success' &&
+      needs.build_dnscrypt.result == 'success' &&
+      needs.build_mieru.result == 'success' &&
+      needs.build_operaproxy.result == 'success' &&
+      needs.build_dpitunnel.result == 'success' &&
+      needs.build_torproxy.result == 'success' &&
+      needs.build_lyrebird.result == 'success' &&
+      needs.build_nfqws.result == 'success' &&
+      needs.build_nfqws2.result == 'success'
+
+    steps:
+      - name: Mark module binaries ready
+        run: echo "External module binary artifacts are ready for module packaging"
+
+  build_zygisk:
+    name: build Zygisk module ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -380,7 +3410,7 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Build Zygisk arm64-v8a
+      - name: Build Zygisk ${{ matrix.abi }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
@@ -390,11 +3420,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out/zygisk
-          ./zygisk/build.sh out/zygisk/arm64-v8a.so
-          file out/zygisk/arm64-v8a.so
-          test -s out/zygisk/arm64-v8a.so
-          readelf -Ws out/zygisk/arm64-v8a.so | grep -q ' zygisk_module_entry$'
-          if readelf -d out/zygisk/arm64-v8a.so | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
+          ZDT_ZYGISK_ABI=${{ matrix.abi }} ./zygisk/build.sh out/zygisk/${{ matrix.abi }}.so
+          file out/zygisk/${{ matrix.abi }}.so
+          test -s out/zygisk/${{ matrix.abi }}.so
+          readelf -Ws out/zygisk/${{ matrix.abi }}.so | grep -q ' zygisk_module_entry$'
+          if readelf -d out/zygisk/${{ matrix.abi }}.so | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
             echo "::error::Zygisk binary must not depend on C++ STL runtime"
             exit 1
           fi
@@ -402,17 +3432,32 @@ jobs:
       - name: Upload Zygisk binary
         uses: actions/upload-artifact@v7
         with:
-          name: zygisk-arm64
-          path: out/zygisk/arm64-v8a.so
+          name: zygisk-${{ matrix.artifact_suffix }}
+          path: out/zygisk/${{ matrix.abi }}.so
           retention-days: 1
 
-  pack_module:
-    name: Pack ZDT-D module
+  module_zygisk_ready:
+    name: 3 Module Zygisk ready
     runs-on: ubuntu-latest
     needs:
-      - build_rust_binaries
       - build_zygisk
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success'
+    if: needs.build_zygisk.result == 'success'
+
+    steps:
+      - name: Mark Zygisk binary ready
+        run: echo "Zygisk artifact is ready for module packaging"
+
+  pack_module:
+    name: 5 Pack module ZIP
+    runs-on: ubuntu-latest
+    needs:
+      - module_core_ready
+      - module_binaries_ready
+      - module_zygisk_ready
+    if: >-
+      needs.module_core_ready.result == 'success' &&
+      needs.module_binaries_ready.result == 'success' &&
+      needs.module_zygisk_ready.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -420,71 +3465,298 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download Rust binaries
+      - name: Download zdtd arm64
         uses: actions/download-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust
-
-      - name: Download Zygisk binary
+          name: zdtd-arm64
+          path: out/artifacts/zdtd/arm64
+      - name: Download t2s arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: t2s-arm64
+          path: out/artifacts/t2s/arm64
+      - name: Download zygisk arm64
         uses: actions/download-artifact@v7
         with:
           name: zygisk-arm64
-          path: out/zygisk
-
-      - name: Check prebuilt binaries
-        run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
-          MISSING=()
-          for bin in "${REQUIRED[@]}"; do
-            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
-          done
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
-            exit 1
-          fi
-          echo "All binaries found"
-
+          path: out/artifacts/zygisk/arm64
+      - name: Download openvpn arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: openvpn-arm64
+          path: out/artifacts/openvpn/arm64
+      - name: Download amneziawg arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: amneziawg-arm64
+          path: out/artifacts/amneziawg/arm64
+      - name: Download wireproxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm64
+          path: out/artifacts/wireproxy/arm64
+      - name: Download tun2socks arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm64
+          path: out/artifacts/tun2socks/arm64
+      - name: Download mihomo arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm64
+          path: out/artifacts/mihomo/arm64
+      - name: Download sing-box arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm64
+          path: out/artifacts/sing-box/arm64
+      - name: Download byedpi arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm64
+          path: out/artifacts/byedpi/arm64
+      - name: Download dnscrypt arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm64
+          path: out/artifacts/dnscrypt/arm64
+      - name: Download mieru arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm64
+          path: out/artifacts/mieru/arm64
+      - name: Download opera-proxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: opera-proxy-arm64
+          path: out/artifacts/opera-proxy/arm64
+      - name: Download dpitunnel arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: dpitunnel-arm64
+          path: out/artifacts/dpitunnel/arm64
+      - name: Download torproxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm64
+          path: out/artifacts/torproxy/arm64
+      - name: Download lyrebird arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm64
+          path: out/artifacts/lyrebird/arm64
+      - name: Download nfqws arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-arm64
+          path: out/artifacts/nfqws/arm64
+      - name: Download nfqws2 arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws2-arm64
+          path: out/artifacts/nfqws2/arm64
+      - name: Download zdtd arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: zdtd-arm32
+          path: out/artifacts/zdtd/arm32
+      - name: Download t2s arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: t2s-arm32
+          path: out/artifacts/t2s/arm32
+      - name: Download zygisk arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: zygisk-arm32
+          path: out/artifacts/zygisk/arm32
+      - name: Download openvpn arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: openvpn-arm32
+          path: out/artifacts/openvpn/arm32
+      - name: Download amneziawg arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: amneziawg-arm32
+          path: out/artifacts/amneziawg/arm32
+      - name: Download wireproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm32
+          path: out/artifacts/wireproxy/arm32
+      - name: Download tun2socks arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm32
+          path: out/artifacts/tun2socks/arm32
+      - name: Download mihomo arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm32
+          path: out/artifacts/mihomo/arm32
+      - name: Download sing-box arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm32
+          path: out/artifacts/sing-box/arm32
+      - name: Download byedpi arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm32
+          path: out/artifacts/byedpi/arm32
+      - name: Download dnscrypt arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm32
+          path: out/artifacts/dnscrypt/arm32
+      - name: Download mieru arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm32
+          path: out/artifacts/mieru/arm32
+      - name: Download opera-proxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: opera-proxy-arm32
+          path: out/artifacts/opera-proxy/arm32
+      - name: Download dpitunnel arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dpitunnel-arm32
+          path: out/artifacts/dpitunnel/arm32
+      - name: Download torproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm32
+          path: out/artifacts/torproxy/arm32
+      - name: Download lyrebird arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm32
+          path: out/artifacts/lyrebird/arm32
+      - name: Download nfqws arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-arm32
+          path: out/artifacts/nfqws/arm32
+      - name: Download nfqws2 arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws2-arm32
+          path: out/artifacts/nfqws2/arm32
       - name: Pack Magisk module archive
         run: |
           set -euo pipefail
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          PREBUILT="prebuilt/bin/arm64-v8a"
-          ZDTD_BIN="out/artifacts/rust/zdtd"
-          T2S_BIN="out/artifacts/rust/t2s"
-          ZYGISK_SO="out/zygisk/arm64-v8a.so"
+          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
-          test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
-          test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
-          test -s "$ZYGISK_SO" || { echo "::error::Zygisk artifact missing: $ZYGISK_SO"; exit 1; }
+          require_file() {
+            local path="$1"
+            test -s "$path" || { echo "::error::Required artifact missing: $path"; exit 1; }
+          }
+
+          artifact_path() {
+            local arch="$1"
+            local bin="$2"
+            case "$bin" in
+              zdtd) echo "out/artifacts/zdtd/$arch/zdtd" ;;
+              t2s) echo "out/artifacts/t2s/$arch/t2s" ;;
+              openvpn) echo "out/artifacts/openvpn/$arch/openvpn" ;;
+              amneziawg-go) echo "out/artifacts/amneziawg/$arch/amneziawg-go" ;;
+              awg) echo "out/artifacts/amneziawg/$arch/awg" ;;
+              wireproxy) echo "out/artifacts/wireproxy/$arch/wireproxy" ;;
+              tun2socks) echo "out/artifacts/tun2socks/$arch/tun2socks" ;;
+              mihomo) echo "out/artifacts/mihomo/$arch/mihomo" ;;
+              sing-box) echo "out/artifacts/sing-box/$arch/sing-box" ;;
+              byedpi) echo "out/artifacts/byedpi/$arch/byedpi" ;;
+              dnscrypt) echo "out/artifacts/dnscrypt/$arch/dnscrypt" ;;
+              mieru) echo "out/artifacts/mieru/$arch/mieru" ;;
+              opera-proxy) echo "out/artifacts/opera-proxy/$arch/opera-proxy" ;;
+              dpitunnel-cli) echo "out/artifacts/dpitunnel/$arch/dpitunnel-cli" ;;
+              torproxy) echo "out/artifacts/torproxy/$arch/torproxy" ;;
+              lyrebird) echo "out/artifacts/lyrebird/$arch/lyrebird" ;;
+              nfqws) echo "out/artifacts/nfqws/$arch/nfqws" ;;
+              nfqws2) echo "out/artifacts/nfqws2/$arch/nfqws2" ;;
+              *) echo "::error::Unknown binary: $bin"; exit 1 ;;
+            esac
+          }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
-
           cp -a module_template/. "$MODULE_BUILD_DIR/"
           cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
 
           [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
           find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
           rm -f "$MODULE_BUILD_DIR/zygisk/unloaded" 2>/dev/null || true
+          rm -rf "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt"
+          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a" "$MODULE_BUILD_DIR/prebuilt/bin/arm-v7a" "$MODULE_BUILD_DIR/zygisk"
 
-          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/zygisk"
-          cp -f "$ZYGISK_SO" "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" && chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+          cp -f out/artifacts/zygisk/arm64/arm64-v8a.so "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+          cp -f out/artifacts/zygisk/arm32/armeabi-v7a.so "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
+          chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
 
-          cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
-          cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
-            cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
+          echo "=== Install zapret2 Lua scripts matching the packaged nfqws2 binary ==="
+          require_file "out/artifacts/nfqws2/arm64/lua/zapret-lib.lua"
+          CUSTOM_LUA_DIR="$RUNNER_TEMP/zdt-custom-lua"
+          rm -rf "$CUSTOM_LUA_DIR"
+          mkdir -p "$CUSTOM_LUA_DIR"
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+            if [[ -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" ]]; then
+              cp -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" "$CUSTOM_LUA_DIR/$custom_lua"
+            fi
           done
+          rm -rf "$MODULE_BUILD_DIR/strategic/lua"
+          mkdir -p "$MODULE_BUILD_DIR/strategic/lua"
+          cp -a out/artifacts/nfqws2/arm64/lua/. "$MODULE_BUILD_DIR/strategic/lua/"
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+            require_file "$CUSTOM_LUA_DIR/$custom_lua"
+            cp -f "$CUSTOM_LUA_DIR/$custom_lua" "$MODULE_BUILD_DIR/strategic/lua/$custom_lua"
+          done
+          chmod 644 "$MODULE_BUILD_DIR/strategic/lua"/*.lua
+          grep -n 'NFQWS2_COMPAT_VER_REQUIRED' "$MODULE_BUILD_DIR/strategic/lua/zapret-lib.lua" || true
+
+          for arch in arm64 arm32; do
+            case "$arch" in
+              arm64) module_arch="arm64-v8a" ;;
+              arm32) module_arch="arm-v7a" ;;
+            esac
+            for bin in $BINARIES; do
+              src="$(artifact_path "$arch" "$bin")"
+              require_file "$src"
+              cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
+              chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
+            done
+          done
+
+          rm -rf "$MODULE_BUILD_DIR/verify_sum"
+          mkdir -p "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
+          while IFS= read -r file; do
+            rel="${file#$MODULE_BUILD_DIR/}"
+            mkdir -p "$MODULE_BUILD_DIR/verify_sum/$(dirname "$rel")"
+            (cd "$MODULE_BUILD_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
+          done < <(find "$MODULE_BUILD_DIR/prebuilt/bin" "$MODULE_BUILD_DIR/zygisk" -type f | sort)
+          test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::arm64 zygisk verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/armeabi-v7a.so.sha256" || { echo "::error::arm32 zygisk verify sum missing"; exit 1; }
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
-          ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read module zip"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm64-v8a/zdtd' >/dev/null || { echo "::error::arm64 module binaries missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/zdtd' >/dev/null || { echo "::error::arm32 module binaries missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::arm64 Zygisk binary missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/armeabi-v7a.so' >/dev/null || { echo "::error::arm32 Zygisk binary missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-lib.lua' >/dev/null || { echo "::error::zapret2 Lua library missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-sni.lua' >/dev/null || { echo "::error::custom zapret-sni.lua missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-wgobfs.lua' >/dev/null || { echo "::error::custom zapret-wgobfs.lua missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify.sh' >/dev/null || { echo "::error::verify.sh missing in module zip"; exit 1; }
           if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
             echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"
             exit 1
@@ -494,22 +3766,419 @@ jobs:
             exit 1
           fi
 
-          ls -lh "$MODULE_ZIP"
+          RAW_MODULE_ZIP="out/module/zdt_module.raw.zip"
+          cp -f "$MODULE_ZIP" "$RAW_MODULE_ZIP"
+          python3 scripts/module/fake-encrypt-central-directory.py "$RAW_MODULE_ZIP" "$MODULE_ZIP"
+          test -s "$MODULE_ZIP" || { echo "::error::module zip missing after central directory protection"; exit 1; }
+          ls -lh "$MODULE_ZIP" "$RAW_MODULE_ZIP"
 
-      - name: Upload module archive
+      - name: Upload module ZIP
         uses: actions/upload-artifact@v7
         with:
           name: zdt-module-zip
           path: out/module/zdt_module.zip
           retention-days: 1
 
+  build_dpi_detector:
+    name: build dpi-detector ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and dpi-detector target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-dpi-detector-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/dpi-detector/Cargo.toml') }}
+          restore-keys: |
+            cargo-dpi-detector-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
+          cargo -V
+          rustc -V
+
+      - name: Build dpi-detector
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
+
+      - name: Collect dpi-detector
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/dpi-detector"
+          DST="out/artifacts/dpi-detector"
+          test -s "$SRC" || { echo "::error::dpi-detector artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/dpi-detector"
+          chmod 755 "$DST/dpi-detector"
+          ls -lh "$DST/dpi-detector"
+
+      - name: Upload dpi-detector binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dpi-detector-${{ matrix.artifact_suffix }}
+          path: out/artifacts/dpi-detector/dpi-detector
+          retention-days: 1
+
+  build_nfqws_tester:
+    name: build nfqws-tester ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and nfqws-tester target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-nfqws-tester-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/nfqws-tester/Cargo.toml') }}
+          restore-keys: |
+            cargo-nfqws-tester-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
+          cargo -V
+          rustc -V
+
+      - name: Build nfqws-tester
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
+
+      - name: Collect nfqws-tester
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/nfqws-tester"
+          DST="out/artifacts/nfqws-tester"
+          test -s "$SRC" || { echo "::error::nfqws-tester artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/nfqws-tester"
+          chmod 755 "$DST/nfqws-tester"
+          ls -lh "$DST/nfqws-tester"
+
+      - name: Upload nfqws-tester binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: nfqws-tester-${{ matrix.artifact_suffix }}
+          path: out/artifacts/nfqws-tester/nfqws-tester
+          retention-days: 1
+
+  build_busybox:
+    name: build BusyBox ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Build BusyBox ${{ matrix.abi }} from source
+        run: |
+          set -euo pipefail
+          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/${{ matrix.module_arch }}/busybox
+          ls -lh prebuilt/bin/${{ matrix.module_arch }}/busybox
+          test -s prebuilt/bin/${{ matrix.module_arch }}/busybox
+
+      - name: Upload BusyBox binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: busybox-${{ matrix.artifact_suffix }}
+          path: |
+            prebuilt/bin/${{ matrix.module_arch }}/busybox
+            prebuilt/bin/${{ matrix.module_arch }}/busybox.source
+          retention-days: 1
+
+  apk_tools_ready:
+    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
+    runs-on: ubuntu-latest
+    needs:
+      - build_dpi_detector
+      - build_nfqws_tester
+      - build_busybox
+    if: >-
+      needs.build_dpi_detector.result == 'success' &&
+      needs.build_nfqws_tester.result == 'success' &&
+      needs.build_busybox.result == 'success'
+
+    steps:
+      - name: Mark APK tools ready
+        run: echo "APK tool artifacts are ready for APK packaging"
+
   build_apk:
-    name: Build Android application
+    name: build APK with module ZIP
     runs-on: ubuntu-latest
     needs:
       - pack_module
-      - build_rust_binaries
-    if: needs.pack_module.result == 'success' && needs.build_rust_binaries.result == 'success'
+      - apk_tools_ready
+    if: >-
+      needs.pack_module.result == 'success' &&
+      needs.apk_tools_ready.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -532,7 +4201,16 @@ jobs:
           sdkmanager \
             "platform-tools" \
             "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
-            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
+            "ndk;27.2.12479018"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
         uses: gradle/actions/setup-gradle@v5
@@ -546,11 +4224,50 @@ jobs:
           name: zdt-module-zip
           path: out/module
 
-      - name: Download Rust binaries
+      - name: Download dpi-detector arm64
         uses: actions/download-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust
+          name: dpi-detector-arm64
+          path: out/artifacts/dpi-detector/arm64
+
+      - name: Download dpi-detector arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dpi-detector-arm32
+          path: out/artifacts/dpi-detector/arm32
+
+      - name: Download nfqws-tester arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-tester-arm64
+          path: out/artifacts/nfqws-tester/arm64
+
+      - name: Download nfqws-tester arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-tester-arm32
+          path: out/artifacts/nfqws-tester/arm32
+
+      - name: Download BusyBox arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: busybox-arm64
+          path: prebuilt/bin/arm64-v8a
+
+      - name: Download BusyBox arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: busybox-arm32
+          path: prebuilt/bin/arm-v7a
+
+      - name: Verify BusyBox artifacts
+        run: |
+          set -euo pipefail
+          for path in prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox; do
+            test -s "$path"
+            chmod 755 "$path"
+            ls -lh "$path"
+          done
 
       - name: Locate Android project root
         run: |
@@ -603,27 +4320,39 @@ jobs:
             echo "keyPassword=$ZDT_KEY_PASSWORD"
           } > "$GRADLE_PROJECT_DIR/keystore.properties"
 
-      - name: Prepare dpi-detector APK asset
+      - name: Prepare dpi-detector APK assets
         run: |
           set -euo pipefail
-          SRC="out/artifacts/rust/dpi-detector"
-          DST="application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector"
-          test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
-          mkdir -p "$(dirname "$DST")"
-          cp -f "$SRC" "$DST"
-          chmod 755 "$DST"
-          ls -lh "$DST"
+          declare -A SRC_BY_ABI=(
+            [arm64-v8a]="out/artifacts/dpi-detector/arm64/dpi-detector"
+            [armeabi-v7a]="out/artifacts/dpi-detector/arm32/dpi-detector"
+          )
+          for abi in arm64-v8a armeabi-v7a; do
+            SRC="${SRC_BY_ABI[$abi]}"
+            DST="application/app/build/generated/zdt-assets/main/dpi-detector/$abi/dpi-detector"
+            test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
+            mkdir -p "$(dirname "$DST")"
+            cp -f "$SRC" "$DST"
+            chmod 755 "$DST"
+            ls -lh "$DST"
+          done
 
-      - name: Prepare nfqws_tester APK asset
+      - name: Prepare nfqws_tester APK assets
         run: |
           set -euo pipefail
-          SRC="out/artifacts/rust/nfqws-tester"
-          DST="application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester"
-          test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
-          mkdir -p "$(dirname "$DST")"
-          cp -f "$SRC" "$DST"
-          chmod 755 "$DST"
-          ls -lh "$DST"
+          declare -A SRC_BY_ABI=(
+            [arm64-v8a]="out/artifacts/nfqws-tester/arm64/nfqws-tester"
+            [armeabi-v7a]="out/artifacts/nfqws-tester/arm32/nfqws-tester"
+          )
+          for abi in arm64-v8a armeabi-v7a; do
+            SRC="${SRC_BY_ABI[$abi]}"
+            DST="application/app/build/generated/zdt-assets/main/nfqws-tester/$abi/nfqws_tester"
+            test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
+            mkdir -p "$(dirname "$DST")"
+            cp -f "$SRC" "$DST"
+            chmod 755 "$DST"
+            ls -lh "$DST"
+          done
 
       - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
@@ -651,8 +4380,21 @@ jobs:
             printf '%s\n' "$APK_ENTRIES" | head -80 || true
             exit 1
           fi
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || { echo "::error::dpi-detector APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || { echo "::error::nfqws_tester APK asset missing"; exit 1; }
+          for entry in \
+            assets/dpi-detector/arm64-v8a/dpi-detector \
+            assets/dpi-detector/armeabi-v7a/dpi-detector \
+            assets/nfqws-tester/arm64-v8a/nfqws_tester \
+            assets/nfqws-tester/armeabi-v7a/nfqws_tester \
+            assets/busybox/busybox-arm64 \
+            assets/busybox/busybox-arm64.sha256 \
+            assets/busybox/busybox-arm64.source \
+            assets/busybox/busybox-arm32 \
+            assets/busybox/busybox-arm32.sha256 \
+            assets/busybox/busybox-arm32.source; do
+            printf '%s\n' "$APK_ENTRIES" | grep -Fx "$entry" >/dev/null || { echo "::error::APK asset missing: $entry"; exit 1; }
+          done
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }
@@ -678,7 +4420,7 @@ jobs:
           retention-days: 30
 
   publish_service:
-    name: Tag build artifacts
+    name: Publish service build
     runs-on: ubuntu-latest
     needs:
       - build_gate
@@ -697,38 +4439,490 @@ jobs:
           name: zdt-apk
           path: out/dist
 
-      - name: Download module artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: zdt-module-final
-          path: out/dist
-
-      - name: Create build release with artifacts
+      - name: Publish service and stable releases
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
         run: |
           set -euo pipefail
 
+          SERVICE_TAG="service-build"
+          SERVICE_TITLE="ZDT-D Service Build"
+          APK_SOURCE="out/dist/app-release.apk"
+          SERVICE_APK="out/dist/ZDT-D-service-build.apk"
+          STABLE_ASSET_SPEC="${APK_SOURCE}#app-release.apk"
+
+          test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
+          cp -f "$APK_SOURCE" "$SERVICE_APK"
+
+          VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+
+          if [[ -z "$VERSION_CODE" || ! "$VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            echo "::error::Numeric versionCode not found in module.prop"
+            exit 1
+          fi
+          if [[ -z "$VERSION_NAME" ]]; then
+            echo "::error::version not found in module.prop"
+            exit 1
+          fi
+
+          BUILD_END_TS="$(date +%s)"
+          BUILD_START_TS="${BUILD_START_TS:-$BUILD_END_TS}"
+          BUILD_DURATION_SEC=$((BUILD_END_TS - BUILD_START_TS))
+          BUILD_DURATION="$(printf '%02d:%02d:%02d' $((BUILD_DURATION_SEC / 3600)) $(((BUILD_DURATION_SEC % 3600) / 60)) $((BUILD_DURATION_SEC % 60)))"
+          BUILD_TIME_UTC="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          APK_SIZE_BYTES="$(stat -c%s "$APK_SOURCE")"
+          APK_SIZE_HUMAN="$(numfmt --to=iec --suffix=B --format='%.2f' "$APK_SIZE_BYTES")"
+
           FULL_SHA="$(git rev-parse HEAD)"
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-          BUILD_TIME="$(date -u '+%Y%m%d-%H%M%S')"
-          TAG="build-${SHORT_SHA}-${BUILD_TIME}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+          RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
+          BUILD_TYPE="${{ env.BUILD_TYPE }}"
+          BRANCH_NAME="${GITHUB_REF_NAME:-main}"
 
-          APK_NAME="ZDT-D-${TAG}.apk"
-          MODULE_NAME="ZDT-D-module-${TAG}.zip"
+          git fetch --tags --force >/dev/null 2>&1 || true
 
-          cp -f out/dist/app-release.apk "out/dist/${APK_NAME}"
-          cp -f out/dist/zdt_module.zip "out/dist/${MODULE_NAME}"
+          parse_version_code_from_body() {
+            sed -nE 's/^\|[[:space:]]*(Version code|Код версии)[[:space:]]*\|[[:space:]]*`?([0-9]+)`?[[:space:]]*\|[[:space:]]*$/\2/p' | head -1
+          }
 
-          echo "tag=$TAG"
-          echo "APK: ${APK_NAME}"
-          echo "Module: ${MODULE_NAME}"
+          make_commit_list() {
+            local from_sha="$1"
+            local to_sha="$2"
+            local max_items="${3:-50}"
+            local total="0"
+            local list=""
 
-          gh release create "$TAG" \
-            --title "Build ${SHORT_SHA}" \
-            --notes "Automatic build ${BUILD_TIME}\nCommit: ${FULL_SHA}" \
-            --prerelease \
-            "out/dist/${APK_NAME}" \
-            "out/dist/${MODULE_NAME}"
+            if [[ -n "$from_sha" && "$from_sha" != "$to_sha" ]]; then
+              local range="${from_sha}..${to_sha}"
+              total="$(git rev-list --count "$range" 2>/dev/null || echo 0)"
+              if [[ "$max_items" =~ ^[0-9]+$ && "$max_items" -gt 0 ]]; then
+                list="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n "$max_items" "$range" 2>/dev/null || true)"
+              else
+                list="$(git log --no-merges --pretty=format:'- %s (`%h`)' "$range" 2>/dev/null || true)"
+              fi
+            else
+              total="0"
+              list="- No changes after the latest stable release."
+            fi
 
-          echo "Created release with tag: $TAG"
+            if [[ -z "$list" ]]; then
+              list="- No commit messages found."
+            fi
+            if [[ "$max_items" =~ ^[0-9]+$ && "$max_items" -gt 0 && "$total" =~ ^[0-9]+$ && "$total" -gt "$max_items" ]]; then
+              list="${list}"$'\n'"- ...and $((total - max_items)) more commits."
+            fi
+            printf '%s\n' "$list"
+          }
+
+          compare_url_for_range() {
+            local from_sha="$1"
+            local to_sha="$2"
+            if [[ -n "$from_sha" && "$from_sha" != "$to_sha" ]]; then
+              printf '%s/compare/%s...%s\n' "$REPO_URL" "$from_sha" "$to_sha"
+            else
+              printf '%s/commit/%s\n' "$REPO_URL" "$to_sha"
+            fi
+          }
+
+          latest_stable_tag() {
+            git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V | tail -n1 | sed 's/^/V/' || true
+          }
+
+          generate_service_ai_summary() {
+            local commit_file="$1"
+            local output_file="$2"
+            local latest_tag="$3"
+
+            if [[ ! -s "$commit_file" ]]; then
+              printf '%s\n' "AI summary is unavailable: commit list is empty." > "$output_file"
+              return 0
+            fi
+
+            cat > service_ai_prompt.txt <<EOF_AI_PROMPT
+          You are preparing a short release comment for the ZDT-D Android project.
+          Write in English.
+          Be concise: 3-6 bullet points maximum.
+          Summarize the practical changes since the baseline release.
+          Do not invent features. Use only the commit list below.
+          Mention the baseline release: ${latest_tag:-none}.
+          
+          Version: ${VERSION_NAME}
+          Version code: ${VERSION_CODE}
+          Commit: ${SHORT_SHA}
+          
+          Commit list:
+          $(cat "$commit_file")
+          EOF_AI_PROMPT
+
+            python3 - <<'PY_AI_PAYLOAD' > service_ai_payload.json
+          import json
+          import os
+          from pathlib import Path
+          prompt = Path('service_ai_prompt.txt').read_text(encoding='utf-8')
+          payload = {
+              "model": os.environ.get("GITHUB_MODELS_MODEL", "openai/gpt-4o"),
+              "messages": [
+                  {"role": "system", "content": "You write concise release summaries for Android/Rust networking tools."},
+                  {"role": "user", "content": prompt},
+              ],
+              "temperature": 0.2,
+              "max_tokens": 450,
+          }
+          print(json.dumps(payload, ensure_ascii=False))
+          PY_AI_PAYLOAD
+
+            if curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d @service_ai_payload.json \
+              https://models.github.ai/inference/chat/completions > service_ai_response.json; then
+              python3 - <<'PY_AI_RESPONSE' > "$output_file" || true
+          import json
+          from pathlib import Path
+          try:
+              data = json.loads(Path('service_ai_response.json').read_text(encoding='utf-8'))
+              text = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+              print(text or 'AI summary is unavailable: empty response.')
+          except Exception as exc:
+              print(f'AI summary is unavailable: {exc}')
+          PY_AI_RESPONSE
+            else
+              printf '%s\n' "AI summary is unavailable for this run. See the workflow summary for technical details." > "$output_file"
+            fi
+          }
+
+          upload_asset_with_retry() {
+            local tag="$1"
+            local file_spec="$2"
+            local asset_name="$3"
+            local attempt=1
+            local max_attempts=5
+            UPLOAD_MODE="clobber"
+            UPLOAD_ATTEMPTS="0"
+
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Upload $asset_name to $tag with --clobber: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec" --clobber; then
+                UPLOAD_MODE="clobber"
+                UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::warning::Upload with --clobber failed for $asset_name on $tag. Trying delete+upload fallback."
+            local asset_id=""
+            asset_id="$(gh release view "$tag" --json assets --jq ".assets[] | select(.name==\"${asset_name}\") | .id" | head -n1 || true)"
+            if [[ -n "$asset_id" ]]; then
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
+              sleep 3
+            fi
+
+            attempt=1
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Fallback upload $asset_name to $tag: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec"; then
+                UPLOAD_MODE="delete+upload"
+                UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::error::Failed to upload $asset_name to $tag after retries and fallback"
+            return 1
+          }
+
+          version_code_matches_version=false
+          stable_version_shape=false
+          code_min=""
+          code_max=""
+          if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.0$ ]]; then
+            stable_version_shape=true
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            code_prefix="${major}${minor}"
+            code_min=$((code_prefix * 1000))
+            code_max=$((code_min + 999))
+            if (( VERSION_CODE >= code_min && VERSION_CODE <= code_max )); then
+              version_code_matches_version=true
+            fi
+          fi
+
+          SERVICE_RELEASE_EXISTS=false
+          if gh release view "$SERVICE_TAG" >/dev/null 2>&1; then
+            SERVICE_RELEASE_EXISTS=true
+          fi
+
+          LATEST_STABLE_TAG="$(latest_stable_tag)"
+          LATEST_STABLE_SHA=""
+          if [[ -n "$LATEST_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${LATEST_STABLE_TAG}" >/dev/null 2>&1; then
+            LATEST_STABLE_SHA="$(git rev-list -n 1 "$LATEST_STABLE_TAG" 2>/dev/null || true)"
+          fi
+
+          SERVICE_COMPARE_URL="$(compare_url_for_range "$LATEST_STABLE_SHA" "$FULL_SHA")"
+          SERVICE_COMMIT_LIST="$(make_commit_list "$LATEST_STABLE_SHA" "$FULL_SHA" 0)"
+          printf '%s\n' "$SERVICE_COMMIT_LIST" > service_commit_list.txt
+          generate_service_ai_summary service_commit_list.txt service_ai_summary.md "$LATEST_STABLE_TAG"
+          SERVICE_AI_SUMMARY="$(cat service_ai_summary.md)"
+
+          cat > service_release_notes.md <<EOF_SERVICE_NOTES
+          # ZDT-D Service Build
+
+          This is an automatic service build of ZDT-D.
+
+          The service build is updated after every successful workflow run and always contains the APK from the latest successful build.
+
+          > This release is a technical prerelease and is not considered a stable version release.
+
+          ## AI summary
+
+          ${SERVICE_AI_SUMMARY}
+
+          ## Build information
+
+          | Field | Value |
+          |---|---|
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Latest stable release | \`${LATEST_STABLE_TAG:-none}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Branch | \`${BRANCH_NAME}\` |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Build date | \`${BUILD_TIME_UTC}\` |
+          | Build type | \`${BUILD_TYPE}\` |
+          | APK size | \`${APK_SIZE_HUMAN}\` |
+          | Build duration | \`${BUILD_DURATION}\` |
+          EOF_SERVICE_NOTES
+
+          echo "===== Service release notes ====="
+          cat service_release_notes.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$SERVICE_TAG" "$FULL_SHA"
+          git push -f origin "refs/tags/${SERVICE_TAG}"
+
+          if [[ "$SERVICE_RELEASE_EXISTS" == "true" ]]; then
+            gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file service_release_notes.md --prerelease
+          else
+            gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file service_release_notes.md --prerelease --latest=false
+          fi
+          upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_APK" "ZDT-D-service-build.apk"
+          SERVICE_UPLOAD_MODE="$UPLOAD_MODE"
+          SERVICE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+          STABLE_ACTION="skipped"
+          STABLE_REASON=""
+          STABLE_TAG="V${VERSION_NAME}"
+          STABLE_TITLE="V ${VERSION_NAME}"
+          STABLE_UPLOAD_MODE=""
+          STABLE_UPLOAD_ATTEMPTS=""
+          STABLE_RELEASE_EXISTS=false
+          STABLE_PUBLISHED_VERSION_CODE=""
+
+          if [[ "$stable_version_shape" != "true" ]]; then
+            STABLE_REASON="version '${VERSION_NAME}' is not a stable X.Y.0 version"
+          elif [[ "$version_code_matches_version" != "true" ]]; then
+            STABLE_REASON="versionCode ${VERSION_CODE} is outside expected range ${code_min}..${code_max} for version ${VERSION_NAME}"
+            echo "::warning::$STABLE_REASON. Stable release will not be created or updated."
+          elif gh release view "$STABLE_TAG" >/dev/null 2>&1; then
+            STABLE_RELEASE_EXISTS=true
+            STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
+            STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
+
+            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]] && (( VERSION_CODE <= STABLE_PUBLISHED_VERSION_CODE )); then
+              STABLE_ACTION="skipped"
+              STABLE_REASON="stable release ${STABLE_TAG} already has versionCode ${STABLE_PUBLISHED_VERSION_CODE}; current versionCode ${VERSION_CODE} is not newer, so app-release.apk was preserved"
+            else
+              if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+                STABLE_REASON="updated existing stable release ${STABLE_TAG}: versionCode ${VERSION_CODE} is newer than published ${STABLE_PUBLISHED_VERSION_CODE}"
+              else
+                STABLE_REASON="updated existing stable release ${STABLE_TAG}: published versionCode is missing or unreadable"
+              fi
+
+              PREVIOUS_STABLE_TAG=""
+              while IFS= read -r version; do
+                [[ -z "$version" ]] && continue
+                if [[ "$(printf '%s\n%s\n' "$version" "$VERSION_NAME" | sort -V | head -n1)" == "$version" && "$version" != "$VERSION_NAME" ]]; then
+                  PREVIOUS_STABLE_TAG="V${version}"
+                fi
+              done < <(git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V)
+
+              PREVIOUS_STABLE_SHA=""
+              if [[ -n "$PREVIOUS_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${PREVIOUS_STABLE_TAG}" >/dev/null 2>&1; then
+                PREVIOUS_STABLE_SHA="$(git rev-list -n 1 "$PREVIOUS_STABLE_TAG" 2>/dev/null || true)"
+              fi
+
+              STABLE_COMPARE_URL="$(compare_url_for_range "$PREVIOUS_STABLE_SHA" "$FULL_SHA")"
+              STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 0)"
+              printf '%s\n' "$STABLE_COMMIT_LIST" > stable_commit_list.txt
+              generate_service_ai_summary stable_commit_list.txt stable_ai_summary.md "$PREVIOUS_STABLE_TAG"
+              STABLE_SUMMARY="$(cat stable_ai_summary.md)"
+
+              cat > stable_release_notes.md <<EOF_STABLE_NOTES
+          # ZDT-D V${VERSION_NAME}
+
+          ## Highlights
+
+          ${STABLE_SUMMARY}
+
+          ## Release information
+
+          | Field | Value |
+          |---|---|
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Tag | \`${STABLE_TAG}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Build date | \`${BUILD_TIME_UTC}\` |
+
+          <!-- ZDTD_APP_UPDATE_META_START
+          {
+            "schema": 1,
+            "kind": "stable-release",
+            "version": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "commit": "${FULL_SHA}",
+            "shortCommit": "${SHORT_SHA}",
+            "workflow": "build.yml",
+            "workflowRunId": ${GITHUB_RUN_ID},
+            "workflowRunNumber": ${GITHUB_RUN_NUMBER},
+            "asset": "app-release.apk",
+            "assetReady": true,
+            "updatedAt": "${BUILD_TIME_UTC}"
+          }
+          ZDTD_APP_UPDATE_META_END -->
+          EOF_STABLE_NOTES
+
+              echo "===== Stable release notes ====="
+              cat stable_release_notes.md
+
+              git tag -f "$STABLE_TAG" "$FULL_SHA"
+              git push -f origin "refs/tags/${STABLE_TAG}"
+
+              # Upload the APK before replacing the release notes meta block. This prevents the app
+              # from seeing a new versionCode while the old app-release.apk asset is still attached.
+              upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+              STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+              STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+              gh release edit "$STABLE_TAG" --title "$STABLE_TITLE" --notes-file stable_release_notes.md
+              STABLE_ACTION="updated"
+            fi
+          else
+            PREVIOUS_STABLE_TAG=""
+            while IFS= read -r version; do
+              [[ -z "$version" ]] && continue
+              if [[ "$(printf '%s\n%s\n' "$version" "$VERSION_NAME" | sort -V | head -n1)" == "$version" && "$version" != "$VERSION_NAME" ]]; then
+                PREVIOUS_STABLE_TAG="V${version}"
+              fi
+            done < <(git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V)
+
+            PREVIOUS_STABLE_SHA=""
+            if [[ -n "$PREVIOUS_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${PREVIOUS_STABLE_TAG}" >/dev/null 2>&1; then
+              PREVIOUS_STABLE_SHA="$(git rev-list -n 1 "$PREVIOUS_STABLE_TAG" 2>/dev/null || true)"
+            fi
+
+            STABLE_COMPARE_URL="$(compare_url_for_range "$PREVIOUS_STABLE_SHA" "$FULL_SHA")"
+            STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 0)"
+            printf '%s\n' "$STABLE_COMMIT_LIST" > stable_commit_list.txt
+            generate_service_ai_summary stable_commit_list.txt stable_ai_summary.md "$PREVIOUS_STABLE_TAG"
+            STABLE_SUMMARY="$(cat stable_ai_summary.md)"
+
+            cat > stable_release_notes.md <<EOF_STABLE_NOTES
+          # ZDT-D V${VERSION_NAME}
+
+          ## Highlights
+
+          ${STABLE_SUMMARY}
+
+          ## Release information
+
+          | Field | Value |
+          |---|---|
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Tag | \`${STABLE_TAG}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Build date | \`${BUILD_TIME_UTC}\` |
+
+          <!-- ZDTD_APP_UPDATE_META_START
+          {
+            "schema": 1,
+            "kind": "stable-release",
+            "version": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "commit": "${FULL_SHA}",
+            "shortCommit": "${SHORT_SHA}",
+            "workflow": "build.yml",
+            "workflowRunId": ${GITHUB_RUN_ID},
+            "workflowRunNumber": ${GITHUB_RUN_NUMBER},
+            "asset": "app-release.apk",
+            "assetReady": true,
+            "updatedAt": "${BUILD_TIME_UTC}"
+          }
+          ZDTD_APP_UPDATE_META_END -->
+          EOF_STABLE_NOTES
+
+            echo "===== Stable release notes ====="
+            cat stable_release_notes.md
+
+            gh release create "$STABLE_TAG" \
+              --target "$FULL_SHA" \
+              --title "$STABLE_TITLE" \
+              --notes-file stable_release_notes.md \
+              --latest
+
+            upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+            STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+            STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+            STABLE_ACTION="created"
+            STABLE_REASON="created new stable release ${STABLE_TAG}"
+          fi
+
+          {
+            echo "### Service build publish"
+            echo
+            echo "Service release: \`$SERVICE_TAG\`"
+            echo "Service post updated: \`true\`"
+            echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
+            echo "Service upload mode: \`${SERVICE_UPLOAD_MODE}\`"
+            echo "Service upload attempts: \`${SERVICE_UPLOAD_ATTEMPTS}\`"
+            echo "Service changelog baseline: \`${LATEST_STABLE_TAG:-none}\`"
+            echo "Service compare: ${SERVICE_COMPARE_URL}"
+            echo "GitHub Models AI summary: \`attempted\`"
+            echo
+            echo "### Stable release decision"
+            echo
+            echo "Version: \`${VERSION_NAME}\`"
+            echo "Version code: \`${VERSION_CODE}\`"
+            if [[ -n "$code_min" && -n "$code_max" ]]; then
+              echo "Expected versionCode range: \`${code_min}..${code_max}\`"
+            else
+              echo "Expected versionCode range: \`not applicable\`"
+            fi
+            echo "Version shape X.Y.0: \`${stable_version_shape}\`"
+            echo "versionCode matches version: \`${version_code_matches_version}\`"
+            echo "Stable tag: \`${STABLE_TAG}\`"
+            echo "Stable release action: \`${STABLE_ACTION}\`"
+            echo "Reason: $STABLE_REASON"
+            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" ]]; then
+              echo "Published stable versionCode: \`${STABLE_PUBLISHED_VERSION_CODE}\`"
+            fi
+            if [[ -n "$STABLE_UPLOAD_MODE" ]]; then
+              echo "Stable upload mode: \`${STABLE_UPLOAD_MODE}\`"
+              echo "Stable upload attempts: \`${STABLE_UPLOAD_ATTEMPTS}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

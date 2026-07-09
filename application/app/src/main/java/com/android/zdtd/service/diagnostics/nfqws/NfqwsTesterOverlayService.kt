@@ -864,8 +864,8 @@ class NfqwsTesterOverlayService : Service() {
 
     private fun expandedOverlayWidth(): Int {
         val screenWidth = resources.displayMetrics.widthPixels
-        val safeMax = max(dp(280), screenWidth - dp(24))
-        val preferred = (screenWidth * 0.84f).toInt().coerceAtLeast(dp(330))
+        val safeMax = max(dp(240), screenWidth - dp(24))
+        val preferred = (screenWidth * 0.56f).toInt().coerceAtLeast(dp(230))
         return min(safeMax, preferred)
     }
 

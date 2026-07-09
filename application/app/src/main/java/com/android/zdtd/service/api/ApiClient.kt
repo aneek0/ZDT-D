@@ -57,6 +57,11 @@ class ApiClient(
     return ApiModels.parsePrograms(obj)
   }
 
+  fun getTrafficRules(): ApiModels.TrafficReport {
+    val obj = requestJson("GET", "/api/traffic/rules", null)
+    return ApiModels.parseTrafficReport(obj)
+  }
+
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
     val body = JSONObject().put("enabled", enabled)
@@ -131,6 +136,18 @@ class ApiClient(
     val obj = requestJson("GET", "/api/setting", null)
     return ApiModels.parseDaemonSettings(obj)
   }
+  fun getEnergySaver(): ApiModels.EnergySaverState {
+    val obj = requestJson("GET", "/api/energy-saver", null)
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun saveEnergySaver(config: ApiModels.EnergySaverConfig): ApiModels.EnergySaverState {
+    val obj = requestJson("POST", "/api/energy-saver", ApiModels.energySaverConfigToJson(config))
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun applyEnergySaver(): Boolean = requestOk("POST", "/api/energy-saver/apply", JSONObject())
+
 
   fun setProtectorMode(mode: String): ApiModels.DaemonSettings {
     val safe = when (mode.trim().lowercase()) {
@@ -161,8 +178,44 @@ class ApiClient(
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
       .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
+    if (enabled) body.put("ip_forward_enabled", true)
     captureAll?.let { body.put("hotspot_t2s_capture_all", it) }
     val obj = requestJson("POST", "/api/setting", body)
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+
+  fun setHotspotMode(mode: String): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", "")
+        .put("hotspot_profile", ""),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun setHotspotSelection(
+    mode: String,
+    program: String,
+    profile: String = "",
+  ): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", program.trim())
+        .put("hotspot_profile", profile.trim()),
+    )
     return ApiModels.parseDaemonSettings(obj)
   }
 
@@ -201,9 +254,30 @@ class ApiClient(
     val obj = requestJson("GET", "/api/apps/assignments", null)
     return ApiModels.parseAppAssignments(obj)
   }
+  fun getConstructionProxyEndpoints(): List<ApiModels.ConstructionProxyEndpointCandidate> {
+    val obj = requestJson("GET", "/api/construction/proxy-endpoints", null)
+    return ApiModels.parseConstructionProxyEndpoints(obj)
+  }
+
+  fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate): ApiModels.ConstructionReleaseEndpointResult {
+    val body = JSONObject()
+      .put("program_id", candidate.programId)
+      .put("slot", candidate.slot.ifBlank { "common" })
+      .put("port", candidate.port)
+    candidate.profile?.takeIf { it.isNotBlank() }?.let { body.put("profile", it) }
+    candidate.server?.takeIf { it.isNotBlank() }?.let { body.put("server", it) }
+    val obj = requestJson("POST", "/api/construction/proxy-endpoints/release", body)
+    return ApiModels.parseConstructionReleaseEndpointResult(obj)
+  }
+
   fun getProxyInfo(): ApiModels.ProxyInfoState {
     val obj = requestJson("GET", "/api/proxyinfo", null)
     return ApiModels.parseProxyInfo(obj)
+  }
+
+  fun getHidingStatus(): ApiModels.HidingStatus {
+    val obj = requestJson("GET", "/api/hiding/status", null)
+    return ApiModels.parseHidingStatus(obj)
   }
 
   fun setProxyInfoEnabled(enabled: Boolean): Boolean {

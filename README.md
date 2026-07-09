@@ -16,8 +16,6 @@
   <b>ZDT-D</b> is an Android root module for traffic routing, DPI bypass, proxy chaining, DNS control, and per-app network management.
 </p>
 
-## Description
-
 **ZDT-D** is a root-based Android network orchestration project for advanced traffic routing, DPI circumvention, DNS handling, local proxy pipelines, and selective VPN/TUN binding.
 
 It is not a classic Android VPN application and it is not limited to one bundled engine. ZDT-D uses a local root daemon, Android application UIDs, `iptables` / `ip6tables`, NFQUEUE, local loopback services, and Android `netd` to route selected applications through different processing paths.
@@ -167,10 +165,6 @@ ZDT-D is intended for advanced users, network compatibility research, routing co
 ## License
 
 GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE).
-
-## Downloads
-
-- [Releases (original)](https://github.com/GAME-OVER-op/ZDT-D/releases)
 
 ---
 

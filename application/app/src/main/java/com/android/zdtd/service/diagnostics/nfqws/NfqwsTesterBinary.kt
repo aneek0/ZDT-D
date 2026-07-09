@@ -1,12 +1,16 @@
 package com.android.zdtd.service.diagnostics.nfqws
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 import java.security.MessageDigest
 
 class NfqwsTesterBinary(private val context: Context) {
     val targetFile: File
         get() = File(File(context.noBackupFilesDir, "bin"), BINARY_NAME)
+
+    private val assetPath: String
+        get() = "nfqws-tester/" + preferredAbi() + "/nfqws_tester"
 
     fun ensureInstalled(): File {
         val target = targetFile
@@ -15,7 +19,7 @@ class NfqwsTesterBinary(private val context: Context) {
             error("Unable to create nfqws_tester directory: $parent")
         }
 
-        val assetBytes = context.assets.open(ASSET_PATH).use { it.readBytes() }
+        val assetBytes = context.assets.open(assetPath).use { it.readBytes() }
         val assetSha = sha256(assetBytes)
         val shouldRewrite = !target.exists() || sha256OrNull(target) != assetSha
         if (shouldRewrite) {
@@ -49,16 +53,23 @@ class NfqwsTesterBinary(private val context: Context) {
                 digest.update(buffer, 0, read)
             }
         }
-        digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        toHexString(digest.digest())
     }.getOrNull()
 
     private fun sha256(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return toHexString(digest.digest(bytes))
     }
+
+    private fun toHexString(bytes: ByteArray): String =
+        bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     companion object {
         const val BINARY_NAME = "nfqws_tester"
-        const val ASSET_PATH = "nfqws-tester/arm64-v8a/nfqws_tester"
+        private fun preferredAbi(): String = when {
+            Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64-v8a"
+            Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "armeabi-v7a"
+            else -> Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        }
     }
 }

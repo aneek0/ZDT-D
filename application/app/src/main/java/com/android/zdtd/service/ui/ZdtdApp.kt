@@ -101,6 +101,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
+import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
 
 @Composable
@@ -139,6 +140,7 @@ fun ZdtdApp(
         onConfirmZygiskInstall = actions::confirmInstallZygisk,
         onDismissZygiskInstallConfirm = actions::dismissInstallZygiskConfirm,
         onDismissZygiskInstallRecovery = actions::dismissZygiskInstallRecoveryDialog,
+        onDismissMetamoduleInstallBlocked = actions::dismissMetamoduleInstallBlockedDialog,
         onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
       )
       SetupStep.REBOOT -> {
@@ -164,6 +166,8 @@ fun ZdtdApp(
               appUpdateFlow = appUpdateFlow,
               backupFlow = backupFlow,
               programUpdatesFlow = programUpdatesFlow,
+              onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
               actions = actions,
             )
           }
@@ -710,6 +714,7 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
+  AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
   is AppsRoute.Program -> AppsRoute.List
@@ -724,6 +729,8 @@ private fun MainShell(
   appUpdateFlow: StateFlow<AppUpdateUiState>,
   backupFlow: StateFlow<BackupUiState>,
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
+  onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
 ) {
   var tab by remember { mutableStateOf(Tab.HOME) }
@@ -806,9 +813,36 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+  val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
   DaemonUnavailableDialogHost(uiState = uiState)
+
+  if (backup.externalRestorePromptVisible) {
+    AlertDialog(
+      onDismissRequest = actions::dismissExternalBackupRestore,
+      title = { Text(stringResource(R.string.backup_external_restore_title)) },
+      text = {
+        val fileName = backup.externalRestoreDisplayName.ifBlank {
+          backup.externalRestoreName ?: stringResource(R.string.backup_external_restore_default_file)
+        }
+        Text(stringResource(R.string.backup_external_restore_text, fileName))
+      },
+      dismissButton = {
+        TextButton(onClick = actions::dismissExternalBackupRestore) {
+          Text(stringResource(R.string.backup_cancel))
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          showBackup = true
+          actions.confirmExternalBackupRestore()
+        }) {
+          Text(stringResource(R.string.backup_external_restore_apply))
+        }
+      },
+    )
+  }
 
   if (showWorldMapPrompt) {
     AlertDialog(
@@ -876,7 +910,6 @@ private fun MainShell(
   }
 
   if (showBackup) {
-    val backup by backupFlow.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
       actions.refreshBackups()
     }
@@ -903,10 +936,18 @@ private fun MainShell(
     var settingsContentReady by remember { mutableStateOf(false) }
 
     fun resetInvalidHotspotT2sIfNeeded() {
+      val mode = if (appUpdate.hotspotMode == "vpn") "vpn" else "proxy"
+      val program = appUpdate.hotspotProgram.ifBlank { appUpdate.hotspotT2sTarget }
+      val profile = appUpdate.hotspotProfile.ifBlank {
+        when (program) {
+          "singbox" -> appUpdate.hotspotT2sSingboxProfile
+          "wireproxy" -> appUpdate.hotspotT2sWireproxyProfile
+          else -> ""
+        }
+      }
+      val needsProfile = mode == "vpn" || program == "singbox" || program == "wireproxy"
       val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
-        appUpdate.hotspotT2sTarget.isBlank() ||
-          (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank()) ||
-          (appUpdate.hotspotT2sTarget == "wireproxy" && appUpdate.hotspotT2sWireproxyProfile.isBlank())
+        program.isBlank() || (needsProfile && profile.isBlank())
         )
       if (hotspotInvalid) {
         actions.setHotspotT2sEnabled(false)
@@ -927,6 +968,7 @@ private fun MainShell(
     LaunchedEffect(Unit) {
       settingsContentReady = false
       actions.refreshDaemonSettings()
+      actions.refreshEnergySaver()
       actions.refreshProxyInfo()
       actions.refreshBlockedQuic()
       delay(260)
@@ -977,19 +1019,32 @@ private fun MainShell(
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
+                themeMode = appUpdate.themeMode,
+                onThemeModeChange = actions::setThemeMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
+                energySaver = appUpdate.energySaver,
+                energySaverBusy = appUpdate.energySaverBusy,
+                onRefreshEnergySaver = actions::refreshEnergySaver,
+                onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotMode = appUpdate.hotspotMode,
+                hotspotProgram = appUpdate.hotspotProgram,
+                hotspotProfile = appUpdate.hotspotProfile,
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
                 hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
+                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotModeChange = actions::setHotspotMode,
+                onHotspotSelectionChange = actions::setHotspotSelection,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
@@ -997,6 +1052,7 @@ private fun MainShell(
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+                hidingStatus = appUpdate.hidingStatus,
                 onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
                 onLoadAppAssignments = actions::loadAppAssignments,
                 onProxyInfoAppsSave = actions::saveProxyInfoApps,
@@ -1058,19 +1114,32 @@ private fun MainShell(
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
+                themeMode = appUpdate.themeMode,
+                onThemeModeChange = actions::setThemeMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
+                energySaver = appUpdate.energySaver,
+                energySaverBusy = appUpdate.energySaverBusy,
+                onRefreshEnergySaver = actions::refreshEnergySaver,
+                onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotMode = appUpdate.hotspotMode,
+                hotspotProgram = appUpdate.hotspotProgram,
+                hotspotProfile = appUpdate.hotspotProfile,
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
                 hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
+                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotModeChange = actions::setHotspotMode,
+                onHotspotSelectionChange = actions::setHotspotSelection,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
@@ -1078,6 +1147,7 @@ private fun MainShell(
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+                hidingStatus = appUpdate.hidingStatus,
                 onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
                 onLoadAppAssignments = actions::loadAppAssignments,
                 onProxyInfoAppsSave = actions::saveProxyInfoApps,
@@ -1185,8 +1255,10 @@ private fun MainShell(
     tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
     tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.Blockcheck -> "Auto Blockcheck"
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1206,6 +1278,7 @@ private fun MainShell(
       when (val route = appsRoute) {
         AppsRoute.List -> null
         AppsRoute.AnalysisTools -> null
+        AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
         is AppsRoute.Program -> {
@@ -1305,8 +1378,10 @@ private fun MainShell(
           onOpenProgram = { appsRoute = AppsRoute.Program(it) },
           onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
           onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+          onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+          onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1329,8 +1404,10 @@ private fun MainShell(
               onOpenProgram = { appsRoute = AppsRoute.Program(it) },
               onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
               onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+              onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+              onOpenBlockcheck = { appsRoute = AppsRoute.Blockcheck },
               actions = actions,
               snackHost = snackHost,
               landscapeControl = false,
@@ -1441,8 +1518,10 @@ private fun LandscapeShellContent(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -1478,8 +1557,10 @@ private fun LandscapeShellContent(
           onOpenProgram = onOpenProgram,
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
+          onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
+          onOpenBlockcheck = onOpenBlockcheck,
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,
@@ -1959,131 +2040,14 @@ private fun PortraitSettingsShelf(
   onDismiss: () -> Unit,
   content: @Composable () -> Unit,
 ) {
-  val scope = rememberCoroutineScope()
-  val density = LocalDensity.current
-  val dragOffsetY = remember { Animatable(0f) }
-  var visible by remember { mutableStateOf(false) }
-  var dismissing by remember { mutableStateOf(false) }
-  val dismissThresholdPx = with(density) { 92.dp.toPx() }
-  val dismissTargetPx = with(density) { 220.dp.toPx() }
-
-  fun dismissWithAnimation() {
-    if (dismissing) return
-    dismissing = true
-    scope.launch {
-      visible = false
-      runCatching {
-        dragOffsetY.animateTo(
-          targetValue = dismissTargetPx,
-          animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-        )
-      }
-      onDismiss()
-    }
-  }
-
-  LaunchedEffect(Unit) {
-    visible = true
-  }
-
-  Dialog(
-    onDismissRequest = { dismissWithAnimation() },
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  // Settings are now shown as a dedicated full-screen window (Material 3),
+  // not a draggable bottom-sheet card. The loading state is handled by the
+  // provided content, so this frame does not show its own spinner.
+  SettingsScreen(
+    onDismiss = onDismiss,
+    loading = false,
   ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.safeDrawing),
-      contentAlignment = Alignment.BottomCenter,
-    ) {
-      AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
-          slideInVertically(
-            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
-            initialOffsetY = { it / 4 },
-          ) +
-          scaleIn(
-            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
-            initialScale = 0.98f,
-          ),
-        exit = fadeOut(tween(durationMillis = 110)) +
-          slideOutVertically(
-            animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-            targetOffsetY = { it / 5 },
-          ),
-      ) {
-        Surface(
-          modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.88f)
-            .graphicsLayer { translationY = dragOffsetY.value },
-          shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
-          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-          tonalElevation = 4.dp,
-          shadowElevation = 10.dp,
-        ) {
-          Column(Modifier.fillMaxSize()) {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .pointerInput(Unit) {
-                  detectVerticalDragGestures(
-                    onVerticalDrag = { _, dragAmount ->
-                      val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
-                      scope.launch { dragOffsetY.snapTo(next) }
-                    },
-                    onDragEnd = {
-                      scope.launch {
-                        if (dragOffsetY.value >= dismissThresholdPx) {
-                          dismissWithAnimation()
-                        } else {
-                          dragOffsetY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                              dampingRatio = Spring.DampingRatioNoBouncy,
-                              stiffness = Spring.StiffnessMediumLow,
-                            ),
-                          )
-                        }
-                      }
-                    },
-                    onDragCancel = {
-                      scope.launch {
-                        dragOffsetY.animateTo(
-                          targetValue = 0f,
-                          animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                          ),
-                        )
-                      }
-                    },
-                  )
-                },
-              contentAlignment = Alignment.Center,
-            ) {
-              Box(
-                modifier = Modifier
-                  .width(52.dp)
-                  .height(5.dp)
-                  .clip(RoundedCornerShape(100.dp))
-                  .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
-              )
-            }
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clipToBounds(),
-            ) {
-              content()
-            }
-          }
-        }
-      }
-    }
+    content()
   }
 }
 
@@ -2092,39 +2056,12 @@ private fun LandscapeSettingsShelf(
   onDismiss: () -> Unit,
   content: @Composable () -> Unit,
 ) {
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  // Unified with portrait: full-screen Material 3 settings window.
+  SettingsScreen(
+    onDismiss = onDismiss,
+    loading = false,
   ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.safeDrawing),
-      contentAlignment = Alignment.CenterStart,
-    ) {
-      Surface(
-        modifier = Modifier
-          .fillMaxHeight(0.94f)
-          .fillMaxWidth(0.78f)
-          .padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        tonalElevation = 4.dp,
-        shadowElevation = 10.dp,
-      ) {
-        Box(Modifier.fillMaxSize()) {
-          content()
-          IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-              .align(Alignment.TopEnd)
-              .padding(8.dp),
-          ) {
-            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
-          }
-        }
-      }
-    }
+    content()
   }
 }
 
@@ -2370,8 +2307,10 @@ private fun TabBody(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   landscapeControl: Boolean = false,
@@ -2409,8 +2348,10 @@ private fun TabBody(
             onOpenProgram = onOpenProgram,
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
+            onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,
+            onOpenBlockcheck = onOpenBlockcheck,
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,

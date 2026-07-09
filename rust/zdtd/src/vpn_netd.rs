@@ -30,6 +30,7 @@ pub struct VpnNetdProfile {
     pub dns: Vec<String>,
     pub app_list_path: PathBuf,
     pub app_out_path: PathBuf,
+    pub endpoint_escape_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -46,6 +47,8 @@ pub struct AppliedProfile {
     pub tun: String,
     #[serde(default)]
     pub uid_ranges: Vec<String>,
+    #[serde(default)]
+    pub endpoint_escape_ips: Vec<String>,
 }
 
 fn runtime_file(name: &str) -> PathBuf {
@@ -134,6 +137,10 @@ fn cleanup_runtime_files() {
 
     // Keep the directory if it still contains future files, but remove it when empty.
     let _ = fs::remove_dir(VPN_NETD_DIR);
+}
+
+fn snapshot_text_is_empty_or_nul(text: &str) -> bool {
+    text.chars().all(|c| c == '\0' || c.is_whitespace())
 }
 
 fn trim_ndc_output(out: &str) -> String {
@@ -350,6 +357,9 @@ fn validate_profile(p: &VpnNetdProfile) -> Result<()> {
     if !p.app_list_path.is_file() {
         bail!("vpn netd profile {} app list is missing: {}", p.profile, p.app_list_path.display());
     }
+    if p.endpoint_escape_ips.iter().any(|ip| !is_ipv4(ip)) {
+        bail!("vpn netd profile {} endpoint escape IP list is invalid", p.profile);
+    }
     Ok(())
 }
 
@@ -403,6 +413,30 @@ fn resolve_uid_ranges(app_list_path: &Path, app_out_path: &Path) -> Result<Vec<S
         bail!("no resolved UIDs for app list {}", app_list_path.display());
     }
     Ok(ranges)
+}
+
+
+fn resolve_uid_ranges_allow_empty(app_list_path: &Path, app_out_path: &Path) -> Result<Vec<String>> {
+    if let Some(parent) = app_out_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let tracker = Sha256Tracker::new(settings::SHARED_SHA_FLAG_FILE);
+    let _changed = pkg_uid::unified_processing(Mode::Default, &tracker, app_out_path, app_list_path)?;
+
+    let text = fs::read_to_string(app_out_path)
+        .with_context(|| format!("read uid output {}", app_out_path.display()))?;
+    let mut uids = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') { continue; }
+        let uid_s = line.split_once('=').map(|(_, uid)| uid.trim()).unwrap_or(line);
+        if let Ok(uid) = uid_s.parse::<u32>() {
+            if uid > 0 {
+                uids.push(uid);
+            }
+        }
+    }
+    Ok(uids_to_ranges(uids))
 }
 
 fn create_vpn_network_universal(netid: u32) -> Result<()> {
@@ -511,6 +545,87 @@ fn set_dns_universal(netid: u32, tun: &str, dns: &[String]) -> Result<()> {
     bail!("vpn_netd: resolver DNS setup failed; setnetdns rc={code1} out={out1}; setifdns rc={code2} out={out2}");
 }
 
+fn unique_endpoint_escape_ips(profile: &VpnNetdProfile) -> Vec<String> {
+    let mut ips = profile
+        .endpoint_escape_ips
+        .iter()
+        .map(|ip| ip.trim())
+        .filter(|ip| is_ipv4(ip))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    ips.sort();
+    ips.dedup();
+    ips
+}
+
+fn ensure_endpoint_escape_routes(profile: &VpnNetdProfile) {
+    for ip in unique_endpoint_escape_ips(profile) {
+        let dest = format!("{ip}/32");
+        // Android/netd may mark backend packets with the VPN netId.  The table
+        // created for the VPN interface contains a default route through that
+        // same interface, so endpoint packets can self-capture into the tunnel.
+        // A throw route only says "not through this table"; Android will then
+        // continue to the following rules and pick the current physical network
+        // such as wlan0/rmnet_data*/ccmni*/wwan*.
+        let attempts: Vec<Vec<&str>> = vec![
+            vec!["-4", "route", "replace", "throw", &dest, "table", &profile.tun],
+            vec!["-4", "route", "replace", &dest, "type", "throw", "table", &profile.tun],
+        ];
+        let mut applied = false;
+        let mut errors = Vec::new();
+        for args in attempts {
+            match shell::run_timeout("ip", &args, Capture::Both, IP_TIMEOUT) {
+                Ok((0, out)) => {
+                    log::info!(
+                        "vpn_netd: endpoint escape route applied {}/{} tun={} ip={} out={}",
+                        profile.owner_program,
+                        profile.profile,
+                        profile.tun,
+                        ip,
+                        trim_ndc_output(&out)
+                    );
+                    applied = true;
+                    break;
+                }
+                Ok((code, out)) => errors.push(format!("rc={code} out={}", trim_ndc_output(&out))),
+                Err(e) => errors.push(format!("{e:#}")),
+            }
+        }
+        if !applied {
+            log::warn!(
+                "vpn_netd: endpoint escape route failed {}/{} tun={} ip={}: {}",
+                profile.owner_program,
+                profile.profile,
+                profile.tun,
+                ip,
+                errors.join("; ")
+            );
+        }
+    }
+}
+
+fn remove_endpoint_escape_routes(applied: &AppliedProfile) {
+    let mut ips = applied
+        .endpoint_escape_ips
+        .iter()
+        .map(|ip| ip.trim())
+        .filter(|ip| is_ipv4(ip))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    ips.sort();
+    ips.dedup();
+    for ip in ips {
+        let dest = format!("{ip}/32");
+        let attempts: Vec<Vec<&str>> = vec![
+            vec!["-4", "route", "del", "throw", &dest, "table", &applied.tun],
+            vec!["-4", "route", "del", &dest, "type", "throw", "table", &applied.tun],
+        ];
+        for args in attempts {
+            let _ = shell::run_timeout("ip", &args, Capture::None, IP_TIMEOUT);
+        }
+    }
+}
+
 fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
     match shell::run_timeout("ip", &["rule", "show"], Capture::Stdout, IP_TIMEOUT) {
         Ok((code, out)) if code == 0 => {
@@ -560,15 +675,136 @@ fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
         Ok((code, out)) => log::warn!("vpn_netd: post-check ip route failed rc={code} out={}", trim_ndc_output(&out)),
         Err(e) => log::warn!("vpn_netd: post-check ip route failed: {e:#}"),
     }
+
+    for ip in unique_endpoint_escape_ips(profile) {
+        let dest_cidr = format!("throw {ip}/32");
+        let dest_host = format!("throw {ip}");
+        match shell::run_timeout("ip", &["-4", "route", "show", "table", &profile.tun], Capture::Stdout, IP_TIMEOUT) {
+            Ok((code, out)) if code == 0 && !out.contains(&dest_cidr) && !out.contains(&dest_host) => {
+                log::warn!(
+                    "vpn_netd: post-check did not see endpoint escape route {} in table {} for {}/{}",
+                    dest_cidr,
+                    profile.tun,
+                    profile.owner_program,
+                    profile.profile
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
-fn remove_netd_profile(applied: &AppliedProfile) {
-    let netid_s = applied.netid.to_string();
-    for r in &applied.uid_ranges {
+
+fn remove_uid_ranges(netid: u32, ranges: &[String]) {
+    let netid_s = netid.to_string();
+    for r in ranges {
         if is_number_range(r) {
             ndc_quiet(vec!["network".into(), "users".into(), "remove".into(), netid_s.clone(), r.clone()]);
         }
     }
+    let _ = shell::run_timeout("ip", &["route", "flush", "cache"], Capture::None, IP_TIMEOUT);
+}
+
+fn add_uid_ranges(netid: u32, ranges: &[String], label: &str) -> Result<()> {
+    let netid_s = netid.to_string();
+    let mut failed = Vec::new();
+    for r in ranges {
+        let res = ndc_ok(
+            vec!["network".into(), "users".into(), "add".into(), netid_s.clone(), r.clone()],
+            &format!("vpn_netd: users add netid={} range={}", netid, r),
+        );
+        if let Err(e) = res {
+            failed.push(format!("{r}: {e:#}"));
+        }
+    }
+    if !failed.is_empty() {
+        bail!("vpn_netd: failed to add UID ranges for {label}: {}", failed.join("; "));
+    }
+    let _ = shell::run_timeout("ip", &["route", "flush", "cache"], Capture::None, IP_TIMEOUT);
+    Ok(())
+}
+
+fn validate_refreshed_ranges(snapshot: &AppliedSnapshot, owner_program: &str, profile: &str, new_ranges: &[String]) -> Result<()> {
+    let label = format!("{owner_program}/{profile}");
+    for other in &snapshot.profiles {
+        if other.owner_program == owner_program && other.profile == profile {
+            continue;
+        }
+        let other_label = format!("{}/{}", other.owner_program, other.profile);
+        for new_range in new_ranges {
+            for other_range in &other.uid_ranges {
+                if ranges_overlap(new_range, other_range) {
+                    bail!("vpn_netd: UID range {new_range} in {label} overlaps with {other_range} in {other_label}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Hot-refresh only the UID users assigned to an already-applied VPN/netd profile.
+///
+/// This is intentionally UID-only. Runtime network shape (netId, TUN, routes, DNS,
+/// endpoint escape routes) remains the one that was applied at service start.
+/// Editing those settings while the service is running is allowed, but it is not
+/// reflected here until the next stop/start cycle.
+pub fn refresh_profile_users(owner_program: &str, profile: &str, app_list_path: &Path, app_out_path: &Path) -> Result<AppliedProfile> {
+    ensure_working_dir()?;
+    let mut snapshot = read_applied_snapshot()?;
+    let Some(index) = snapshot.profiles.iter().position(|item| item.owner_program == owner_program && item.profile == profile) else {
+        log::info!("vpn_netd: applied profile not found for hot UID refresh, skipping: {owner_program}/{profile}");
+        return Ok(AppliedProfile {
+            owner_program: owner_program.to_string(),
+            profile: profile.to_string(),
+            netid: 0,
+            tun: String::new(),
+            uid_ranges: Vec::new(),
+            endpoint_escape_ips: Vec::new(),
+        });
+    };
+
+    let old = snapshot.profiles[index].clone();
+    let new_ranges = resolve_uid_ranges_allow_empty(app_list_path, app_out_path)?;
+    validate_refreshed_ranges(&snapshot, owner_program, profile, &new_ranges)?;
+
+    if old.uid_ranges == new_ranges {
+        log::info!("vpn_netd: UID users unchanged for {owner_program}/{profile}");
+        return Ok(old);
+    }
+
+    let label = format!("{owner_program}/{profile}");
+    log::info!(
+        "vpn_netd: hot-refresh users for {} netid={} old_ranges={} new_ranges={}",
+        label,
+        old.netid,
+        old.uid_ranges.len(),
+        new_ranges.len()
+    );
+
+    remove_uid_ranges(old.netid, &old.uid_ranges);
+    if let Err(e) = add_uid_ranges(old.netid, &new_ranges, &label) {
+        log::warn!("vpn_netd: hot-refresh users failed for {label}, trying rollback: {e:#}");
+        let _ = add_uid_ranges(old.netid, &old.uid_ranges, &format!("{label} rollback"));
+        bail!("vpn_netd: hot-refresh users failed for {label}: {e:#}");
+    }
+
+    let updated = AppliedProfile {
+        owner_program: old.owner_program,
+        profile: old.profile,
+        netid: old.netid,
+        tun: old.tun,
+        uid_ranges: new_ranges,
+        endpoint_escape_ips: old.endpoint_escape_ips,
+    };
+    snapshot.profiles[index] = updated.clone();
+    write_json_atomic(&applied_snapshot_path(), &snapshot)?;
+    Ok(updated)
+}
+
+fn remove_netd_profile(applied: &AppliedProfile) {
+    remove_endpoint_escape_routes(applied);
+    remove_uid_ranges(applied.netid, &applied.uid_ranges);
+    let netid_s = applied.netid.to_string();
     ndc_quiet(vec!["network".into(), "interface".into(), "remove".into(), netid_s.clone(), applied.tun.clone()]);
     ndc_quiet(vec!["network".into(), "destroy".into(), netid_s]);
     let _ = shell::run_timeout("ip", &["route", "flush", "cache"], Capture::None, IP_TIMEOUT);
@@ -590,26 +826,13 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
     }
 
     add_route_universal(profile.netid, &profile.tun, "0.0.0.0/0", profile.gateway.as_deref())?;
+    ensure_endpoint_escape_routes(profile);
 
     if let Err(e) = set_dns_universal(profile.netid, &profile.tun, &profile.dns) {
         log::warn!("vpn_netd: profile {}/{} DNS was not applied: {e:#}", profile.owner_program, profile.profile);
     }
 
-    let mut failed_users = Vec::new();
-    for r in uid_ranges {
-        let res = ndc_ok(
-            vec!["network".into(), "users".into(), "add".into(), netid_s.clone(), r.clone()],
-            &format!("vpn_netd: users add netid={} range={}", profile.netid, r),
-        );
-        if let Err(e) = res {
-            failed_users.push(format!("{r}: {e:#}"));
-        }
-    }
-    if !failed_users.is_empty() {
-        bail!("vpn_netd: failed to add UID ranges for {}/{}: {}", profile.owner_program, profile.profile, failed_users.join("; "));
-    }
-
-    let _ = shell::run_timeout("ip", &["route", "flush", "cache"], Capture::None, IP_TIMEOUT);
+    add_uid_ranges(profile.netid, uid_ranges, &format!("{}/{}", profile.owner_program, profile.profile))?;
 
     verify_post_apply(profile, uid_ranges);
 
@@ -619,6 +842,7 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
         netid: profile.netid,
         tun: profile.tun.clone(),
         uid_ranges: uid_ranges.to_vec(),
+        endpoint_escape_ips: unique_endpoint_escape_ips(profile),
     })
 }
 
@@ -756,6 +980,7 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
                     netid: profile.netid,
                     tun: profile.tun.clone(),
                     uid_ranges: ranges.clone(),
+                    endpoint_escape_ips: unique_endpoint_escape_ips(profile),
                 });
             }
         }
@@ -784,8 +1009,38 @@ pub fn stop_applied() -> Result<()> {
         return Ok(());
     }
 
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let snapshot: AppliedSnapshot = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!(
+                "vpn_netd: stale applied snapshot is unreadable ({}), removing runtime files and continuing fresh apply: {e}",
+                path.display()
+            );
+            cleanup_runtime_files();
+            return Ok(());
+        }
+    };
+
+    if snapshot_text_is_empty_or_nul(&text) {
+        log::warn!(
+            "vpn_netd: stale applied snapshot is empty/NUL-filled ({}), removing runtime files and continuing fresh apply",
+            path.display()
+        );
+        cleanup_runtime_files();
+        return Ok(());
+    }
+
+    let snapshot: AppliedSnapshot = match serde_json::from_str(&text) {
+        Ok(snapshot) => snapshot,
+        Err(e) => {
+            log::warn!(
+                "vpn_netd: stale applied snapshot is corrupted ({}), removing runtime files and continuing fresh apply: {e}",
+                path.display()
+            );
+            cleanup_runtime_files();
+            return Ok(());
+        }
+    };
 
     if !snapshot.profiles.is_empty() {
         log::info!("vpn_netd: cleanup {} applied profile(s)", snapshot.profiles.len());
@@ -811,6 +1066,22 @@ pub fn read_applied_snapshot() -> Result<AppliedSnapshot> {
     if !path.is_file() {
         return Ok(AppliedSnapshot::default());
     }
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| anyhow!("parse {}: {e}", path.display()))
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!("vpn_netd: applied snapshot is unreadable ({}), treating as not applied: {e}", path.display());
+            return Ok(AppliedSnapshot::default());
+        }
+    };
+    if snapshot_text_is_empty_or_nul(&text) {
+        log::warn!("vpn_netd: applied snapshot is empty/NUL-filled ({}), treating as not applied", path.display());
+        return Ok(AppliedSnapshot::default());
+    }
+    match serde_json::from_str(&text) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(e) => {
+            log::warn!("vpn_netd: applied snapshot is corrupted ({}), treating as not applied: {e}", path.display());
+            Ok(AppliedSnapshot::default())
+        }
+    }
 }

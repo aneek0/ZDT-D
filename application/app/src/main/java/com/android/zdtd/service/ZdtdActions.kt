@@ -1,5 +1,6 @@
 package com.android.zdtd.service
 
+import com.android.zdtd.service.api.ApiModels
 import org.json.JSONObject
 
 /**
@@ -20,6 +21,7 @@ interface ZdtdActions {
   fun confirmInstallZygisk()
   fun dismissInstallZygiskConfirm()
   fun dismissZygiskInstallRecoveryDialog()
+  fun dismissMetamoduleInstallBlockedDialog()
   fun retryInstallWithoutZygisk()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
@@ -39,6 +41,15 @@ interface ZdtdActions {
 
   /** Called after SAF returns a URI (or null if cancelled). */
   fun onBackupImportResult(uri: android.net.Uri?)
+
+  /** Called when Android opens a .zdtb backup file with this app. */
+  fun onExternalBackupOpen(uri: android.net.Uri)
+
+  /** Apply the validated backup opened from Android file manager. */
+  fun confirmExternalBackupRestore()
+
+  /** Cancel applying the backup opened from Android file manager. */
+  fun dismissExternalBackupRestore()
 
   /** Restore (apply) the selected backup file. */
   fun restoreBackup(name: String, ignoreVersionCode: Boolean = false)
@@ -213,6 +224,10 @@ interface ZdtdActions {
 
   fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit)
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit)
+  fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit)
+
+  fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit)
+  fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit)
 
   // ----- Strategic files (zapret / zapret2) -----
   /** List files in strategic/<dir>. dir: list | bin | lua */
@@ -244,8 +259,11 @@ interface ZdtdActions {
   /** Show/hide the app-owned notification about daemon status (running/stopped). */
   fun setDaemonStatusNotificationsEnabled(enabled: Boolean)
 
-  /** Set app UI language: auto | ru | en. */
+  /** Set app UI language: auto or one of the supported BCP-47 language tags. */
   fun setAppLanguageMode(mode: String)
+
+  /** Set app theme mode: system | light | dark. */
+  fun setThemeMode(mode: String)
 
   /** Reload daemon settings used by the settings sheet. */
   fun refreshDaemonSettings()
@@ -277,11 +295,23 @@ interface ZdtdActions {
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 
+  /** Reload advanced energy saver settings. */
+  fun refreshEnergySaver()
+
+  /** Save advanced energy saver settings and apply CPU affinity immediately. */
+  fun saveEnergySaver(config: com.android.zdtd.service.api.ApiModels.EnergySaverConfig)
+
   /** Toggle advanced daemon/system setting by API field name. */
   fun setAdvancedDaemonSetting(key: String, enabled: Boolean)
 
-  /** Enable/disable hotspot routing through t2s. */
+  /** Enable/disable hotspot routing. Enabling starts with an empty program/profile selection. */
   fun setHotspotT2sEnabled(enabled: Boolean)
+
+  /** Choose hotspot mode: proxy | vpn. */
+  fun setHotspotMode(mode: String)
+
+  /** Choose the single hotspot backend program/profile for the selected mode. */
+  fun setHotspotSelection(mode: String, program: String, profile: String = "")
 
   /** Choose which program receives hotspot traffic: operaproxy | singbox | wireproxy. */
   fun setHotspotT2sTarget(target: String)
