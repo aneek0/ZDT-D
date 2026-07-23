@@ -144,11 +144,17 @@ class BlockcheckRunner(
         val quoted = args.joinToString(" ") {
             "'" + it.replace("'", "'\\''") + "'"
         }
+        val binQuoted = "'" + bin.replace("'", "'\\''") + "'"
         return buildString {
-            append("chmod 700 '")
-            append(bin.replace("'", "'\\''"))
-            append("' 2>/dev/null || true\nexec ")
-            append(quoted)
+            append("chmod 700 ")
+            append(binQuoted)
+            append(" 2>/dev/null || true\n")
+            append("exec ")
+            append(binQuoted)
+            if (quoted.isNotBlank()) {
+                append(' ')
+                append(quoted)
+            }
         }
     }
 
