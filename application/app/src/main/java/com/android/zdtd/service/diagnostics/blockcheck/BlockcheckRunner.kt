@@ -41,7 +41,7 @@ class BlockcheckRunner(
         program: String,
         hostsFile: String,
         qnum: Int = 200,
-        timeoutSecs: Int = 10,
+        timeoutSecs: Int = 2,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
         val args = listOf(

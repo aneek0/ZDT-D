@@ -103,7 +103,7 @@ fn entry() -> Result<()> {
             };
             let timeout_secs = match parse_named_value(&args[1..], "--timeout") {
                 Ok(v) => v.parse::<u64>().context("invalid --timeout")?,
-                Err(_) => 6,
+                Err(_) => 2,
             };
             run_auto(&normalize_program(&program)?, &hosts_file, qnum, timeout_secs)
         }
