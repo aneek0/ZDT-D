@@ -43,6 +43,7 @@ fun BlockcheckScreen(
     var runJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(Unit) {
+        BlockcheckStore.reset()
         hostFiles = runner.listHostFiles()
         allStrategies = runner.listStrategies(program)
         BlockcheckStore.update { it.copy(allStrategies = allStrategies) }
@@ -56,7 +57,7 @@ fun BlockcheckScreen(
         contentPadding = PaddingValues(
             start = if (compact) 10.dp else 12.dp,
             end = if (compact) 10.dp else 12.dp,
-            top = topContentPadding + if (shortHeight) 6.dp else 10.dp,
+            top = topContentPadding + if (shortHeight) 12.dp else 18.dp,
             bottom = bottomContentPadding + 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(if (shortHeight) 8.dp else 10.dp),
