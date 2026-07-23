@@ -14,8 +14,9 @@ data class BlockcheckSession(
     val phase: String = "",
     val workingStrategies: List<String> = emptyList(),
     val failedStrategies: List<String> = emptyList(),
-    val probeResults: List<BlockcheckStrategyProbe> = emptyList(),
-    val baselineResults: List<BlockcheckBaselineProbe> = emptyList(),
+    val skippedStrategies: List<String> = emptyList(),
+    val allStrategies: List<String> = emptyList(),
+    val isRunning: Boolean = false,
     val isFinished: Boolean = false,
     val isError: Boolean = false,
     val errorMessage: String? = null,
@@ -37,7 +38,7 @@ data class BlockcheckStrategyProbe(
 
 data class BlockcheckStrategyResult(
     val strategy: String,
-    val verdict: String,  // "works", "partial", "failed"
+    val verdict: String,
     val allMatch: Boolean,
     val anyMatch: Boolean,
 ) {

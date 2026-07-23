@@ -11,11 +11,32 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 
 class BlockcheckRunner(
     private val context: Context,
 ) {
+    suspend fun listStrategies(program: String): List<String> = withContext(Dispatchers.IO) {
+        val binary = NfqwsTesterBinary(context).ensureInstalled()
+        val cmd = buildShellCommand(binary.absolutePath, listOf("list", "--program", program))
+        val result = runRoot(cmd)
+        val json = runCatching { JSONObject(result) }.getOrNull() ?: return@withContext emptyList()
+        val arr = json.optJSONArray("strategies") ?: return@withContext emptyList()
+        buildList {
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i, "")
+                if (v.isNotBlank()) add(v)
+            }
+        }
+    }
+
+    suspend fun listHostFiles(): List<String> = withContext(Dispatchers.IO) {
+        val dir = "/data/adb/modules/ZDT-D/strategic/list"
+        val result = runRoot("ls -1 '$dir' 2>/dev/null || true")
+        result.lines().filter { it.isNotBlank() && it.endsWith(".txt") }.sorted()
+    }
+
     fun run(
         program: String,
         hostsFile: String,
@@ -148,6 +169,17 @@ class BlockcheckRunner(
 
     companion object {
         private const val TAG = "BlockcheckRunner"
+
+        suspend fun runRoot(cmd: String): String = withContext(Dispatchers.IO) {
+            val process = ProcessBuilder("su")
+                .redirectErrorStream(true)
+                .start()
+            process.outputStream.write(cmd.toByteArray())
+            process.outputStream.close()
+            val text = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            text
+        }
     }
 
     private fun buildShellCommand(bin: String, args: List<String>): String {

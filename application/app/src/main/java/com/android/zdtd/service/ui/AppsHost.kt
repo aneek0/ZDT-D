@@ -124,6 +124,8 @@ fun AppsHost(
         program = "nfqws",
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
         onClose = onOpenAnalysisTools,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
       )
       is AppsRoute.Program -> when (r.programId) {
         "openvpn" -> OpenVpnProgramScreen(
