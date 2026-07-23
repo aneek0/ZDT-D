@@ -4,13 +4,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -106,10 +104,10 @@ fun BlockcheckScreen(
         contentPadding = PaddingValues(
             start = if (compact) 10.dp else 12.dp,
             end = if (compact) 10.dp else 12.dp,
-            top = topContentPadding + if (shortHeight) 10.dp else 14.dp,
+            top = topContentPadding + if (shortHeight) 6.dp else 10.dp,
             bottom = bottomContentPadding + 12.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(if (shortHeight) 6.dp else 8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (shortHeight) 8.dp else 10.dp),
     ) {
         item {
             Card(
@@ -118,9 +116,9 @@ fun BlockcheckScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
             ) {
-                Column(Modifier.padding(if (compact) 14.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(if (compact) 16.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Auto Blockcheck", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChip(selected = selectedProgram == "nfqws", onClick = { selectedProgram = "nfqws" }, label = { Text("nfqws") })
                         FilterChip(selected = selectedProgram == "nfqws2", onClick = { selectedProgram = "nfqws2" }, label = { Text("nfqws2") })
                     }
@@ -134,8 +132,9 @@ fun BlockcheckScreen(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
             ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Hosts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChip(selected = !showCustom, onClick = { showCustom = false }, label = { Text("From list") })
                         FilterChip(selected = showCustom, onClick = { showCustom = true }, label = { Text("Custom domain") })
                     }
@@ -155,11 +154,18 @@ fun BlockcheckScreen(
                             )
                         }
                     }
-                    Button(
-                        onClick = { startRun() },
-                        enabled = !state.isRunning && (!showCustom || customDomain.isNotBlank()),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Start") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { startRun() },
+                            enabled = !state.isRunning && (!showCustom || customDomain.isNotBlank()),
+                        ) { Text("Start") }
+                        if (state.isRunning || state.isFinished || state.isError) {
+                            OutlinedButton(onClick = {
+                                BlockcheckStore.reset()
+                                stoppedManually = false
+                            }) { Text("Reset") }
+                        }
+                    }
                 }
             }
         }
@@ -171,7 +177,7 @@ fun BlockcheckScreen(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
                 ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             text = when {
                                 state.phase == "baseline" -> "Collecting baseline..."
@@ -184,11 +190,12 @@ fun BlockcheckScreen(
                         val progress = if (state.totalStrategies > 0 && state.currentStrategyIndex >= 0)
                             (state.currentStrategyIndex + 1).toFloat() / state.totalStrategies else 0f
                         LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                        Button(
-                            onClick = { stopRun() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Stop") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = { stopRun() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            ) { Text("Stop") }
+                        }
                     }
                 }
             }
@@ -205,7 +212,7 @@ fun BlockcheckScreen(
                         "Stopped",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(14.dp),
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
@@ -235,53 +242,70 @@ fun BlockcheckScreen(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
             ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Strategies", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    allStrategies.forEachIndexed { idx, s ->
-                        if (idx > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                        val status = when {
-                            state.isRunning && state.currentStrategy == s -> if (state.phase == "strategies") "testing" else "queued"
-                            state.workingStrategies.contains(s) -> "works"
-                            state.failedStrategies.contains(s) -> "failed"
-                            state.skippedStrategies.contains(s) -> "skipped"
-                            else -> if (state.isRunning || state.isFinished) "queued" else ""
-                        }
-                        val dotColor = when (status) {
-                            "works" -> Color(0xFF22C55E)
-                            "failed" -> MaterialTheme.colorScheme.error
-                            "skipped" -> Color(0xFF9CA3AF)
-                            "testing" -> MaterialTheme.colorScheme.primary
-                            else -> Color.Transparent
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            if (dotColor != Color.Transparent) {
-                                Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
+                    if (allStrategies.isEmpty()) {
+                        Text("No strategies found.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                    } else {
+                        allStrategies.forEach { s ->
+                            val status = when {
+                                state.isRunning && state.currentStrategy == s -> if (state.phase == "strategies") "testing" else "queued"
+                                state.workingStrategies.contains(s) -> "works"
+                                state.failedStrategies.contains(s) -> "failed"
+                                state.skippedStrategies.contains(s) -> "skipped"
+                                else -> if (state.isRunning || state.isFinished) "queued" else ""
+                            }
+                            val shape = RoundedCornerShape(12.dp)
+                            val bgColor = when (status) {
+                                "testing" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                "works" -> Color(0xFF22C55E).copy(alpha = 0.08f)
+                                "failed" -> MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+                                "skipped" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                else -> Color.Transparent
+                            }
+                            if (bgColor != Color.Transparent) {
+                                Surface(shape = shape, color = bgColor) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            s, modifier = Modifier.weight(1f),
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (status == "testing") FontWeight.SemiBold else FontWeight.Normal,
+                                        )
+                                        if (status == "testing") {
+                                            Spacer(Modifier.width(8.dp))
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        }
+                                        if (status == "works" && actions != null) {
+                                            Spacer(Modifier.width(8.dp))
+                                            TextButton(
+                                                onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            ) { Text("Apply", style = MaterialTheme.typography.labelSmall) }
+                                        }
+                                        if (status.isNotEmpty() && status != "queued" && status != "testing") {
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                when (status) { "works" -> "Works"; "failed" -> "Failed"; "skipped" -> "Skipped"; else -> "" },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = when (status) {
+                                                    "works" -> Color(0xFF22C55E)
+                                                    "failed" -> MaterialTheme.colorScheme.error
+                                                    "skipped" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             } else {
-                                Spacer(Modifier.size(8.dp))
-                            }
-                            Text(
-                                s,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (status == "testing") FontWeight.Bold else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (status == "testing") {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                            }
-                            if (status == "works" && actions != null) {
-                                TextButton(
-                                    onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                ) { Text("Apply", style = MaterialTheme.typography.labelSmall) }
-                            }
-                            if (status.isNotEmpty() && status != "queued" && status != "testing") {
-                                Text(status, style = MaterialTheme.typography.labelSmall, color = dotColor)
+                                Text(
+                                    s, modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                )
                             }
                         }
                     }
@@ -291,20 +315,28 @@ fun BlockcheckScreen(
 
         if (state.isFinished && !stoppedManually) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.workingStrategies.isNotEmpty()) {
-                        Text("Working (${state.workingStrategies.size})", fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E))
-                        state.workingStrategies.forEach { s ->
-                            Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF22C55E).copy(alpha = 0.08f)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(s, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (actions != null) {
-                                        Spacer(Modifier.width(8.dp))
-                                        TextButton(onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } }) {
-                                            Text("Apply", style = MaterialTheme.typography.labelMedium)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Working (${state.workingStrategies.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E))
+                                state.workingStrategies.forEach { s ->
+                                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(s, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (actions != null) {
+                                                Spacer(Modifier.width(8.dp))
+                                                TextButton(onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } }) {
+                                                    Text("Apply", style = MaterialTheme.typography.labelMedium)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -312,15 +344,31 @@ fun BlockcheckScreen(
                         }
                     }
                     if (state.failedStrategies.isNotEmpty()) {
-                        Text("Failed (${state.failedStrategies.size})", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
-                        state.failedStrategies.forEach { s ->
-                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)) {
-                                Text(s, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Failed (${state.failedStrategies.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                                state.failedStrategies.forEach { s ->
+                                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
+                                        Text(s, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
                             }
                         }
                     }
                     if (state.workingStrategies.isEmpty() && state.failedStrategies.isEmpty()) {
-                        Text("No strategies tested.")
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("No strategies tested.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                            }
+                        }
                     }
                 }
             }
