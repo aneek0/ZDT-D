@@ -20,6 +20,7 @@ data class BlockcheckSession(
     val isFinished: Boolean = false,
     val isError: Boolean = false,
     val errorMessage: String? = null,
+    val stoppedManually: Boolean = false,
 )
 
 data class BlockcheckBaselineProbe(

@@ -21,6 +21,7 @@ const SESSION_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws_tester/
 const SETTING_DIR: &str = "/data/adb/modules/ZDT-D/setting";
 const MULTIPORT_NO_FILE: &str = "multiport_no";
 const DEFAULT_QNUM: u16 = 200;
+const DESYNC_MARK: &str = "0x10000000";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SessionState {
@@ -377,6 +378,10 @@ fn apply_nfqueue_rules_family(cmd: &str, chain: &str, queue: u16, filter: &Proto
     if rc != 0 {
         bail!("{cmd} add OUTPUT jump failed: {out}");
     }
+
+    // prevent loop: skip packets already marked by nfqws/nfqws2
+    let _ = run(cmd, &["-w", "5", "-t", "mangle", "-A", chain, "-m", "mark", "--mark", DESYNC_MARK, "-j", "RETURN"]);
+
     if filter.is_empty() {
         let (rc, out) = run(
             cmd,
@@ -497,8 +502,13 @@ fn spawn_program(program: &str, bin: &Path, cwd: &Path, qnum: u16, config_args: 
     let devnull = File::options().read(true).write(true).open("/dev/null").context("open /dev/null")?;
     let devnull_err = devnull.try_clone().context("clone /dev/null")?;
     let mut cmd = Command::new(bin);
+    let fwmark = match program {
+        "nfqws" => format!("--dpi-desync-fwmark={DESYNC_MARK}"),
+        _ => format!("--fwmark={DESYNC_MARK}"),
+    };
     cmd.current_dir(cwd)
         .arg("--uid=0:0")
+        .arg(fwmark)
         .arg(format!("--qnum={qnum}"))
         .args(config_args)
         .stdin(Stdio::null())
@@ -1027,9 +1037,7 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
 
             let baseline = baseline_results.get(host).cloned().unwrap_or((0, String::new(), String::new()));
 
-            let code_match = code == baseline.0 || (code >= 200 && code < 400 && baseline.0 >= 200 && baseline.0 < 400);
-            let size_match = !size.is_empty() && !baseline.2.is_empty() && size == baseline.2;
-            let works = code_match || size_match;
+            let works = code >= 200 && code < 400;
 
             if works { any_match = true; }
             if !works { all_match = false; }

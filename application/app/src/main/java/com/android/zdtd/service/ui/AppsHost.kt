@@ -124,6 +124,7 @@ fun AppsHost(
         program = "nfqws",
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
         onClose = onOpenAnalysisTools,
+        actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

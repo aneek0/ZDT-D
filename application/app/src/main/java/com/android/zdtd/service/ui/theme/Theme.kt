@@ -178,9 +178,9 @@ private val AmoledScheme = darkColorScheme(
 
   background = Color.Black,
   onBackground = Color(0xFFE3E2E6),
-  surface = Color(0xFF0A0A0A),
+  surface = Color.Black,
   onSurface = Color(0xFFE3E2E6),
-  surfaceVariant = Color(0xFF2A2A28),
+  surfaceVariant = Color.Black,
   onSurfaceVariant = Color(0xFFC9C9C3),
   surfaceTint = AmberSeed,
 
@@ -193,11 +193,11 @@ private val AmoledScheme = darkColorScheme(
   scrim = Color.Black,
 
   surfaceContainerLowest = Color.Black,
-  surfaceContainerLow = Color(0xFF080808),
-  surfaceContainer = Color(0xFF0C0C0C),
-  surfaceContainerHigh = Color(0xFF141414),
-  surfaceContainerHighest = Color(0xFF1A1A1A),
-  surfaceBright = Color(0xFF1E1E1E),
+  surfaceContainerLow = Color.Black,
+  surfaceContainer = Color.Black,
+  surfaceContainerHigh = Color.Black,
+  surfaceContainerHighest = Color.Black,
+  surfaceBright = Color.Black,
   surfaceDim = Color.Black,
 )
 
