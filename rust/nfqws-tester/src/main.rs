@@ -848,7 +848,11 @@ fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, St
 }
 
 fn emit_event(event: &serde_json::Value) {
-    println!("{event}");
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    let _ = writeln!(handle, "{event}");
+    let _ = handle.flush();
 }
 
 fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Result<()> {

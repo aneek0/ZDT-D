@@ -2,7 +2,6 @@ package com.android.zdtd.service.diagnostics.blockcheck
 
 import android.content.Context
 import android.util.Log
-import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterBinary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -11,20 +10,12 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
-/**
- * Runs the `nfqws-tester auto` command (automatic blockcheck) and emits
- * events the UI can observe.
- *
- * For each strategy, the binary launches nfqws, pings a set of hosts through
- * curl, and compares results against a baseline (no-funnel) run. The emitted
- * NDJSON tells the UI whether a strategy works, partially works, or fails.
- */
 class BlockcheckRunner(
     private val context: Context,
-    private val rootConfigManager: RootConfigManager = RootConfigManager(context),
 ) {
-
     fun run(
         program: String,
         hostsFile: String,
@@ -39,105 +30,124 @@ class BlockcheckRunner(
             "--qnum", qnum.toString(),
             "--timeout", timeoutSecs.toString()
         )
+        val cmd = buildShellCommand(binary.absolutePath, args)
 
-        Log.d(TAG, "blockcheck: starting ${binary.absolutePath} ${args.joinToString(" ")}")
-
-        val result = withContext(Dispatchers.IO) {
-            val cmd = buildShellCommand(binary.absolutePath, args)
-            rootConfigManager.execRootSh(cmd)
-        }
-
-        val code = result.code
-        val out = (result.out + result.err).joinToString("\n")
-
-        if (code != 0 && out.isBlank()) {
-            trySend(BlockcheckEvent.Error("nfqws-tester auto exited with code $code"))
-            return@channelFlow
-        }
-
-        var session: BlockcheckSession? = null
+        Log.d(TAG, "starting: ${binary.absolutePath} ${args.joinToString(" ")}")
 
         withContext(Dispatchers.IO) {
-            for (line in out.lines()) {
-                if (!isActive) break
-                val trimmed = line.trim()
-                if (trimmed.isEmpty()) continue
-                val json = runCatching { JSONObject(trimmed) }.getOrNull() ?: continue
+            val process = ProcessBuilder("su")
+                .redirectErrorStream(true)
+                .start()
 
-                when (json.optString("type", "")) {
-                    "auto_started" -> {
-                        session = BlockcheckSession(
-                            program = json.optString("program", program),
-                            totalStrategies = json.optInt("total_strategies", 0),
-                            totalHosts = json.optInt("total_hosts", 0),
-                            hosts = json.optJSONArray("hosts")?.let { arr ->
-                                buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
-                            } ?: emptyList()
-                        )
-                        trySend(BlockcheckEvent.Started(session!!))
+            process.outputStream.write(cmd.toByteArray())
+            process.outputStream.close()
+
+            var session: BlockcheckSession? = null
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+
+            try {
+                var line = reader.readLine()
+                while (line != null) {
+                    if (!isActive) {
+                        process.destroy()
+                        break
                     }
-                    "auto_phase" -> {
-                        trySend(BlockcheckEvent.Phase(json.optString("phase", ""), session!!))
-                    }
-                    "auto_baseline_probe" -> {
-                        val probe = BlockcheckBaselineProbe(
-                            host = json.optString("host", ""),
-                            httpCode = json.optInt("http_code", 0),
-                            size = json.optString("size", ""),
-                        )
-                        trySend(BlockcheckEvent.BaselineProbe(probe = probe, session = session!!))
-                    }
-                    "auto_strategy_start" -> {
-                        val strategy = json.optString("strategy", "")
-                        val index = json.optInt("index", 0)
-                        val total = json.optInt("total", 0)
-                        trySend(BlockcheckEvent.StrategyStarted(strategy, index, total, session!!))
-                    }
-                    "auto_strategy_probe" -> {
-                        val probe = BlockcheckStrategyProbe(
-                            strategy = json.optString("strategy", ""),
-                            host = json.optString("host", ""),
-                            httpCode = json.optInt("http_code", 0),
-                            baselineCode = json.optInt("baseline_code", 0),
-                            works = json.optBoolean("works", false),
-                        )
-                        trySend(BlockcheckEvent.StrategyProbe(probe = probe, session = session!!))
-                    }
-                    "auto_strategy_result" -> {
-                        val result = BlockcheckStrategyResult(
-                            strategy = json.optString("strategy", ""),
-                            verdict = json.optString("verdict", "unknown"),
-                            allMatch = json.optBoolean("all_match", false),
-                            anyMatch = json.optBoolean("any_match", false),
-                        )
-                        trySend(BlockcheckEvent.StrategyResult(result = result, session = session!!))
-                    }
-                    "auto_finished" -> {
-                        val working = mutableListOf<String>()
-                        val failed = mutableListOf<String>()
-                        json.optJSONArray("working")?.let { arr ->
-                            for (i in 0 until arr.length()) working.add(arr.getString(i))
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty()) {
+                        val json = runCatching { JSONObject(trimmed) }.getOrNull()
+                        if (json != null) {
+                            when (json.optString("type", "")) {
+                                "auto_started" -> {
+                                    session = BlockcheckSession(
+                                        program = json.optString("program", program),
+                                        totalStrategies = json.optInt("total_strategies", 0),
+                                        totalHosts = json.optInt("total_hosts", 0),
+                                        hosts = json.optJSONArray("hosts")?.let { arr ->
+                                            buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
+                                        } ?: emptyList()
+                                    )
+                                    trySend(BlockcheckEvent.Started(session!!))
+                                }
+                                "auto_phase" -> {
+                                    trySend(BlockcheckEvent.Phase(json.optString("phase", ""), session!!))
+                                }
+                                "auto_baseline_probe" -> {
+                                    trySend(BlockcheckEvent.BaselineProbe(probe = BlockcheckBaselineProbe(
+                                        host = json.optString("host", ""),
+                                        httpCode = json.optInt("http_code", 0),
+                                        size = json.optString("size", ""),
+                                    ), session = session!!))
+                                }
+                                "auto_strategy_start" -> {
+                                    trySend(BlockcheckEvent.StrategyStarted(
+                                        json.optString("strategy", ""),
+                                        json.optInt("index", 0),
+                                        json.optInt("total", 0),
+                                        session!!
+                                    ))
+                                }
+                                "auto_strategy_probe" -> {
+                                    trySend(BlockcheckEvent.StrategyProbe(probe = BlockcheckStrategyProbe(
+                                        strategy = json.optString("strategy", ""),
+                                        host = json.optString("host", ""),
+                                        httpCode = json.optInt("http_code", 0),
+                                        baselineCode = json.optInt("baseline_code", 0),
+                                        works = json.optBoolean("works", false),
+                                    ), session = session!!))
+                                }
+                                "auto_strategy_result" -> {
+                                    trySend(BlockcheckEvent.StrategyResult(result = BlockcheckStrategyResult(
+                                        strategy = json.optString("strategy", ""),
+                                        verdict = json.optString("verdict", "unknown"),
+                                        allMatch = json.optBoolean("all_match", false),
+                                        anyMatch = json.optBoolean("any_match", false),
+                                    ), session = session!!))
+                                }
+                                "auto_finished" -> {
+                                    val working = mutableListOf<String>()
+                                    val failed = mutableListOf<String>()
+                                    json.optJSONArray("working")?.let { arr ->
+                                        for (i in 0 until arr.length()) working.add(arr.getString(i))
+                                    }
+                                    json.optJSONArray("failed")?.let { arr ->
+                                        for (i in 0 until arr.length()) failed.add(arr.getString(i))
+                                    }
+                                    trySend(BlockcheckEvent.Finished(working, failed, session!!))
+                                }
+                                "auto_strategy_skip" -> {
+                                    trySend(BlockcheckEvent.StrategySkipped(
+                                        json.optString("strategy", ""),
+                                        json.optString("reason", ""),
+                                        session!!
+                                    ))
+                                }
+                                "auto_strategy_error" -> {
+                                    trySend(BlockcheckEvent.StrategyError(
+                                        json.optString("strategy", ""),
+                                        json.optString("error", ""),
+                                        session!!
+                                    ))
+                                }
+                            }
+                        } else if (session == null) {
+                            trySend(BlockcheckEvent.Error(trimmed))
+                            process.destroy()
+                            break
                         }
-                        json.optJSONArray("failed")?.let { arr ->
-                            for (i in 0 until arr.length()) failed.add(arr.getString(i))
-                        }
-                        trySend(BlockcheckEvent.Finished(working, failed, session!!))
                     }
-                    "auto_strategy_skip" -> {
-                        val strategy = json.optString("strategy", "")
-                        val reason = json.optString("reason", "")
-                        trySend(BlockcheckEvent.StrategySkipped(strategy, reason, session!!))
-                    }
-                    "auto_strategy_error" -> {
-                        val strategy = json.optString("strategy", "")
-                        val error = json.optString("error", "")
-                        trySend(BlockcheckEvent.StrategyError(strategy, error, session!!))
-                    }
+                    line = reader.readLine()
                 }
+            } finally {
+                reader.close()
+                process.destroy()
             }
         }
 
         awaitClose { }
+    }
+
+    companion object {
+        private const val TAG = "BlockcheckRunner"
     }
 
     private fun buildShellCommand(bin: String, args: List<String>): String {
@@ -156,9 +166,5 @@ class BlockcheckRunner(
                 append(quoted)
             }
         }
-    }
-
-    companion object {
-        private const val TAG = "BlockcheckRunner"
     }
 }
