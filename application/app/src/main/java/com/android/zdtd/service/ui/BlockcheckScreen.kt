@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.diagnostics.blockcheck.*
 import kotlinx.coroutines.Job
