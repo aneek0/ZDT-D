@@ -2,10 +2,10 @@ name: Build ZDT-D
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 6 1 * *'
     inputs:
       build_type:
+  schedule:
+    - cron: '0 6 1 * *'
         description: 'Build type'
         required: false
         default: 'Release'
