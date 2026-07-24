@@ -2,9 +2,7 @@ package com.android.zdtd.service.ui
 
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
-import kotlin.coroutines.resume
 
 private val vpnIpv4ProgramIds = listOf("amneziawg", "myvpn", "mihomo")
 private const val MIHOMO_IPV4_PATTERN = """[0-9]{1,3}(?:\.[0-9]{1,3}){3}(?:/[0-9]{1,2})?"""
@@ -26,12 +24,6 @@ internal data class VpnIpv4Use(
   val profile: String,
   val cidr: VpnIpv4Cidr,
 )
-
-private suspend fun awaitLoadJsonVpnIpv4Guard(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextVpnIpv4Guard(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
 
 private fun vpnIpv4SettingObject(obj: JSONObject?): JSONObject? =
   obj?.optJSONObject("data") ?: obj?.optJSONObject("setting") ?: obj
@@ -120,15 +112,15 @@ internal suspend fun loadUsedVpnIpv4Cidrs(
       if (programId == excludeProgramId && profile.name == excludeProfile) continue
       when (programId) {
         "amneziawg" -> {
-          val raw = awaitLoadJsonVpnIpv4Guard(actions, "${vpnProfileApiPath(programId, profile.name)}/setting")
+          val raw = actions.awaitLoadJson("${vpnProfileApiPath(programId, profile.name)}/setting")
           used += amneziaWgIpv4Uses(programId, profile.name, raw)
         }
         "myvpn" -> {
-          val raw = awaitLoadJsonVpnIpv4Guard(actions, "${vpnProfileApiPath(programId, profile.name)}/setting")
+          val raw = actions.awaitLoadJson("${vpnProfileApiPath(programId, profile.name)}/setting")
           used += myVpnIpv4Uses(programId, profile.name, raw)
         }
         "mihomo" -> {
-          val yaml = awaitLoadTextVpnIpv4Guard(actions, "${vpnProfileApiPath(programId, profile.name)}/config").orEmpty()
+          val yaml = actions.awaitLoadText("${vpnProfileApiPath(programId, profile.name)}/config").orEmpty()
           used += mihomoIpv4Uses(programId, profile.name, yaml)
         }
       }

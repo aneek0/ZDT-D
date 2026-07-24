@@ -98,15 +98,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         launch {
-          vm.notificationEvents.collect { e ->
-            when (e) {
-              NotificationEvent.RequestPostNotificationsPermission -> {
-                if (Build.VERSION.SDK_INT >= 33) {
-                  postNotificationsLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                  vm.onPostNotificationsPermissionResult(true)
-                }
-              }
+          vm.notificationEvents.collect {
+            if (Build.VERSION.SDK_INT >= 33) {
+              postNotificationsLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+              vm.onPostNotificationsPermissionResult(true)
             }
           }
         }

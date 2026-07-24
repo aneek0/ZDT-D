@@ -289,26 +289,6 @@ private fun buildWireProxyStarterConfig(port: Int): String = """
   BindAddress = 127.0.0.1:$port
 """.trimIndent() + "\n"
 
-private suspend fun awaitLoadJson(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont ->
-    actions.loadJsonData(path) { cont.resume(it) }
-  }
-
-private suspend fun awaitLoadText(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont ->
-    actions.loadText(path) { cont.resume(it) }
-  }
-
-private suspend fun awaitSaveJson(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont ->
-    actions.saveJsonData(path, obj) { cont.resume(it) }
-  }
-
-private suspend fun awaitSaveText(actions: ZdtdActions, path: String, content: String): Boolean =
-  suspendCancellableCoroutine { cont ->
-    actions.saveText(path, content) { cont.resume(it) }
-  }
-
 private suspend fun awaitCreateWireProxyServer(actions: ZdtdActions, profile: String, server: String): String? =
   suspendCancellableCoroutine { cont ->
     actions.createWireProxyServer(profile, server) { cont.resume(it) }
@@ -566,9 +546,9 @@ fun WireProxyProfileScreen(
     profiles.forEach { item ->
       val enc = URLEncoder.encode(item.name, "UTF-8")
       val profileBase = "/api/programs/wireproxy/profiles/$enc"
-      val settingObj = awaitLoadJson(actions, "$profileBase/setting")
+      val settingObj = actions.awaitLoadJson("$profileBase/setting")
       settingsByProfile[item.name] = parseWireProxyProfileSettingUi(settingObj)
-      val serversObj = awaitLoadJson(actions, "$profileBase/servers")
+      val serversObj = actions.awaitLoadJson("$profileBase/servers")
       serversByProfile[item.name] = parseWireProxyServersUi(serversObj)
     }
     globalPortRegistry = buildWireProxyPortRegistry(settingsByProfile, serversByProfile)
@@ -616,11 +596,11 @@ fun WireProxyProfileScreen(
           val serverLabel = wireProxyServerPortLabel(profile, created)
           val preferredPort = findNextAvailableWireProxyPort(globalPortRegistry, 1167, ignoredLabel = serverLabel)
           val configPath = "$basePath/servers/${URLEncoder.encode(created, "UTF-8")}/config"
-          val current = awaitLoadText(actions, configPath).orEmpty()
+          val current = actions.awaitLoadText(configPath).orEmpty()
           val bind = parseWireProxySocks5Bind(current)
           if (bind == null || bind.host != "127.0.0.1") {
             val generated = if (current.isBlank()) buildWireProxyStarterConfig(preferredPort) else upsertWireProxySocks5Bind(current, preferredPort)
-            awaitSaveText(actions, configPath, generated)
+            actions.awaitSaveText(configPath, generated)
           }
           showSnack(context.getString(R.string.wireproxy_server_created_fmt, created))
           refreshServers()

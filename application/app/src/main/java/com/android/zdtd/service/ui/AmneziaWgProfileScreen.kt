@@ -98,20 +98,8 @@ private val amneziaWgProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
 private val amneziaWgTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private const val AMNEZIAWG_AUTOSAVE_DELAY_MS = 1500L
 
-private suspend inline fun <T> awaitAmneziaWgAction(crossinline block: (continuation: (T) -> Unit) -> Unit): T =
-  suspendCancellableCoroutine { cont -> block { cont.resume(it) } }
-
-private suspend fun awaitLoadJsonAmneziaWg(actions: ZdtdActions, path: String): JSONObject? =
-  awaitAmneziaWgAction { actions.loadJsonData(path, it) }
-
-private suspend fun awaitLoadTextAmneziaWg(actions: ZdtdActions, path: String): String? =
-  awaitAmneziaWgAction { actions.loadText(path, it) }
-
-private suspend fun awaitSaveTextAmneziaWg(actions: ZdtdActions, path: String, content: String): Boolean =
-  awaitAmneziaWgAction { actions.saveText(path, content, it) }
-
 private suspend fun awaitUploadAmneziaWgConfig(actions: ZdtdActions, profile: String, filename: String, file: File): Boolean =
-  awaitAmneziaWgAction { actions.uploadAmneziaWgConfig(profile, filename, file, it) }
+  suspendCancellableCoroutine { cont -> actions.uploadAmneziaWgConfig(profile, filename, file, it@ { cont.resume(it) }) }
 
 private fun amneziaWgProfilePath(profile: String): String =
   "/api/programs/amneziawg/profiles/${URLEncoder.encode(profile, "UTF-8")}"
@@ -413,8 +401,7 @@ fun AmneziaWgProgramScreen(
               val tun = nextFreeVpnTunName(usedTuns, prefix = "awg")
               val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "amneziawg", excludeProfile = created)
               val address = nextFreeVpnIpv4Cidr(usedIpv4)
-              val ok = awaitSaveJsonVpnTunGuard(
-                actions,
+              val ok = actions.awaitSaveJson(
                 "${vpnProfileApiPath("amneziawg", created)}/setting",
                 defaultAmneziaWgSettingJson(tun, address),
               )
@@ -551,7 +538,7 @@ fun AmneziaWgProfileScreen(
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "amneziawg", excludeProfile = profile)
       val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "amneziawg", excludeProfile = profile)
-      val rawSetting = awaitLoadJsonAmneziaWg(actions, "$basePath/setting")
+      val rawSetting = actions.awaitLoadJson("$basePath/setting")
       val loaded = parseAmneziaWgSetting(rawSetting)
       val settingWithTun = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns, prefix = "awg")) else loaded
       val setting = if (vpnIpv4CidrsOverlapEachOther(settingWithTun.address) || vpnIpv4CidrsConflict(settingWithTun.address, usedIpv4)) {
@@ -559,8 +546,8 @@ fun AmneziaWgProfileScreen(
       } else {
         settingWithTun
       }
-      val loadedConfig = awaitLoadTextAmneziaWg(actions, "$basePath/config").orEmpty()
-      val apps = parsePkgList(awaitLoadTextAmneziaWg(actions, "$basePath/apps/user").orEmpty()).size
+      val loadedConfig = actions.awaitLoadText("$basePath/config").orEmpty()
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty()).size
 
       usedVpnTuns = usedTuns
       usedVpnIpv4Cidrs = usedIpv4
@@ -647,7 +634,7 @@ fun AmneziaWgProfileScreen(
       stripFwmark = stripFwmark,
     )
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonVpnTunGuard(actions, "$basePath/setting", buildAmneziaWgSettingJson(current))
+    val ok = actions.awaitSaveJson("$basePath/setting", buildAmneziaWgSettingJson(current))
     if (ok) {
       syncedSetting = current
     } else {
@@ -660,7 +647,7 @@ fun AmneziaWgProfileScreen(
     delay(AMNEZIAWG_AUTOSAVE_DELAY_MS)
     if (configText == syncedConfig) return@LaunchedEffect
     if (configText.trim().isBlank()) return@LaunchedEffect
-    val ok = awaitSaveTextAmneziaWg(actions, "$basePath/config", configText)
+    val ok = actions.awaitSaveText("$basePath/config", configText)
     if (ok) {
       syncedConfig = configText
     } else {

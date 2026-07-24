@@ -75,14 +75,12 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.Locale
-import kotlin.coroutines.resume
 
 private data class MihomoProfileInfo(
   val name: String,
@@ -112,18 +110,6 @@ private val mihomoForbiddenTunNames = setOf("wlan0", "rmnet_data0", "eth0", "lo"
 private val mihomoLogLevels = listOf("debug", "info", "warn", "error", "silent")
 private val mihomoTun2SocksLogLevels = listOf("debug", "info", "warn", "error", "silent")
 private const val MIHOMO_AUTOSAVE_DELAY_MS = 1500L
-
-private suspend fun awaitLoadJsonMihomo(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextMihomo(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonMihomo(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
-
-private suspend fun awaitSaveTextMihomo(actions: ZdtdActions, path: String, content: String): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
 
 private fun mihomoProfilePath(profile: String): String =
   "/api/programs/mihomo/profiles/${URLEncoder.encode(profile, "UTF-8")}" 
@@ -174,7 +160,7 @@ private suspend fun loadUsedMihomoMixedPorts(
   val used = linkedSetOf<Int>()
   for (profile in program.profiles) {
     if (profile.name == excludeProfile) continue
-    val raw = awaitLoadJsonMihomo(actions, "${vpnProfileApiPath("mihomo", profile.name)}/setting")
+    val raw = actions.awaitLoadJson("${vpnProfileApiPath("mihomo", profile.name)}/setting")
     val port = parseMihomoSetting(raw).mixedPort
     if (port in 1..65535) used += port
   }
@@ -211,7 +197,7 @@ private suspend fun loadUsedMihomoControllerPorts(
   val used = linkedSetOf<Int>()
   for (profile in program.profiles) {
     if (profile.name == excludeProfile) continue
-    val raw = awaitLoadTextMihomo(actions, "${vpnProfileApiPath("mihomo", profile.name)}/config").orEmpty()
+    val raw = actions.awaitLoadText("${vpnProfileApiPath("mihomo", profile.name)}/config").orEmpty()
     val port = extractMihomoControllerPort(raw)
     if (port != null) used += port
   }
@@ -2340,13 +2326,11 @@ fun MihomoProgramScreen(
               val usedControllerPorts = loadUsedMihomoControllerPorts(actions, programs, excludeProfile = created)
               val controllerPort = nextFreeMihomoControllerPort(usedControllerPorts)
               val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "mihomo", excludeProfile = created)
-              val settingOk = awaitSaveJsonVpnTunGuard(
-                actions,
+              val settingOk = actions.awaitSaveJson(
                 "${vpnProfileApiPath("mihomo", created)}/setting",
                 defaultMihomoSettingJson(tun, port),
               )
-              val configOk = awaitSaveTextMihomo(
-                actions,
+              val configOk = actions.awaitSaveText(
                 "${vpnProfileApiPath("mihomo", created)}/config",
                 rewriteMihomoExplicitIpv4Conflicts(mihomoSampleConfig(created, controllerPort), usedIpv4),
               )
@@ -2490,13 +2474,13 @@ fun MihomoProfileScreen(
     settingInitialized = false
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "mihomo", excludeProfile = profile)
-      val loaded = parseMihomoSetting(awaitLoadJsonMihomo(actions, "$basePath/setting"))
+      val loaded = parseMihomoSetting(actions.awaitLoadJson("$basePath/setting"))
       val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns, startAt = 20)) else loaded
       val ports = loadUsedMihomoMixedPorts(actions, programs, excludeProfile = profile)
       val controllerPorts = loadUsedMihomoControllerPorts(actions, programs, excludeProfile = profile)
       val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "mihomo", excludeProfile = profile)
-      val apps = parsePkgList(awaitLoadTextMihomo(actions, "$basePath/apps/user").orEmpty())
-      val cfg = awaitLoadTextMihomo(actions, "$basePath/config").orEmpty().ifBlank {
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty())
+      val cfg = actions.awaitLoadText("$basePath/config").orEmpty().ifBlank {
         rewriteMihomoExplicitIpv4Conflicts(mihomoSampleConfig(profile, nextFreeMihomoControllerPort(controllerPorts)), usedIpv4)
       }
 
@@ -2548,7 +2532,7 @@ fun MihomoProfileScreen(
       tun2socksLogLevel = safeT2sLog,
     )
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonMihomo(actions, "$basePath/setting", buildMihomoSettingJson(current))
+    val ok = actions.awaitSaveJson("$basePath/setting", buildMihomoSettingJson(current))
     if (ok) {
       syncedSetting = current
     } else {

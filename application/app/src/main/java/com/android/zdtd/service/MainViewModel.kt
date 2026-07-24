@@ -18,7 +18,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
-import com.android.zdtd.service.api.DeviceInfo
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -167,7 +166,7 @@ data class StartupUiState(
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
-  val device: DeviceInfo = DeviceInfo(),
+  val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,
@@ -263,7 +262,7 @@ sealed class BackupEvent {
   data class ShareFile(val filePath: String, val mime: String) : BackupEvent()
 }
 
-class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
+class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   private val ctx: Context = app.applicationContext
 
@@ -351,8 +350,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   val appUpdateEvents: SharedFlow<AppUpdateEvent> = _appUpdateEvents.asSharedFlow()
 
   // ----- Runtime permissions (Android 13+) -----
-  private val _notificationEvents = MutableSharedFlow<NotificationEvent>(extraBufferCapacity = 4)
-  val notificationEvents: SharedFlow<NotificationEvent> = _notificationEvents.asSharedFlow()
+  private val _notificationEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+  val notificationEvents: SharedFlow<Unit> = _notificationEvents.asSharedFlow()
 
   // One-shot toasts for user-facing feedback (e.g. manual update checks).
   private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -1436,7 +1435,7 @@ private fun clearDownloadedUpdateApk() {
     startStartupHandshake()
   }
 
-  override fun setActiveMainTab(tab: String) {
+  fun setActiveMainTab(tab: String) {
     val wasHome = activeMainTabHint == "HOME"
     activeMainTabHint = tab
     if (!wasHome && tab == "HOME") {
@@ -1590,12 +1589,12 @@ private fun clearDownloadedUpdateApk() {
   }
 }
 
-  override fun retryDaemonStartup() {
+  fun retryDaemonStartup() {
     if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return
     startStartupHandshake()
   }
 
-  override fun retryRoot() {
+  fun retryRoot() {
     // If the user denied the initial Magisk prompt, libsu may keep a non-root shell cached.
     // Reset it so Magisk can show the prompt again on retry.
     runCatching { root.resetRootShell() }
@@ -1603,7 +1602,7 @@ private fun clearDownloadedUpdateApk() {
     ensureRootAndLoadToken()
   }
 
-  override fun acceptWelcome() {
+  fun acceptWelcome() {
     root.setWelcomeAccepted(true)
     _setup.update { it.copy(step = SetupStep.ROOT) }
   }
@@ -1646,7 +1645,7 @@ private fun clearDownloadedUpdateApk() {
       logText.contains("A metamodule with custom installer is active", ignoreCase = true)
   }
 
-  override fun refreshZygiskInstallMarker() {
+  fun refreshZygiskInstallMarker() {
     if (_rootState.value != RootState.GRANTED) {
       _setup.update {
         it.copy(
@@ -1672,7 +1671,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun requestSetInstallZygisk(enabled: Boolean) {
+  fun requestSetInstallZygisk(enabled: Boolean) {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     if (enabled) {
       _setup.update { it.copy(showZygiskInstallConfirm = true) }
@@ -1687,7 +1686,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun confirmInstallZygisk() {
+  fun confirmInstallZygisk() {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     launchIO {
       val ok = runCatching {
@@ -1698,11 +1697,11 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun dismissInstallZygiskConfirm() {
+  fun dismissInstallZygiskConfirm() {
     _setup.update { it.copy(showZygiskInstallConfirm = false) }
   }
 
-  override fun beginModuleInstall() {
+  fun beginModuleInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
       return
@@ -1806,19 +1805,19 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun dismissManualInstallDialog() {
+  fun dismissManualInstallDialog() {
     _setup.update { it.copy(showManualDialog = false, manualDialogText = "") }
   }
 
-  override fun dismissZygiskInstallRecoveryDialog() {
+  fun dismissZygiskInstallRecoveryDialog() {
     _setup.update { it.copy(showZygiskInstallRecoveryDialog = false) }
   }
 
-  override fun dismissMetamoduleInstallBlockedDialog() {
+  fun dismissMetamoduleInstallBlockedDialog() {
     _setup.update { it.copy(showMetamoduleInstallBlockedDialog = false) }
   }
 
-  override fun retryInstallWithoutZygisk() {
+  fun retryInstallWithoutZygisk() {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     launchIO {
       runCatching {
@@ -1836,7 +1835,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun continueAfterInstall() {
+  fun continueAfterInstall() {
     if (_rootState.value != RootState.GRANTED) return
     _setup.update { it.copy(step = SetupStep.DONE) }
     // Re-read token after installation and proceed.
@@ -1847,7 +1846,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun refreshInstallConflicts() {
+  fun refreshInstallConflicts() {
     launchIO {
       val conflicts = detectInstallConflicts()
       val zygiskMarker = readZygiskInstallMarker()
@@ -1864,7 +1863,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun setInstallConflictMarked(modulePath: String, checked: Boolean) {
+  fun setInstallConflictMarked(modulePath: String, checked: Boolean) {
     launchIO {
       val script = if (checked) {
         "mkdir -p ${shQuote(modulePath)} 2>/dev/null || true; : > ${shQuote(modulePath + "/remove")}"
@@ -1928,7 +1927,7 @@ private fun clearDownloadedUpdateApk() {
     }.sortedBy { it.moduleName.lowercase(Locale.ROOT) }
   }
 
-  override fun confirmManualInstall() {
+  fun confirmManualInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
       return
@@ -1980,7 +1979,7 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  override fun beginModuleRemoval() {
+  fun beginModuleRemoval() {
     // 1) Mark Magisk module for removal.
     // 2) Start a small root watcher that waits until the app is uninstalled, then reboots.
     // 3) UI shows instructions to uninstall the app manually.
@@ -2038,7 +2037,7 @@ fi""".trimIndent()
 
   }
 
-  override fun rebootNow() {
+  fun rebootNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
       runCatching { root.setTamperReinstallPendingReboot(false) }
@@ -2052,7 +2051,7 @@ fi""".trimIndent()
   private val backupDirPath = "/storage/emulated/0/ZDT-D_Backups"
   private val workingFolderPath = "/data/adb/modules/ZDT-D/working_folder"
 
-  override fun refreshBackups() {
+  fun refreshBackups() {
     if (_rootState.value != RootState.GRANTED) {
       _backup.update { it.copy(loading = false, items = emptyList(), error = str(R.string.mv_auto_022)) }
       return
@@ -2098,7 +2097,7 @@ fi""".trimIndent()
     }
   }
 
-  override fun createBackup() {
+  fun createBackup() {
   if (_rootState.value != RootState.GRANTED) return
   // Prevent starting another operation while one is running.
   if (_backup.value.progressVisible && !_backup.value.progressFinished) return
@@ -2256,7 +2255,7 @@ fi""".trimIndent()
     refreshBackups()
   }
 }
-  override fun requestBackupImport() {
+  fun requestBackupImport() {
     if (_rootState.value != RootState.GRANTED) {
       toast(str(R.string.mv_auto_029))
       return
@@ -2264,7 +2263,7 @@ fi""".trimIndent()
     _backupEvents.tryEmit(BackupEvent.RequestImport)
   }
 
-  override fun onBackupImportResult(uri: Uri?) {
+  fun onBackupImportResult(uri: Uri?) {
     if (_rootState.value != RootState.GRANTED) return
     if (uri == null) {
       toast(str(R.string.mv_auto_030))
@@ -2318,7 +2317,7 @@ fi""".trimIndent()
     }
   }
 
-  override fun onExternalBackupOpen(uri: Uri) {
+  fun onExternalBackupOpen(uri: Uri) {
     externalBackupOpenJob?.cancel()
     externalBackupOpenJob = launchIO {
       // ACTION_VIEW can arrive before the cold-start root check finishes.
@@ -2400,7 +2399,7 @@ fi""".trimIndent()
     }
   }
 
-  override fun confirmExternalBackupRestore() {
+  fun confirmExternalBackupRestore() {
     val name = _backup.value.externalRestoreName ?: return
     _backup.update { st ->
       st.copy(
@@ -2412,7 +2411,7 @@ fi""".trimIndent()
     restoreBackup(name, ignoreVersionCode = false)
   }
 
-  override fun dismissExternalBackupRestore() {
+  fun dismissExternalBackupRestore() {
     val name = _backup.value.externalRestoreName
     _backup.update { st ->
       st.copy(
@@ -2429,7 +2428,7 @@ fi""".trimIndent()
     }
   }
 
-  override fun restoreBackup(name: String, ignoreVersionCode: Boolean) {
+  fun restoreBackup(name: String, ignoreVersionCode: Boolean) {
     if (_rootState.value != RootState.GRANTED) return
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
 
@@ -2596,7 +2595,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun deleteBackup(name: String) {
+  fun deleteBackup(name: String) {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
       val path = "${backupDirPath}/${name}"
@@ -2606,7 +2605,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun shareBackup(name: String) {
+  fun shareBackup(name: String) {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
       val src = "${backupDirPath}/${name}"
@@ -2624,7 +2623,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun closeBackupProgress() {
+  fun closeBackupProgress() {
     _backup.update { st ->
       st.copy(
         progressVisible = false,
@@ -2642,7 +2641,7 @@ if (mf.isNotBlank()) {
 
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
-  override fun resetProgramUpdatesUi() {
+  fun resetProgramUpdatesUi() {
     _programUpdates.update { st ->
       st.copy(
         stoppingService = false,
@@ -2715,7 +2714,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun stopServiceForProgramUpdatesAndCheck() {
+  fun stopServiceForProgramUpdatesAndCheck() {
     if (_rootState.value != RootState.GRANTED) return
     if (_programUpdates.value.stoppingService) return
     launchIO {
@@ -2758,32 +2757,32 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun loadZapretReleases() {
+  fun loadZapretReleases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "zapret") }
   }
 
-  override fun loadZapret2Releases() {
+  fun loadZapret2Releases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "zapret2") }
   }
 
-  override fun loadMihomoReleases() {
+  fun loadMihomoReleases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "mihomo") }
   }
 
-  override fun loadMieruReleases() {
+  fun loadMieruReleases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "mieru") }
   }
 
-  override fun loadOperaProxyReleases() {
+  fun loadOperaProxyReleases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "operaproxy") }
   }
 
-  override fun selectZapretRelease(version: String?, downloadUrl: String?) {
+  fun selectZapretRelease(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.zapret.installedVersion
       val latest = st.zapret.latestVersion
@@ -2802,7 +2801,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun selectZapret2Release(version: String?, downloadUrl: String?) {
+  fun selectZapret2Release(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.zapret2.installedVersion
       val latest = st.zapret2.latestVersion
@@ -2821,7 +2820,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun selectMihomoRelease(version: String?, downloadUrl: String?) {
+  fun selectMihomoRelease(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.mihomo.installedVersion
       val latest = st.mihomo.latestVersion
@@ -2839,7 +2838,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun selectMieruRelease(version: String?, downloadUrl: String?) {
+  fun selectMieruRelease(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.mieru.installedVersion
       val latest = st.mieru.latestVersion
@@ -2858,7 +2857,7 @@ if (mf.isNotBlank()) {
   }
 
 
-  override fun selectOperaProxyRelease(version: String?, downloadUrl: String?) {
+  fun selectOperaProxyRelease(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.operaProxy.installedVersion
       val latest = st.operaProxy.latestVersion
@@ -2876,52 +2875,52 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun checkZapretNow() {
+  fun checkZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkZapretInternal() }
   }
 
-  override fun checkZapret2Now() {
+  fun checkZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkZapret2Internal() }
   }
 
-  override fun updateZapretNow() {
+  fun updateZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateZapretInternal() }
   }
 
-  override fun updateZapret2Now() {
+  fun updateZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateZapret2Internal() }
   }
 
-  override fun checkMihomoNow() {
+  fun checkMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkMihomoInternal() }
   }
 
-  override fun updateMihomoNow() {
+  fun updateMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateMihomoInternal() }
   }
 
-  override fun checkMieruNow() {
+  fun checkMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkMieruInternal() }
   }
 
-  override fun updateMieruNow() {
+  fun updateMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateMieruInternal() }
   }
 
-  override fun checkOperaProxyNow() {
+  fun checkOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkOperaProxyInternal() }
   }
 
-  override fun updateOperaProxyNow() {
+  fun updateOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateOperaProxyInternal() }
   }
@@ -4100,7 +4099,7 @@ if (mf.isNotBlank()) {
   }
 
 
-  override fun openModuleInstaller() {
+  fun openModuleInstaller() {
     _setup.update { st ->
       st.copy(
         step = SetupStep.INSTALL,
@@ -4124,7 +4123,7 @@ if (mf.isNotBlank()) {
     }
   }
 
-  override fun dismissUpdatePrompt() {
+  fun dismissUpdatePrompt() {
     _setup.update { st ->
       st.copy(
         showUpdatePrompt = false,
@@ -5076,7 +5075,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun clearLogs() {
+  fun clearLogs() {
     _logs.update { emptyList() }
     log("OK", str(R.string.log_logs_cleared))
   }
@@ -5086,7 +5085,7 @@ private fun shQuote(s: String): String {
     _logs.update { (it + LogLine(ts, level, msg)).takeLast(250) }
   }
 
-  override fun refreshDaemonLog() {
+  fun refreshDaemonLog() {
     launchIO { refreshDaemonLogOnce() }
   }
 
@@ -5109,7 +5108,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun refreshStatus() {
+  fun refreshStatus() {
     launchIO {
       try {
         fetchAndUpdateStatus(force = true)
@@ -5138,7 +5137,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun toggleService() {
+  fun toggleService() {
     if (_uiState.value.busy) return
     launchIO {
       _uiState.update { it.copy(busy = true) }
@@ -5338,13 +5337,13 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun refreshPrograms() {
+  fun refreshPrograms() {
     launchIO {
       refreshProgramsNow(force = false)
     }
   }
 
-  override fun setProgramEnabled(programId: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
+  fun setProgramEnabled(programId: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
     launchIO {
       val ap = activeJsonPath(programId)
       val ok = runCatching {
@@ -5419,7 +5418,7 @@ private fun shQuote(s: String): String {
     return runCatching { api.getPrograms() }.getOrElse { _uiState.value.programs }
   }
 
-  override fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
+  fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
     launchIO {
       if (enabled) {
         val conflict = checkEnableProfileConflict(programId, profile)
@@ -5442,7 +5441,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit) {
+  fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.deleteProfile(programId, profile) }.getOrDefault(false)
       if (ok) {
@@ -5456,7 +5455,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit) {
+  fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = profile.trim().ifBlank { "main" }
       val ok = if (safeProfile.contains('/') || safeProfile.contains('\\') || safeProfile == "." || safeProfile == ".." || safeProfile.contains("../")) {
@@ -5481,7 +5480,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
+  fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
     launchIO {
       val guardPrograms = freshestProgramsForProfileGuard()
       val requestedName = if (programId in guardedProfileProgramIds) nextGlobalProfileName(programId, guardPrograms) else ""
@@ -5509,7 +5508,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
+  fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
     launchIO {
       val p = profile.trim()
       val before = uiState.value.programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
@@ -5534,7 +5533,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit) {
+  fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5549,7 +5548,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+  fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5563,7 +5562,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit) {
+  fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val requested = server.trim()
@@ -5602,7 +5601,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+  fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5616,7 +5615,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val ok = runCatching {
@@ -5627,7 +5626,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit) {
+  fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val safeFile = URLEncoder.encode(filename.trim(), "UTF-8")
@@ -5639,7 +5638,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit) {
+  fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val ok = runCatching {
@@ -5651,7 +5650,7 @@ private fun shQuote(s: String): String {
   }
 
 
-  override fun uploadOpenVpnConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadOpenVpnConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val ok = runCatching {
@@ -5663,7 +5662,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun uploadAmneziaWgConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = profile.trim()
       val ok = runCatching {
@@ -5675,7 +5674,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun loadText(path: String, onDone: (String?) -> Unit) {
+  fun loadText(path: String, onDone: (String?) -> Unit) {
     launchIO {
       val content = runCatching { api.getTextContent(path) }.getOrNull()
       if (content == null) log("ERR", "$path: load failed")
@@ -5683,7 +5682,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun loadRootTextFile(path: String, onDone: (String?) -> Unit) {
+  fun loadRootTextFile(path: String, onDone: (String?) -> Unit) {
     launchIO {
       val content = runCatching { root.readTextFile(path) }.getOrNull()
       if (content == null) log("ERR", "$path: root read failed")
@@ -5691,7 +5690,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun saveText(path: String, content: String, onDone: (Boolean) -> Unit) {
+  fun saveText(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putTextContent(path, content) }.getOrDefault(false)
       if (ok) log("OK", "$path: saved (apply after stop/start)")
@@ -5700,7 +5699,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun saveAppListResolvingConflicts(
+  fun saveAppListResolvingConflicts(
     targetPath: String,
     targetContent: String,
     removalsByPath: Map<String, Set<String>>,
@@ -5759,7 +5758,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
+  fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)
       if (ok) log("OK", "$path: root saved")
@@ -5768,7 +5767,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit) {
+  fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit) {
     launchIO {
       val obj = runCatching { api.getJsonData(path) }.getOrNull()
       if (obj == null) log("ERR", "$path: load failed")
@@ -5776,7 +5775,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit) {
+  fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit) {
     launchIO {
       val report = runCatching { api.getTrafficRules() }.getOrNull()
       if (report == null) log("ERR", "/api/traffic/rules: load failed")
@@ -5784,7 +5783,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit) {
+  fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit) {
     launchIO {
       val endpoints = runCatching { api.getConstructionProxyEndpoints() }.getOrNull()
       if (endpoints == null) log("ERR", "/api/construction/proxy-endpoints: load failed")
@@ -5792,7 +5791,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
+  fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
     launchIO {
       val result = runCatching { api.releaseConstructionProxyEndpoint(candidate) }.getOrNull()
       if (result?.ok == true) {
@@ -5804,7 +5803,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
+  fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)
       if (ok) log("OK", "$path: saved (apply after stop/start)")
@@ -5814,7 +5813,7 @@ private fun shQuote(s: String): String {
   }
 
 
-override fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit) {
+fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit) {
   launchIO {
     val obj = runCatching { api.getJsonData("/api/strategic/$dir") }.getOrNull()
     val arr = obj?.optJSONArray("files")
@@ -5823,7 +5822,7 @@ override fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit) {
   }
 }
 
-override fun loadStrategicText(dir: String, filename: String, onDone: (String?) -> Unit) {
+fun loadStrategicText(dir: String, filename: String, onDone: (String?) -> Unit) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val obj = runCatching { api.getJsonData("/api/strategic/$dir/$enc") }.getOrNull()
@@ -5832,7 +5831,7 @@ override fun loadStrategicText(dir: String, filename: String, onDone: (String?) 
   }
 }
 
-override fun saveStrategicText(dir: String, filename: String, content: String, onDone: (Boolean) -> Unit) {
+fun saveStrategicText(dir: String, filename: String, content: String, onDone: (Boolean) -> Unit) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val payload = JSONObject().put("content", content)
@@ -5841,7 +5840,7 @@ override fun saveStrategicText(dir: String, filename: String, content: String, o
   }
 }
 
-override fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean) -> Unit) {
+fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean) -> Unit) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val ok = runCatching { api.deletePath("/api/strategic/$dir/$enc") }.getOrDefault(false)
@@ -5849,14 +5848,14 @@ override fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean
   }
 }
 
-override fun uploadStrategicFile(dir: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit) {
+fun uploadStrategicFile(dir: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit) {
   launchIO {
     val ok = runCatching { api.uploadMultipart("/api/strategic/$dir/upload", filename, bytes) }.getOrDefault(false)
     withContext(Dispatchers.Main.immediate) { onDone(ok) }
   }
 }
 
-override fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVariant>?) -> Unit) {
+fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVariant>?) -> Unit) {
   launchIO {
     val obj = runCatching { api.getJsonData("/api/strategicvar/${URLEncoder.encode(programId, "UTF-8")}") }.getOrNull()
     val filesArr = obj?.optJSONArray("files")
@@ -5889,7 +5888,7 @@ override fun listStrategicVariants(programId: String, onDone: (List<ApiModels.St
   }
 }
 
-override fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
+fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
@@ -5904,7 +5903,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 }
 
-override fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
+fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
@@ -5929,7 +5928,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setAppUpdateChecksEnabled(enabled: Boolean) {
+  fun setAppUpdateChecksEnabled(enabled: Boolean) {
     root.setAppUpdateCheckEnabled(enabled)
     _appUpdate.update { st ->
       st.copy(
@@ -5949,7 +5948,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setDaemonStatusNotificationsEnabled(enabled: Boolean) {
+  fun setDaemonStatusNotificationsEnabled(enabled: Boolean) {
     if (!enabled) {
       pendingEnableDaemonNotification = false
       root.setDaemonStatusNotificationEnabled(false)
@@ -5961,7 +5960,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     // Enabling: request runtime permission on Android 13+.
     if (!hasPostNotificationsPermission()) {
       pendingEnableDaemonNotification = true
-      _notificationEvents.tryEmit(NotificationEvent.RequestPostNotificationsPermission)
+      _notificationEvents.tryEmit(Unit)
       toast(str(R.string.mv_auto_074))
       return
     }
@@ -5971,13 +5970,13 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     _appUpdate.update { it.copy(daemonStatusNotificationEnabled = true) }
   }
 
-  override fun setAppLanguageMode(mode: String) {
+  fun setAppLanguageMode(mode: String) {
     root.setAppLanguageMode(mode)
     applyAppLanguageMode(root.getAppLanguageMode())
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
-  override fun setThemeMode(mode: String) {
+  fun setThemeMode(mode: String) {
     root.setThemeMode(mode)
     _themeMode.value = com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode())
     _appUpdate.update { it.copy(themeMode = root.getThemeMode()) }
@@ -6040,13 +6039,13 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun refreshDaemonSettings() {
+  fun refreshDaemonSettings() {
     launchIO {
       refreshDaemonSettingsNow()
     }
   }
 
-  override fun refreshEnergySaver() {
+  fun refreshEnergySaver() {
     launchIO {
       _appUpdate.update { it.copy(energySaverBusy = true) }
       val state = fetchEnergySaverState()
@@ -6054,7 +6053,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun saveEnergySaver(config: ApiModels.EnergySaverConfig) {
+  fun saveEnergySaver(config: ApiModels.EnergySaverConfig) {
     _appUpdate.update { it.copy(energySaverBusy = true, energySaver = it.energySaver.copy(settings = config)) }
     launchIO {
       var success = true
@@ -6079,7 +6078,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setAdvancedDaemonSetting(key: String, enabled: Boolean) {
+  fun setAdvancedDaemonSetting(key: String, enabled: Boolean) {
     val safeKey = key.trim()
     _appUpdate.update { current ->
       when (safeKey) {
@@ -6180,7 +6179,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     return base.copy(appsContent = apps)
   }
 
-  override fun refreshProxyInfo() {
+  fun refreshProxyInfo() {
     launchIO {
       _appUpdate.update { it.copy(proxyInfoBusy = true) }
       val state = runCatching { fetchProxyInfoState() }.getOrElse {
@@ -6205,7 +6204,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
   }
 
 
-  override fun refreshBlockedQuic() {
+  fun refreshBlockedQuic() {
     launchIO {
       _appUpdate.update { it.copy(blockedQuicBusy = true) }
       val state = runCatching { fetchBlockedQuicState() }.getOrElse {
@@ -6226,7 +6225,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun loadAppAssignments(onDone: (ApiModels.AppAssignmentsState?) -> Unit) {
+  fun loadAppAssignments(onDone: (ApiModels.AppAssignmentsState?) -> Unit) {
     launchIO {
       val data = runCatching { api.getAppAssignments() }.getOrElse {
         log("ERR", "app assignments load failed: ${it.message ?: it}")
@@ -6236,7 +6235,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setProxyInfoEnabled(enabled: Boolean) {
+  fun setProxyInfoEnabled(enabled: Boolean) {
     val previous = _appUpdate.value.proxyInfoEnabled
     if (previous == enabled) return
     _appUpdate.update { it.copy(proxyInfoEnabled = enabled) }
@@ -6263,7 +6262,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit) {
+  fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
@@ -6299,7 +6298,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
   }
 
 
-  override fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit) {
+  fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
@@ -6335,7 +6334,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
   }
 
 
-  override fun setBlockedQuicEnabled(enabled: Boolean) {
+  fun setBlockedQuicEnabled(enabled: Boolean) {
     val previous = _appUpdate.value.blockedQuicEnabled
     if (previous == enabled) return
     _appUpdate.update { it.copy(blockedQuicEnabled = enabled) }
@@ -6359,7 +6358,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit) {
+  fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
@@ -6391,7 +6390,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setProtectorMode(mode: String) {
+  fun setProtectorMode(mode: String) {
     val safe = when (mode.trim().lowercase()) {
       "on", "off", "auto" -> mode.trim().lowercase()
       else -> "off"
@@ -6426,7 +6425,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotT2sEnabled(enabled: Boolean) {
+  fun setHotspotT2sEnabled(enabled: Boolean) {
     _appUpdate.update {
       it.copy(
         hotspotT2sEnabled = enabled,
@@ -6478,7 +6477,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotMode(mode: String) {
+  fun setHotspotMode(mode: String) {
     val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
     _appUpdate.update {
       it.copy(
@@ -6518,7 +6517,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotSelection(mode: String, program: String, profile: String) {
+  fun setHotspotSelection(mode: String, program: String, profile: String) {
     val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
     val safeProgram = program.trim().lowercase()
     val safeProfile = profile.trim()
@@ -6565,7 +6564,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotT2sTarget(target: String) {
+  fun setHotspotT2sTarget(target: String) {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "singbox", "wireproxy" -> target.trim().lowercase()
       else -> ""
@@ -6619,7 +6618,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotT2sSingboxProfile(profile: String) {
+  fun setHotspotT2sSingboxProfile(profile: String) {
     val safeProfile = profile.trim()
     val enabled = _appUpdate.value.hotspotT2sEnabled
     _appUpdate.update {
@@ -6663,7 +6662,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotT2sWireproxyProfile(profile: String) {
+  fun setHotspotT2sWireproxyProfile(profile: String) {
     val safeProfile = profile.trim()
     val enabled = _appUpdate.value.hotspotT2sEnabled
     _appUpdate.update {
@@ -6707,7 +6706,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun setHotspotT2sCaptureAll(enabled: Boolean) {
+  fun setHotspotT2sCaptureAll(enabled: Boolean) {
     val previous = _appUpdate.value.hotspotT2sCaptureAll
     if (previous == enabled) return
 
@@ -6747,7 +6746,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
   }
 
 
-  override fun resetModuleIdentifier() {
+  fun resetModuleIdentifier() {
     if (_rootState.value != RootState.GRANTED) return
     if (_appUpdate.value.resettingModuleIdentifier) return
 
@@ -6833,16 +6832,16 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun checkAppUpdateNow() {
+  fun checkAppUpdateNow() {
     maybeCheckAppUpdate(force = true)
   }
 
-  override fun dismissAppUpdateBanner() {
+  fun dismissAppUpdateBanner() {
     appUpdateBannerDismissedThisSession = true
     _appUpdate.update { it.copy(bannerVisible = false, errorText = null) }
   }
 
-  override fun startAppUpdateDownload() {
+  fun startAppUpdateDownload() {
     val url = _appUpdate.value.downloadUrl
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     if (url.isNullOrBlank()) {
@@ -6880,26 +6879,26 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun cancelAppUpdateDownload() {
+  fun cancelAppUpdateDownload() {
     appUpdateDownloadJob?.cancel()
     appUpdateDownloadJob = null
     clearDownloadedUpdateApk()
     _appUpdate.update { it.copy(downloading = false, downloadPercent = 0, downloadSpeedBytesPerSec = 0, errorText = null) }
   }
 
-  override fun requestUnknownSourcesPermission() {
+  fun requestUnknownSourcesPermission() {
     _appUpdate.update { it.copy(needsUnknownSourcesPermission = false) }
     _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUnknownSourcesSettings)
   }
 
-  override fun declineUnknownSourcesPermission() {
+  fun declineUnknownSourcesPermission() {
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     clearDownloadedUpdateApk()
     _appUpdate.update { it.copy(bannerVisible = false, errorText = null) }
     _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
   }
 
-  override fun onUnknownSourcesPermissionResult(granted: Boolean) {
+  fun onUnknownSourcesPermissionResult(granted: Boolean) {
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     val path = _appUpdate.value.downloadedPath
     _appUpdate.update { it.copy(needsUnknownSourcesPermission = false) }
@@ -6913,7 +6912,7 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     }
   }
 
-  override fun onPostNotificationsPermissionResult(granted: Boolean) {
+  fun onPostNotificationsPermissionResult(granted: Boolean) {
     val pending = pendingEnableDaemonNotification
     pendingEnableDaemonNotification = false
     if (!pending) return
@@ -6954,10 +6953,10 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
     return s.toLongOrNull() ?: 0L
   }
 
-  private fun detectDeviceInfo(): DeviceInfo {
+  private fun detectDeviceInfo(): ApiModels.DeviceInfo {
     val cpu = detectCpuName()
     val ram = getTotalRamMb()
-    return DeviceInfo(cpuName = cpu, totalRamMb = ram.takeIf { it > 0 })
+    return ApiModels.DeviceInfo(cpuName = cpu, totalRamMb = ram.takeIf { it > 0 })
   }
 
   private fun getTotalRamMb(): Long {

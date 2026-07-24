@@ -999,6 +999,11 @@ object ApiModels {
     return out.sortedBy { it.name.lowercase(Locale.ROOT) }
   }
 
+  data class DeviceInfo(
+    val cpuName: String? = null,
+    val totalRamMb: Long? = null,
+  )
+
   // SimpleDateFormat is NOT thread-safe; logs are updated from multiple coroutines.
   private val TS = ThreadLocal.withInitial { SimpleDateFormat("HH:mm:ss", Locale.US) }
   fun fmtTs(now: Long = System.currentTimeMillis()): String = TS.get().format(Date(now))

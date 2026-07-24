@@ -67,14 +67,12 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URLEncoder
-import kotlin.coroutines.resume
 
 private data class MyProxySettingUi(
   val t2sPort: Int?,
@@ -94,15 +92,6 @@ private data class MyProxyUpstreamUi(
   val wrappedUser: String,
   val wrappedPass: String,
 )
-
-private suspend fun awaitLoadJsonMyProxy(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextMyProxy(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonMyProxy(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
 
 private fun parseMyProxySettingUi(obj: JSONObject?): MyProxySettingUi {
   val data = obj?.optJSONObject("data") ?: obj
@@ -479,9 +468,9 @@ fun MyProxyProfileScreen(
   fun loadAll() {
     loading = true
     scope.launch {
-      val settingObj = awaitLoadJsonMyProxy(actions, "$basePath/setting")
-      val proxyObj = awaitLoadJsonMyProxy(actions, "$basePath/proxy")
-      val apps = parsePkgList(awaitLoadTextMyProxy(actions, "$basePath/apps/user").orEmpty())
+      val settingObj = actions.awaitLoadJson("$basePath/setting")
+      val proxyObj = actions.awaitLoadJson("$basePath/proxy")
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty())
       val parsedSetting = parseMyProxySettingUi(settingObj)
       val parsedProxy = parseMyProxyUpstreamUi(proxyObj)
       syncedSetting = parsedSetting
@@ -518,8 +507,7 @@ fun MyProxyProfileScreen(
     if (t2sPort !in 1..65535 || t2sWebPort !in 1..65535) return@LaunchedEffect
     if (t2sPort == t2sWebPort) return@LaunchedEffect
     settingSaving = true
-    val ok = awaitSaveJsonMyProxy(
-      actions,
+    val ok = actions.awaitSaveJson(
       "$basePath/setting",
       JSONObject().put("t2s_port", t2sPort).put("t2s_web_port", t2sWebPort)
     )
@@ -569,8 +557,7 @@ fun MyProxyProfileScreen(
     )
     if (current == syncedProxy) return@LaunchedEffect
     proxySaving = true
-    val ok = awaitSaveJsonMyProxy(
-      actions,
+    val ok = actions.awaitSaveJson(
       "$basePath/proxy",
       buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass, wrappedHost, if (wrappedConfigured) wrappedPort else null, wrappedUser, wrappedPass)
     )

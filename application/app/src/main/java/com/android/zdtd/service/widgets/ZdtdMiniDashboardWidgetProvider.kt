@@ -21,11 +21,11 @@ class ZdtdMiniDashboardWidgetProvider : AppWidgetProvider() {
   }
 
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action == ZdtdWidgetActions.ACTION_TOGGLE || intent.action == ZdtdWidgetActions.ACTION_REFRESH) {
+    if (intent.action == ZdtdWidgetUpdater.ACTION_TOGGLE || intent.action == ZdtdWidgetUpdater.ACTION_REFRESH) {
       val pendingResult = goAsync()
       CoroutineScope(Dispatchers.IO).launch {
         try {
-          if (intent.action == ZdtdWidgetActions.ACTION_TOGGLE) {
+          if (intent.action == ZdtdWidgetUpdater.ACTION_TOGGLE) {
             ZdtdWidgetUpdater.toggleService(context.applicationContext)
           }
           ZdtdWidgetUpdater.updateAll(context.applicationContext)

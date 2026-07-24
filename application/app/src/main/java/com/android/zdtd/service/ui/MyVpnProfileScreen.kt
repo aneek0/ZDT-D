@@ -50,12 +50,10 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Locale
-import kotlin.coroutines.resume
 
 private data class MyVpnProfileInfo(
   val name: String,
@@ -73,15 +71,6 @@ private val myVpnProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
 private val myVpnTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private val myVpnForbiddenTunNames = setOf("wlan0", "rmnet_data0", "eth0", "lo", "dummy0")
 private const val MYVPN_AUTOSAVE_DELAY_MS = 1500L
-
-private suspend fun awaitLoadJsonMyVpn(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextMyVpn(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonMyVpn(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
 
 private fun myVpnProfilePath(profile: String): String =
   "/api/programs/myvpn/profiles/${URLEncoder.encode(profile, "UTF-8")}"
@@ -199,8 +188,7 @@ fun MyVpnProgramScreen(
           if (created != null) {
             scope.launch {
               val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "myvpn", excludeProfile = created)
-              val ok = awaitSaveJsonVpnTunGuard(
-                actions,
+              val ok = actions.awaitSaveJson(
                 "${vpnProfileApiPath("myvpn", created)}/setting",
                 defaultMyVpnSettingJson(tun),
               )
@@ -390,14 +378,14 @@ fun MyVpnProfileScreen(
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "myvpn", excludeProfile = profile)
       val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "myvpn", excludeProfile = profile)
-      val loaded = parseMyVpnSetting(awaitLoadJsonMyVpn(actions, "$basePath/setting"))
+      val loaded = parseMyVpnSetting(actions.awaitLoadJson("$basePath/setting"))
       val settingWithTun = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
       val setting = if (settingWithTun.cidrMode == "manual" && vpnIpv4CidrConflict(settingWithTun.cidr, usedIpv4)) {
         settingWithTun.copy(cidr = nextFreeVpnIpv4Cidr(usedIpv4))
       } else {
         settingWithTun
       }
-      val apps = parsePkgList(awaitLoadTextMyVpn(actions, "$basePath/apps/user").orEmpty()).size
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty()).size
 
       usedVpnTuns = usedTuns
       usedVpnIpv4Cidrs = usedIpv4
@@ -435,7 +423,7 @@ fun MyVpnProfileScreen(
       cidr = if (safeMode == "manual") cidrText.trim() else "",
     )
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonMyVpn(actions, "$basePath/setting", buildMyVpnSettingJson(current))
+    val ok = actions.awaitSaveJson("$basePath/setting", buildMyVpnSettingJson(current))
     if (ok) {
       syncedSetting = current
     } else {

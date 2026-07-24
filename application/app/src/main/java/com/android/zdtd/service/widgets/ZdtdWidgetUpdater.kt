@@ -18,6 +18,8 @@ import com.android.zdtd.service.api.ApiModels
 internal object ZdtdWidgetUpdater {
   private const val PULSE_INTERVAL_MS = 30_000L
   private const val PULSE_REQUEST_CODE = 1701
+  internal const val ACTION_TOGGLE = "com.android.zdtd.service.widgets.ACTION_TOGGLE"
+  internal const val ACTION_REFRESH = "com.android.zdtd.service.widgets.ACTION_REFRESH"
 
   fun updateAll(context: Context) {
     val appContext = context.applicationContext
@@ -82,14 +84,14 @@ internal object ZdtdWidgetUpdater {
   private fun buildMiniDashboardViews(context: Context, snapshot: ZdtdWidgetSnapshot, options: Bundle?): RemoteViews {
     val views = RemoteViews(context.packageName, R.layout.widget_mini_dashboard)
     views.setImageViewBitmap(R.id.widget_mini_render, ZdtdWidgetHudRenderer.renderMiniDashboard(context, snapshot, options))
-    views.setOnClickPendingIntent(R.id.widget_mini_action_area, pendingBroadcast(context, ZdtdWidgetActions.ACTION_TOGGLE, 1201))
+    views.setOnClickPendingIntent(R.id.widget_mini_action_area, pendingBroadcast(context, ACTION_TOGGLE, 1201))
     views.setOnClickPendingIntent(R.id.widget_mini_root, pendingActivity(context, 1202))
     return views
   }
 
   private fun scheduleRunningPulse(context: Context, running: Boolean) {
     val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-    val pulse = pendingBroadcast(context, ZdtdWidgetActions.ACTION_REFRESH, PULSE_REQUEST_CODE)
+    val pulse = pendingBroadcast(context, ACTION_REFRESH, PULSE_REQUEST_CODE)
     if (!running) {
       alarm.cancel(pulse)
       return

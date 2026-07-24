@@ -95,18 +95,6 @@ private data class MyProgramBinFileUi(
   val size: Long,
 )
 
-private suspend fun awaitLoadJsonMyProgram(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextMyProgram(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonMyProgram(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
-
-private suspend fun awaitSaveTextMyProgram(actions: ZdtdActions, path: String, content: String): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
-
 private suspend fun awaitUploadMyProgram(actions: ZdtdActions, profile: String, filename: String, file: File): Boolean =
   suspendCancellableCoroutine { cont -> actions.uploadMyProgramBin(profile, filename, file) { cont.resume(it) } }
 
@@ -364,7 +352,7 @@ fun MyProgramProfileScreen(
   fun refreshBin() {
     binLoading = true
     scope.launch {
-      val obj = awaitLoadJsonMyProgram(actions, "$basePath/bin")
+      val obj = actions.awaitLoadJson("$basePath/bin")
       if (obj != null) {
         binFiles = parseMyProgramBinFiles(obj)
       } else {
@@ -377,12 +365,12 @@ fun MyProgramProfileScreen(
   fun loadAll() {
     loading = true
     scope.launch {
-      val settingObj = awaitLoadJsonMyProgram(actions, "$basePath/setting")
-      val command = awaitLoadTextMyProgram(actions, "$basePath/command")
-      val t2sPorts = awaitLoadTextMyProgram(actions, "$basePath/t2s_ports")
-      val protectPorts = awaitLoadTextMyProgram(actions, "$basePath/protect_ports")
-      val apps = parsePkgList(awaitLoadTextMyProgram(actions, "$basePath/apps/user").orEmpty())
-      val binObj = awaitLoadJsonMyProgram(actions, "$basePath/bin")
+      val settingObj = actions.awaitLoadJson("$basePath/setting")
+      val command = actions.awaitLoadText("$basePath/command")
+      val t2sPorts = actions.awaitLoadText("$basePath/t2s_ports")
+      val protectPorts = actions.awaitLoadText("$basePath/protect_ports")
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty())
+      val binObj = actions.awaitLoadJson("$basePath/bin")
 
       val parsedSetting = parseMyProgramSettingUi(settingObj)
       syncedSetting = parsedSetting
@@ -451,7 +439,7 @@ fun MyProgramProfileScreen(
       .put("t2s_web_port", t2sWebPort ?: 0)
       .put("socks_user", socksUserText)
       .put("socks_pass", socksPassText)
-    val ok = awaitSaveJsonMyProgram(actions, "$basePath/setting", payload)
+    val ok = actions.awaitSaveJson("$basePath/setting", payload)
     settingSaving = false
     if (ok) syncedSetting = current else showSnack(context.getString(R.string.myprogram_auto_save_failed))
   }
@@ -462,7 +450,7 @@ fun MyProgramProfileScreen(
     val normalized = normalizeCommandForSave(commandText)
     if (normalized == syncedCommand) return@LaunchedEffect
     commandSaving = true
-    val ok = awaitSaveTextMyProgram(actions, "$basePath/command", normalized)
+    val ok = actions.awaitSaveText("$basePath/command", normalized)
     commandSaving = false
     if (ok) syncedCommand = normalized else showSnack(context.getString(R.string.myprogram_auto_save_failed))
   }
@@ -473,7 +461,7 @@ fun MyProgramProfileScreen(
     val normalized = normalizePortsContent(t2sPortsText) ?: return@LaunchedEffect
     if (normalized == syncedT2sPorts) return@LaunchedEffect
     t2sPortsSaving = true
-    val ok = awaitSaveTextMyProgram(actions, "$basePath/t2s_ports", normalized)
+    val ok = actions.awaitSaveText("$basePath/t2s_ports", normalized)
     t2sPortsSaving = false
     if (ok) syncedT2sPorts = normalized else showSnack(context.getString(R.string.myprogram_auto_save_failed))
   }
@@ -484,7 +472,7 @@ fun MyProgramProfileScreen(
     val normalized = normalizePortsContent(protectPortsText) ?: return@LaunchedEffect
     if (normalized == syncedProtectPorts) return@LaunchedEffect
     protectPortsSaving = true
-    val ok = awaitSaveTextMyProgram(actions, "$basePath/protect_ports", normalized)
+    val ok = actions.awaitSaveText("$basePath/protect_ports", normalized)
     protectPortsSaving = false
     if (ok) syncedProtectPorts = normalized else showSnack(context.getString(R.string.myprogram_auto_save_failed))
   }

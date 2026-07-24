@@ -98,18 +98,6 @@ private val openVpnTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private val forbiddenTunNames = setOf("wlan0", "rmnet_data0", "eth0", "lo", "dummy0")
 private const val OPENVPN_AUTOSAVE_DELAY_MS = 1500L
 
-private suspend fun awaitLoadJsonOpenVpn(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextOpenVpn(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonOpenVpn(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
-
-private suspend fun awaitSaveTextOpenVpn(actions: ZdtdActions, path: String, content: String): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
-
 private suspend fun awaitUploadOpenVpnConfig(actions: ZdtdActions, profile: String, filename: String, file: File): Boolean =
   suspendCancellableCoroutine { cont -> actions.uploadOpenVpnConfig(profile, filename, file) { cont.resume(it) } }
 
@@ -245,8 +233,7 @@ fun OpenVpnProgramScreen(
           if (created != null) {
             scope.launch {
               val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "openvpn", excludeProfile = created)
-              val ok = awaitSaveJsonVpnTunGuard(
-                actions,
+              val ok = actions.awaitSaveJson(
                 "${vpnProfileApiPath("openvpn", created)}/setting",
                 defaultOpenVpnSettingJson(tun),
               )
@@ -392,11 +379,11 @@ fun OpenVpnProfileScreen(
     configInitialized = false
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "openvpn", excludeProfile = profile)
-      val rawSetting = awaitLoadJsonOpenVpn(actions, "$basePath/setting")
+      val rawSetting = actions.awaitLoadJson("$basePath/setting")
       val loaded = parseOpenVpnSetting(rawSetting)
       val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
-      val loadedConfig = awaitLoadTextOpenVpn(actions, "$basePath/config").orEmpty()
-      val apps = parsePkgList(awaitLoadTextOpenVpn(actions, "$basePath/apps/user").orEmpty()).size
+      val loadedConfig = actions.awaitLoadText("$basePath/config").orEmpty()
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty()).size
 
       usedVpnTuns = usedTuns
       syncedSetting = loaded
@@ -459,7 +446,7 @@ fun OpenVpnProfileScreen(
     if (!isValidOpenVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
     val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns)
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonOpenVpn(actions, "$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns))
+    val ok = actions.awaitSaveJson("$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns))
     if (ok) {
       syncedSetting = current
     } else {
@@ -472,7 +459,7 @@ fun OpenVpnProfileScreen(
     delay(OPENVPN_AUTOSAVE_DELAY_MS)
     if (configText == syncedConfig) return@LaunchedEffect
     if (configText.trim().isBlank()) return@LaunchedEffect
-    val ok = awaitSaveTextOpenVpn(actions, "$basePath/config", configText)
+    val ok = actions.awaitSaveText("$basePath/config", configText)
     if (ok) {
       syncedConfig = configText
     } else {

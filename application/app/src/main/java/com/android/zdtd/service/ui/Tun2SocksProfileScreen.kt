@@ -52,12 +52,10 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
 import java.util.Locale
-import kotlin.coroutines.resume
 
 private data class Tun2SocksProfileInfo(
   val name: String,
@@ -75,15 +73,6 @@ private val tun2SocksTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private val tun2SocksForbiddenTunNames = setOf("wlan0", "rmnet_data0", "eth0", "lo", "dummy0")
 private val tun2SocksLogLevels = setOf("debug", "info", "warn", "error", "silent")
 private const val TUN2SOCKS_AUTOSAVE_DELAY_MS = 1500L
-
-private suspend fun awaitLoadJsonTun2Socks(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-private suspend fun awaitLoadTextTun2Socks(actions: ZdtdActions, path: String): String? =
-  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
-
-private suspend fun awaitSaveJsonTun2Socks(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
 
 private fun tun2SocksProfilePath(profile: String): String =
   "/api/programs/tun2socks/profiles/${URLEncoder.encode(profile, "UTF-8")}"
@@ -192,8 +181,7 @@ fun Tun2SocksProgramScreen(
           if (created != null) {
             scope.launch {
               val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "tun2socks", excludeProfile = created)
-              val ok = awaitSaveJsonVpnTunGuard(
-                actions,
+              val ok = actions.awaitSaveJson(
                 "${vpnProfileApiPath("tun2socks", created)}/setting",
                 defaultTun2SocksSettingJson(tun),
               )
@@ -396,10 +384,10 @@ fun Tun2SocksProfileScreen(
     settingInitialized = false
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "tun2socks", excludeProfile = profile)
-      val raw = awaitLoadJsonTun2Socks(actions, "$basePath/setting")
+      val raw = actions.awaitLoadJson("$basePath/setting")
       val loaded = parseTun2SocksSetting(raw)
       val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
-      val apps = parsePkgList(awaitLoadTextTun2Socks(actions, "$basePath/apps/user").orEmpty()).size
+      val apps = parsePkgList(actions.awaitLoadText("$basePath/apps/user").orEmpty()).size
 
       usedVpnTuns = usedTuns
       syncedSetting = loaded
@@ -433,7 +421,7 @@ fun Tun2SocksProfileScreen(
       loglevel = loglevelText.trim().lowercase(Locale.ROOT),
     )
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonTun2Socks(actions, "$basePath/setting", buildTun2SocksSettingJson(current, hiddenSetting))
+    val ok = actions.awaitSaveJson("$basePath/setting", buildTun2SocksSettingJson(current, hiddenSetting))
     if (ok) {
       syncedSetting = current
     } else {

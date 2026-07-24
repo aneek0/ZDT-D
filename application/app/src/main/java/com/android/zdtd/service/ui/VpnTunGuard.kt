@@ -2,20 +2,12 @@ package com.android.zdtd.service.ui
 
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Locale
-import kotlin.coroutines.resume
 
 private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg")
-
-private suspend fun awaitLoadJsonVpnTunGuard(actions: ZdtdActions, path: String): JSONObject? =
-  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
-
-internal suspend fun awaitSaveJsonVpnTunGuard(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
 
 internal fun vpnProfileApiPath(programId: String, profile: String): String =
   "/api/programs/${URLEncoder.encode(programId, "UTF-8")}/profiles/${URLEncoder.encode(profile, "UTF-8")}"
@@ -54,7 +46,7 @@ internal suspend fun loadUsedVpnTunNames(
     val program = programs.firstOrNull { it.id == programId } ?: continue
     for (profile in program.profiles) {
       if (programId == excludeProgramId && profile.name == excludeProfile) continue
-      val raw = awaitLoadJsonVpnTunGuard(actions, "${vpnProfileApiPath(programId, profile.name)}/setting")
+      val raw = actions.awaitLoadJson("${vpnProfileApiPath(programId, profile.name)}/setting")
       val data = vpnSettingObject(raw)
       val tun = tunFromSetting(programId, raw)
       if (tun.isNotBlank()) used += tun.lowercase(Locale.ROOT)
