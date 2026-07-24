@@ -314,7 +314,7 @@ jobs:
           mkdir -p prebuilt/bin/arm-v7a
           cp prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox
 
-      - name: Prepare minimal module zip
+      - name: Prepare module zip (prebuilt + fresh zdtd)
         run: |
           set -euo pipefail
           MODULE_DIR="out/module_build/module_root"
@@ -323,9 +323,25 @@ jobs:
           cp -a module_template/. "$MODULE_DIR/"
           cp -f module.prop "$MODULE_DIR/module.prop"
           rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt"
-          mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a"
+          mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a" "$MODULE_DIR/prebuilt/bin/arm-v7a"
+          # Fresh zdtd
           cp out/artifacts/zdtd/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
           chmod 755 "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
+          # Prebuilt arm64-v8a binaries from repo (skip zdtd — already placed)
+          for f in prebuilt/bin/arm64-v8a/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            [ "$name" = "zdtd" ] && continue
+            cp "$f" "$MODULE_DIR/prebuilt/bin/arm64-v8a/$name"
+            chmod 755 "$MODULE_DIR/prebuilt/bin/arm64-v8a/$name"
+            echo "  prebuilt arm64: $name"
+          done
+          # arm-v7a: just copy arm64 binaries as stubs (fast build is for compile-check)
+          for f in "$MODULE_DIR/prebuilt/bin/arm64-v8a"/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            cp "$f" "$MODULE_DIR/prebuilt/bin/arm-v7a/$name"
+          done
           pushd "$MODULE_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
