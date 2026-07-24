@@ -25,9 +25,34 @@ permissions:
   models: read
 
 jobs:
+  check_changes:
+    name: check what changed
+    runs-on: ubuntu-latest
+    outputs:
+      zdtd: ${{ steps.detect.outputs.zdtd }}
+      dpi_detector: ${{ steps.detect.outputs.dpi_detector }}
+      nfqws_tester: ${{ steps.detect.outputs.nfqws_tester }}
+      busybox: ${{ steps.detect.outputs.busybox }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: detect
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          echo "zdtd=$(echo "$CHANGED" | grep -qE '^rust/zdtd/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "dpi_detector=$(echo "$CHANGED" | grep -qE '^rust/dpi-detector/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "nfqws_tester=$(echo "$CHANGED" | grep -qE '^rust/nfqws-tester/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "busybox=$(echo "$CHANGED" | grep -qE '^scripts/module/build-busybox' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   build_zdtd:
     name: build zdtd
     runs-on: ubuntu-latest
+    needs: check_changes
+    if: needs.check_changes.outputs.zdtd == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -92,6 +117,8 @@ jobs:
   build_dpi_detector:
     name: build dpi-detector
     runs-on: ubuntu-latest
+    needs: check_changes
+    if: needs.check_changes.outputs.dpi_detector == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -155,6 +182,8 @@ jobs:
   build_nfqws_tester:
     name: build nfqws-tester
     runs-on: ubuntu-latest
+    needs: check_changes
+    if: needs.check_changes.outputs.nfqws_tester == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -218,6 +247,8 @@ jobs:
   build_busybox:
     name: build BusyBox
     runs-on: ubuntu-latest
+    needs: check_changes
+    if: needs.check_changes.outputs.busybox == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -254,10 +285,12 @@ jobs:
     name: build APK
     runs-on: ubuntu-latest
     needs:
+      - check_changes
       - build_zdtd
       - build_dpi_detector
       - build_nfqws_tester
       - build_busybox
+    if: always() && needs.check_changes.result == 'success'
 
     steps:
       - uses: actions/checkout@v6
@@ -286,21 +319,25 @@ jobs:
           cache-read-only: false
 
       - name: Download zdtd
+        if: needs.build_zdtd.result == 'success'
         uses: actions/download-artifact@v7
         with:
           name: zdtd-arm64
           path: out/artifacts/zdtd
       - name: Download dpi-detector
+        if: needs.build_dpi_detector.result == 'success'
         uses: actions/download-artifact@v7
         with:
           name: dpi-detector-arm64
           path: out/artifacts/dpi-detector/arm64
       - name: Download nfqws-tester
+        if: needs.build_nfqws_tester.result == 'success'
         uses: actions/download-artifact@v7
         with:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
       - name: Download BusyBox
+        if: needs.build_busybox.result == 'success'
         uses: actions/download-artifact@v7
         with:
           name: busybox-arm64
@@ -324,8 +361,12 @@ jobs:
           cp -f module.prop "$MODULE_DIR/module.prop"
           rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt" "$MODULE_DIR/verify_sum"
           mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a" "$MODULE_DIR/prebuilt/bin/arm-v7a"
-          # Fresh zdtd
-          cp out/artifacts/zdtd/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
+          # Fresh zdtd (or fallback to prebuilt)
+          if [ -f out/artifacts/zdtd/zdtd ]; then
+            cp out/artifacts/zdtd/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
+          else
+            cp prebuilt/bin/arm64-v8a/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
+          fi
           chmod 755 "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
           # Prebuilt arm64-v8a binaries from repo (skip zdtd — already placed)
           for f in prebuilt/bin/arm64-v8a/*; do
@@ -350,7 +391,7 @@ jobs:
             (cd "$MODULE_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
           done < <(find "$MODULE_DIR/prebuilt/bin" -type f | sort)
           test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
-          test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
+          [ -f "$MODULE_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" ] || test -f "$MODULE_DIR/prebuilt/bin/arm-v7a/zdtd" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
           pushd "$MODULE_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
@@ -386,17 +427,25 @@ jobs:
       - name: Prepare APK helper assets (arm64-v8a real, armeabi-v7a stubs)
         run: |
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a
-          cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+          if [ -f out/artifacts/dpi-detector/arm64/dpi-detector ]; then
+            cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+          else
+            cp prebuilt/bin/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+          fi
           chmod 755 application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
           # Stub for armeabi-v7a — APK install path won't use it on arm64 devices
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a
-          cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a/dpi-detector
+          cp application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a/dpi-detector
 
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a
-          cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+          if [ -f out/artifacts/nfqws-tester/arm64/nfqws-tester ]; then
+            cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+          else
+            cp prebuilt/bin/arm64-v8a/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+          fi
           chmod 755 application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a
-          cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a/nfqws_tester
+          cp application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a/nfqws_tester
 
       - name: Build APK
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
