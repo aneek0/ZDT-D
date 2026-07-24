@@ -51,8 +51,6 @@ jobs:
   build_zdtd:
     name: build zdtd
     runs-on: ubuntu-latest
-    needs: check_changes
-    if: needs.check_changes.outputs.zdtd == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -247,8 +245,6 @@ jobs:
   build_busybox:
     name: build BusyBox
     runs-on: ubuntu-latest
-    needs: check_changes
-    if: needs.check_changes.outputs.busybox == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -351,6 +347,8 @@ jobs:
           mkdir -p prebuilt/bin/arm-v7a
           cp prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox
 
+
+
       - name: Prepare module zip (prebuilt + fresh zdtd)
         run: |
           set -euo pipefail
@@ -426,22 +424,27 @@ jobs:
 
       - name: Prepare APK helper assets (arm64-v8a real, armeabi-v7a stubs)
         run: |
+          # dpi-detector APK asset: fresh > prebuilt > stub (allows incremental Kotlin-only builds)
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a
           if [ -f out/artifacts/dpi-detector/arm64/dpi-detector ]; then
             cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
-          else
+          elif [ -f prebuilt/bin/arm64-v8a/dpi-detector ]; then
             cp prebuilt/bin/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+          else
+            touch application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
-          # Stub for armeabi-v7a — APK install path won't use it on arm64 devices
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a
           cp application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a/dpi-detector
 
+          # nfqws-tester APK asset: fresh > prebuilt > stub
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a
           if [ -f out/artifacts/nfqws-tester/arm64/nfqws-tester ]; then
             cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
-          else
+          elif [ -f prebuilt/bin/arm64-v8a/nfqws-tester ]; then
             cp prebuilt/bin/arm64-v8a/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+          else
+            touch application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a
