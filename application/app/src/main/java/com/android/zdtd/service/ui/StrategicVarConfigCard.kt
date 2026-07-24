@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,8 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,6 +90,14 @@ fun StrategicVarConfigCard(
   var chooserOpen by remember(programId) { mutableStateOf(false) }
   var applying by remember(programId, profile) { mutableStateOf(false) }
 
+  // hostlist selection
+  var hostlistFiles by remember(programId) { mutableStateOf<List<String>>(emptyList()) }
+  var hostlistFilesLoading by remember(programId) { mutableStateOf(true) }
+  var selectedHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var selectedExcludeHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var hostlistChooserOpen by remember(programId, profile) { mutableStateOf(false) }
+  var applyingHostlists by remember(programId, profile) { mutableStateOf(false) }
+
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
 
@@ -107,10 +118,18 @@ fun StrategicVarConfigCard(
     }
   }
 
+  fun reloadHostlistFiles() {
+    hostlistFilesLoading = true
+    actions.listStrategicFiles("list") { files ->
+      hostlistFiles = (files ?: emptyList()).filter { it.endsWith(".txt") }.sorted()
+      hostlistFilesLoading = false
+    }
+  }
+
   fun applyVariant(variant: ApiModels.StrategyVariant) {
     chooserOpen = false
     applying = true
-    actions.applyStrategicVariant(programId, profile, variant.name) { ok ->
+    actions.applyStrategicVariant(programId, profile, variant.name, selectedHostlists, selectedExcludeHostlists) { ok ->
       applying = false
       if (ok) reloadConfig()
       scope.launch {
@@ -122,8 +141,22 @@ fun StrategicVarConfigCard(
     }
   }
 
+  fun applyHostlistsOnly() {
+    applyingHostlists = true
+    actions.applyProfileHostlists(programId, profile, selectedHostlists, selectedExcludeHostlists) { ok ->
+      applyingHostlists = false
+      scope.launch {
+        snackHost.showSnackbar(
+          if (ok) ctx.getString(R.string.strategic_hostlists_applied)
+          else ctx.getString(R.string.common_apply_failed)
+        )
+      }
+    }
+  }
+
   LaunchedEffect(configPath) { reloadConfig() }
   LaunchedEffect(programId) { reloadVariants() }
+  LaunchedEffect(programId) { reloadHostlistFiles() }
 
   val savedHash = remember(lastLoaded) { sha256HexUtf8(lastLoaded) }
   val matched = remember(savedHash, variants) {
@@ -290,6 +323,86 @@ fun StrategicVarConfigCard(
 
       Spacer(Modifier.height(10.dp))
 
+      // ---- hostlist selection ----
+      if (hostlistChooserOpen) {
+        HostlistChooserBottomSheet(
+          allFiles = hostlistFiles,
+          selectedHostlists = selectedHostlists,
+          selectedExclude = selectedExcludeHostlists,
+          onDismiss = { hostlistChooserOpen = false },
+          onSave = { h, e ->
+            selectedHostlists = h
+            selectedExcludeHostlists = e
+            hostlistChooserOpen = false
+            if (matched != null) {
+              applyVariant(matched)
+            } else {
+              applyHostlistsOnly()
+            }
+          },
+        )
+      }
+
+      Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          stringResource(R.string.strategic_hostlists_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (matched == null && (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty())) {
+            Button(
+              onClick = { applyHostlistsOnly() },
+              enabled = !loading && !saving && !applying && !applyingHostlists && !hostlistFilesLoading,
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            ) {
+              Text(
+                if (applyingHostlists) stringResource(R.string.common_ellipsis)
+                else stringResource(R.string.strategic_hostlists_apply),
+                style = MaterialTheme.typography.labelSmall,
+              )
+            }
+          }
+          Button(
+            onClick = { hostlistChooserOpen = true },
+            enabled = !loading && !saving && !applying && !hostlistFilesLoading,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+          ) {
+            Text(
+              if (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty()) {
+                stringResource(R.string.strategic_hostlists_edit)
+              } else {
+                stringResource(R.string.common_choose)
+              },
+              style = MaterialTheme.typography.labelSmall,
+            )
+          }
+        }
+      }
+
+      Spacer(Modifier.height(6.dp))
+
+      val hostlistSummary = buildList {
+        if (selectedHostlists.isNotEmpty()) {
+          add(stringResource(R.string.strategic_hostlists_count, selectedHostlists.size))
+        }
+        if (selectedExcludeHostlists.isNotEmpty()) {
+          add(stringResource(R.string.strategic_exclude_hostlists_count, selectedExcludeHostlists.size))
+        }
+      }.joinToString(", ")
+
+      Text(
+        text = if (hostlistSummary.isNotEmpty()) hostlistSummary else stringResource(R.string.strategic_hostlists_none),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+      )
+
+      Spacer(Modifier.height(10.dp))
+
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
@@ -421,6 +534,155 @@ private fun StrategicVariantsBottomSheet(
           }
         }
       }
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HostlistChooserBottomSheet(
+  allFiles: List<String>,
+  selectedHostlists: List<String>,
+  selectedExclude: List<String>,
+  onDismiss: () -> Unit,
+  onSave: (hostlists: List<String>, exclude: List<String>) -> Unit,
+) {
+  val shortHeight = rememberIsShortHeight()
+
+  val regularFiles = allFiles.filter { it != "exclude.txt" }
+  val excludeFile = if (allFiles.contains("exclude.txt")) "exclude.txt" else null
+
+  var selected by remember(selectedHostlists, selectedExclude) {
+    mutableStateOf(selectedHostlists.toSet())
+  }
+  var selectedExcl by remember(selectedHostlists, selectedExclude) {
+    mutableStateOf(selectedExclude.toSet())
+  }
+
+  val hasChanges = selected != selectedHostlists.toSet() || selectedExcl != selectedExclude.toSet()
+
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            stringResource(R.string.strategic_hostlists_sheet_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Spacer(Modifier.height(2.dp))
+          Text(
+            stringResource(R.string.strategic_hostlists_sheet_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+        }
+        Spacer(Modifier.width(12.dp))
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+          }
+        }
+      }
+
+      Spacer(Modifier.height(8.dp))
+
+      if (excludeFile != null) {
+        Row(
+          modifier = Modifier.fillMaxWidth().clickable {
+            selectedExcl = if (excludeFile in selectedExcl) selectedExcl - excludeFile else selectedExcl + excludeFile
+          }.padding(vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Checkbox(
+            checked = excludeFile in selectedExcl,
+            onCheckedChange = { c ->
+              selectedExcl = if (c) selectedExcl + excludeFile else selectedExcl - excludeFile
+            },
+            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.error),
+          )
+          Spacer(Modifier.width(8.dp))
+          Text(
+            excludeFile.removeSuffix(".txt"),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+          )
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Text(
+          stringResource(R.string.strategic_hostlists_include),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+        Spacer(Modifier.height(4.dp))
+      }
+
+      LazyColumn(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = if (shortHeight) 180.dp else 220.dp, max = if (shortHeight) 300.dp else 400.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = PaddingValues(bottom = 8.dp),
+      ) {
+        items(regularFiles, key = { it }) { file ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable {
+              selected = if (file in selected) selected - file else selected + file
+            }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Checkbox(
+              checked = file in selected,
+              onCheckedChange = { c ->
+                selected = if (c) selected + file else selected - file
+              },
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+              file.removeSuffix(".txt"),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            )
+          }
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Button(
+          onClick = { onSave(selected.toList(), selectedExcl.toList()) },
+          enabled = hasChanges,
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(stringResource(R.string.strategic_hostlists_apply))
+        }
+        Button(
+          onClick = {
+            selected = emptySet()
+            selectedExcl = emptySet()
+          },
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(stringResource(R.string.common_clear))
+        }
+      }
+
+      Spacer(Modifier.height(16.dp))
     }
   }
 }

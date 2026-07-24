@@ -707,12 +707,84 @@ struct ApplyStrategicVarReq {
     program: String,
     profile: String,
     file: String,
+    #[serde(default)]
+    hostlists: Vec<String>,
+    #[serde(default)]
+    exclude_hostlists: Vec<String>,
+}
+
+fn apply_hostlists_to_config(data: &[u8], hostlists: &[String], exclude: &[String]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(data);
+    let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
+
+    let hostlist_args: Vec<String> = {
+        let mut r = Vec::new();
+        for hl in hostlists {
+            r.push(format!("--hostlist={module_list}{hl}"));
+        }
+        for ex in exclude {
+            r.push(format!("--hostlist-exclude={module_list}{ex}"));
+        }
+        r
+    };
+
+    let all_tokens: Vec<String> = text
+        .split_whitespace()
+        .filter(|t| *t != "\\")
+        .map(|t| t.to_string())
+        .collect();
+
+    if all_tokens.is_empty() {
+        return data.to_vec();
+    }
+
+    let new_positions: Vec<usize> = all_tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| *t == "--new")
+        .map(|(i, _)| i)
+        .collect();
+
+    let mut sections: Vec<Vec<&str>> = Vec::new();
+    let mut start = 0;
+    for &pos in &new_positions {
+        sections.push(all_tokens[start..pos].iter().map(|t| t.as_str()).collect());
+        start = pos + 1;
+    }
+    sections.push(all_tokens[start..].iter().map(|t| t.as_str()).collect());
+
+    let mut out_tokens: Vec<String> = Vec::new();
+    for (i, section) in sections.iter().enumerate() {
+        for arg in &hostlist_args {
+            out_tokens.push(arg.clone());
+        }
+        for t in section.iter() {
+            if !t.starts_with("--hostlist=") && !t.starts_with("--hostlist-exclude=") {
+                out_tokens.push(t.to_string());
+            }
+        }
+        if i < sections.len() - 1 {
+            out_tokens.push("--new".to_string());
+        }
+    }
+
+    let mut result = String::new();
+    for (i, token) in out_tokens.iter().enumerate() {
+        if i == out_tokens.len() - 1 {
+            result.push_str(token);
+        } else {
+            result.push_str(token);
+            result.push_str(" \\\n");
+        }
+    }
+    result.into_bytes()
 }
 
 fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8]) -> Result<()> {
     // Routes:
     //   GET  /api/strategicvar/{program}
-    //   POST /api/strategicvar/apply   (JSON {program, profile, file})
+    //   POST /api/strategicvar/apply        (JSON {program, profile, file[, hostlists, exclude_hostlists]})
+    //   POST /api/strategicvar/hostlists    (JSON {program, profile, hostlists, exclude_hostlists})
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let res = (|| -> Result<serde_json::Value> {
         match (method, seg.as_slice()) {
@@ -759,7 +831,6 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                     anyhow::bail!("profile not found");
                 }
 
-                // Read strategy.
                 let src = strategicvar_root().join(&req.program).join(&req.file);
                 if !src.is_file() {
                     anyhow::bail!("strategy not found");
@@ -767,9 +838,45 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                 let data = fs::read(&src)
                     .map_err(|e| anyhow::anyhow!("read failed {}: {e}", src.display()))?;
 
-                // Write to profile config.
+                let data = if !req.hostlists.is_empty() || !req.exclude_hostlists.is_empty() {
+                    apply_hostlists_to_config(&data, &req.hostlists, &req.exclude_hostlists)
+                } else {
+                    data
+                };
+
                 let dst = prof_root.join("config/config.txt");
                 write_bytes_atomic(&dst, &data)?;
+                Ok(json!({"ok": true}))
+            }
+            ("POST", ["api", "strategicvar", "hostlists"]) => {
+                #[derive(Debug, Deserialize)]
+                struct HostlistsOnlyReq {
+                    program: String,
+                    profile: String,
+                    #[serde(default)]
+                    hostlists: Vec<String>,
+                    #[serde(default)]
+                    exclude_hostlists: Vec<String>,
+                }
+                let req: HostlistsOnlyReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+
+                ensure_safe_segment(&req.program, "program")?;
+                ensure_safe_segment(&req.profile, "profile")?;
+                if !is_allowed_strategicvar_program(&req.program) {
+                    anyhow::bail!("unknown program");
+                }
+
+                let prof_root = profile_root(&req.program, &req.profile);
+                if !prof_root.exists() {
+                    anyhow::bail!("profile not found");
+                }
+
+                let cfg = prof_root.join("config/config.txt");
+                let data = fs::read(&cfg)
+                    .map_err(|e| anyhow::anyhow!("read failed {}: {e}", cfg.display()))?;
+                let data = apply_hostlists_to_config(&data, &req.hostlists, &req.exclude_hostlists);
+                write_bytes_atomic(&cfg, &data)?;
                 Ok(json!({"ok": true}))
             }
             _ => anyhow::bail!("not found"),

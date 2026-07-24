@@ -250,7 +250,10 @@ interface ZdtdActions {
   fun listStrategicVariants(programId: String, onDone: (List<com.android.zdtd.service.api.ApiModels.StrategyVariant>?) -> Unit)
 
   /** Apply a prebuilt strategy file to a profile (overwrites config/config.txt). */
-  fun applyStrategicVariant(programId: String, profile: String, file: String, onDone: (Boolean) -> Unit)
+  fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String> = emptyList(), excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit)
+
+  /** Replace hostlist args in the current config without reapplying a strategy. */
+  fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit)
 
   // ----- App update (GitHub) -----
   /** Enable/disable background update checks for the app. */

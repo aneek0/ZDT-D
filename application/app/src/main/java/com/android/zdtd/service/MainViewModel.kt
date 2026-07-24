@@ -5888,13 +5888,27 @@ override fun listStrategicVariants(programId: String, onDone: (List<ApiModels.St
   }
 }
 
-override fun applyStrategicVariant(programId: String, profile: String, file: String, onDone: (Boolean) -> Unit) {
+override fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
       .put("profile", profile)
       .put("file", file)
+    if (hostlists.isNotEmpty()) payload.put("hostlists", JSONArray(hostlists))
+    if (excludeHostlists.isNotEmpty()) payload.put("exclude_hostlists", JSONArray(excludeHostlists))
     val ok = runCatching { api.postJsonData("/api/strategicvar/apply", payload) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+override fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
+  launchIO {
+    val payload = JSONObject()
+      .put("program", programId)
+      .put("profile", profile)
+    if (hostlists.isNotEmpty()) payload.put("hostlists", JSONArray(hostlists))
+    if (excludeHostlists.isNotEmpty()) payload.put("exclude_hostlists", JSONArray(excludeHostlists))
+    val ok = runCatching { api.postJsonData("/api/strategicvar/hostlists", payload) }.getOrDefault(false)
     withContext(Dispatchers.Main.immediate) { onDone(ok) }
   }
 }

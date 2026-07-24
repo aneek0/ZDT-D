@@ -117,7 +117,7 @@ fun BlockcheckScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
             ) {
                 Column(Modifier.padding(if (compact) 16.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Auto Blockcheck", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.blockcheck_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChip(selected = selectedProgram == "nfqws", onClick = { selectedProgram = "nfqws" }, label = { Text("nfqws") })
                         FilterChip(selected = selectedProgram == "nfqws2", onClick = { selectedProgram = "nfqws2" }, label = { Text("nfqws2") })
@@ -133,15 +133,15 @@ fun BlockcheckScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Hosts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.blockcheck_hosts_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        FilterChip(selected = !showCustom, onClick = { showCustom = false }, label = { Text("From list") })
-                        FilterChip(selected = showCustom, onClick = { showCustom = true }, label = { Text("Custom domain") })
+                        FilterChip(selected = !showCustom, onClick = { showCustom = false }, label = { Text(stringResource(R.string.blockcheck_from_list)) })
+                        FilterChip(selected = showCustom, onClick = { showCustom = true }, label = { Text(stringResource(R.string.blockcheck_custom_domain)) })
                     }
                     if (showCustom) {
                         OutlinedTextField(
                             value = customDomain, onValueChange = { customDomain = it },
-                            label = { Text("Domain") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.blockcheck_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
                         hostFiles.forEach { file ->
@@ -158,12 +158,12 @@ fun BlockcheckScreen(
                         Button(
                             onClick = { startRun() },
                             enabled = !state.isRunning && (!showCustom || customDomain.isNotBlank()),
-                        ) { Text("Start") }
+                        ) { Text(stringResource(R.string.blockcheck_start)) }
                         if (state.isRunning || state.isFinished || state.isError) {
                             OutlinedButton(onClick = {
                                 BlockcheckStore.reset()
                                 stoppedManually = false
-                            }) { Text("Reset") }
+                            }) { Text(stringResource(R.string.blockcheck_reset)) }
                         }
                     }
                 }
@@ -180,10 +180,10 @@ fun BlockcheckScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             text = when {
-                                state.phase == "baseline" -> "Collecting baseline..."
+                                state.phase == "baseline" -> stringResource(R.string.blockcheck_baseline)
                                 state.phase == "strategies" && state.currentStrategyIndex >= 0 ->
-                                    "Testing strategy ${state.currentStrategyIndex + 1}/${state.totalStrategies}"
-                                else -> "Starting..."
+                                    stringResource(R.string.blockcheck_testing_fmt, state.currentStrategyIndex + 1, state.totalStrategies)
+                                else -> stringResource(R.string.blockcheck_starting)
                             },
                             style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                         )
@@ -194,7 +194,7 @@ fun BlockcheckScreen(
                             Button(
                                 onClick = { stopRun() },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            ) { Text("Stop") }
+                            ) { Text(stringResource(R.string.blockcheck_stop)) }
                         }
                     }
                 }
@@ -209,7 +209,7 @@ fun BlockcheckScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 ) {
                     Text(
-                        "Stopped",
+                        stringResource(R.string.blockcheck_stopped),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(14.dp),
@@ -227,7 +227,7 @@ fun BlockcheckScreen(
                     shape = RoundedCornerShape(20.dp),
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("Error", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(stringResource(R.string.blockcheck_error_title), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                         state.errorMessage?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
                         }
@@ -243,9 +243,9 @@ fun BlockcheckScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Strategies", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.blockcheck_strategies_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (allStrategies.isEmpty()) {
-                        Text("No strategies found.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                        Text(stringResource(R.string.blockcheck_no_strategies), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                     } else {
                         allStrategies.forEach { s ->
                             val status = when {
@@ -283,12 +283,17 @@ fun BlockcheckScreen(
                                             TextButton(
                                                 onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } },
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                            ) { Text("Apply", style = MaterialTheme.typography.labelSmall) }
+                                            ) { Text(stringResource(R.string.blockcheck_apply), style = MaterialTheme.typography.labelSmall) }
                                         }
                                         if (status.isNotEmpty() && status != "queued" && status != "testing") {
                                             Spacer(Modifier.width(8.dp))
                                             Text(
-                                                when (status) { "works" -> "Works"; "failed" -> "Failed"; "skipped" -> "Skipped"; else -> "" },
+                                                when (status) {
+                                                    "works" -> stringResource(R.string.blockcheck_works)
+                                                    "failed" -> stringResource(R.string.blockcheck_failed)
+                                                    "skipped" -> stringResource(R.string.blockcheck_skipped)
+                                                    else -> ""
+                                                },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = when (status) {
                                                     "works" -> Color(0xFF22C55E)
@@ -323,7 +328,7 @@ fun BlockcheckScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Working (${state.workingStrategies.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E))
+                                Text(stringResource(R.string.blockcheck_working_count_fmt, state.workingStrategies.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E))
                                 state.workingStrategies.forEach { s ->
                                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
                                         Row(
@@ -334,7 +339,7 @@ fun BlockcheckScreen(
                                             if (actions != null) {
                                                 Spacer(Modifier.width(8.dp))
                                                 TextButton(onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } }) {
-                                                    Text("Apply", style = MaterialTheme.typography.labelMedium)
+                                                    Text(stringResource(R.string.blockcheck_apply), style = MaterialTheme.typography.labelMedium)
                                                 }
                                             }
                                         }
@@ -350,7 +355,7 @@ fun BlockcheckScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Failed (${state.failedStrategies.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                                Text(stringResource(R.string.blockcheck_failed_count_fmt, state.failedStrategies.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
                                 state.failedStrategies.forEach { s ->
                                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
                                         Text(s, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -366,7 +371,7 @@ fun BlockcheckScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
                         ) {
                             Column(Modifier.padding(14.dp)) {
-                                Text("No strategies tested.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                                Text(stringResource(R.string.blockcheck_no_strategies_tested), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                             }
                         }
                     }

@@ -425,6 +425,7 @@
     <string name="common_file_name">Имя файла</string>
     <string name="common_safe_file_name_hint">Используйте безопасное имя (буквы, цифры, точка, дефис, подчёркивание).</string>
     <string name="common_content">Содержимое</string>
+    <string name="common_clear">Очистить</string>
     <string name="common_applied_with_value">Применено: %1$s</string>
     <string name="common_apply_failed">Не удалось применить</string>
     <string name="common_create_file">Создать файл</string>
@@ -451,6 +452,41 @@
     <string name="strategic_variants_sheet_hint">Нажмите на конфиг, чтобы сразу применить его.</string>
     <string name="strategic_variants_current_hint">Текущий конфиг</string>
     <string name="strategic_variants_tap_to_apply">Нажмите, чтобы применить</string>
+    <string name="strategic_hostlists_title">Hostlist-списки</string>
+    <string name="strategic_hostlists_sheet_title">Выбор hostlist\'ов</string>
+    <string name="strategic_hostlists_sheet_hint">Выберите hostlist-файлы для использования (применяются при выборе стратегии).</string>
+    <string name="strategic_hostlists_none">Hostlist\'ы не выбраны</string>
+    <string name="strategic_hostlists_count">%1$d hostlist\'ов</string>
+    <string name="strategic_exclude_hostlists_count">%1$d exclude\'ов</string>
+    <string name="strategic_hostlists_edit">Изменить</string>
+    <string name="strategic_hostlists_apply">Применить</string>
+    <string name="strategic_hostlists_applied">Hostlist\'ы применены</string>
+    <string name="strategic_hostlists_include">Hostlist\'ы для включения:</string>
+
+    <!-- Blockcheck -->
+    <string name="blockcheck_title">Auto Blockcheck</string>
+    <string name="blockcheck_hosts_title">Хосты</string>
+    <string name="blockcheck_from_list">Из списка</string>
+    <string name="blockcheck_custom_domain">Свой домен</string>
+    <string name="blockcheck_domain">Домен</string>
+    <string name="blockcheck_start">Старт</string>
+    <string name="blockcheck_reset">Сброс</string>
+    <string name="blockcheck_stop">Стоп</string>
+    <string name="blockcheck_baseline">Сбор базовой линии…</string>
+    <string name="blockcheck_testing_fmt">Тестирование стратегии %1$d/%2$d</string>
+    <string name="blockcheck_starting">Запуск…</string>
+    <string name="blockcheck_stopped">Остановлено</string>
+    <string name="blockcheck_error_title">Ошибка</string>
+    <string name="blockcheck_strategies_title">Стратегии</string>
+    <string name="blockcheck_no_strategies">Стратегии не найдены.</string>
+    <string name="blockcheck_apply">Применить</string>
+    <string name="blockcheck_works">Работает</string>
+    <string name="blockcheck_failed">Не работает</string>
+    <string name="blockcheck_skipped">Пропущено</string>
+    <string name="blockcheck_queued">В очереди</string>
+    <string name="blockcheck_working_count_fmt">Работает (%1$d)</string>
+    <string name="blockcheck_failed_count_fmt">Не работает (%1$d)</string>
+    <string name="blockcheck_no_strategies_tested">Нет протестированных стратегий.</string>
 
     <!-- Common -->
     <string name="common_close">Закрыть</string><string name="common_update">Обновить</string>
