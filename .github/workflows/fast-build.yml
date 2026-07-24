@@ -343,7 +343,7 @@ jobs:
             cp "$f" "$MODULE_DIR/prebuilt/bin/arm-v7a/$name"
           done
           # verify_sum — required by verify.sh at install time
-          mkdir -p "$MODULE_DIR/verify_sum/prebuilt/bin" "$MODULE_DIR/verify_sum/zygisk"
+          mkdir -p "$MODULE_DIR/verify_sum/prebuilt/bin"
           while IFS= read -r file; do
             rel="${file#$MODULE_DIR/}"
             mkdir -p "$MODULE_DIR/verify_sum/$(dirname "$rel")"

@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -5896,7 +5897,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       .put("file", file)
     if (hostlists.isNotEmpty()) payload.put("hostlists", JSONArray(hostlists))
     if (excludeHostlists.isNotEmpty()) payload.put("exclude_hostlists", JSONArray(excludeHostlists))
+    Log.d("ZDT-hostlist", "applyStrategicVariant: $payload")
     val ok = runCatching { api.postJsonData("/api/strategicvar/apply", payload) }.getOrDefault(false)
+    Log.d("ZDT-hostlist", "applyStrategicVariant ok=$ok")
     withContext(Dispatchers.Main.immediate) { onDone(ok) }
   }
 }
@@ -5908,7 +5911,9 @@ override fun applyProfileHostlists(programId: String, profile: String, hostlists
       .put("profile", profile)
     if (hostlists.isNotEmpty()) payload.put("hostlists", JSONArray(hostlists))
     if (excludeHostlists.isNotEmpty()) payload.put("exclude_hostlists", JSONArray(excludeHostlists))
+    Log.d("ZDT-hostlist", "applyProfileHostlists: $payload")
     val ok = runCatching { api.postJsonData("/api/strategicvar/hostlists", payload) }.getOrDefault(false)
+    Log.d("ZDT-hostlist", "applyProfileHostlists ok=$ok")
     withContext(Dispatchers.Main.immediate) { onDone(ok) }
   }
 }
