@@ -322,7 +322,7 @@ jobs:
           mkdir -p "$MODULE_DIR" out/module
           cp -a module_template/. "$MODULE_DIR/"
           cp -f module.prop "$MODULE_DIR/module.prop"
-          rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt"
+          rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt" "$MODULE_DIR/verify_sum"
           mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a" "$MODULE_DIR/prebuilt/bin/arm-v7a"
           # Fresh zdtd
           cp out/artifacts/zdtd/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
@@ -336,12 +336,21 @@ jobs:
             chmod 755 "$MODULE_DIR/prebuilt/bin/arm64-v8a/$name"
             echo "  prebuilt arm64: $name"
           done
-          # arm-v7a: just copy arm64 binaries as stubs (fast build is for compile-check)
+          # arm-v7a: just copy arm64 binaries as stubs
           for f in "$MODULE_DIR/prebuilt/bin/arm64-v8a"/*; do
             [ -f "$f" ] || continue
             name="$(basename "$f")"
             cp "$f" "$MODULE_DIR/prebuilt/bin/arm-v7a/$name"
           done
+          # verify_sum — required by verify.sh at install time
+          mkdir -p "$MODULE_DIR/verify_sum/prebuilt/bin" "$MODULE_DIR/verify_sum/zygisk"
+          while IFS= read -r file; do
+            rel="${file#$MODULE_DIR/}"
+            mkdir -p "$MODULE_DIR/verify_sum/$(dirname "$rel")"
+            (cd "$MODULE_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
+          done < <(find "$MODULE_DIR/prebuilt/bin" -type f | sort)
+          test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
+          test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
           pushd "$MODULE_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
