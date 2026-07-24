@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
     inputs:
       build_type:
-  schedule:
-    - cron: '0 6 1 * *'
         description: 'Build type'
         required: false
         default: 'Release'
@@ -13,6 +11,8 @@ on:
         options:
           - Debug
           - Release
+  schedule:
+    - cron: '0 6 1 * *'
 
 concurrency:
   group: zdt-d-service-build
