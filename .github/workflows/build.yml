@@ -2,6 +2,8 @@ name: Build ZDT-D
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 1 * *'
     inputs:
       build_type:
         description: 'Build type'
@@ -4415,6 +4417,96 @@ jobs:
           name: zdt-module-final
           path: out/dist/zdt_module.zip
           retention-days: 30
+
+  sync_prebuilt:
+    name: Sync prebuilt binaries to repo
+    runs-on: ubuntu-latest
+    needs:
+      - build_apk
+      - module_binaries_ready
+    if: needs.build_apk.result == 'success' && needs.module_binaries_ready.result == 'success'
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download all arm64 artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: "*-arm64"
+          path: out/sync
+
+      - name: Download all arm32 artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: "*-arm32"
+          path: out/sync
+
+      - name: Copy prebuilt binaries (skip our own code)
+        run: |
+          set -euo pipefail
+          OUR_CODE="zdtd dpi-detector nfqws-tester busybox zygisk"
+          mkdir -p prebuilt/bin/arm64-v8a prebuilt/bin/arm-v7a
+
+          for arch_dir in out/sync/*/; do
+            artifact_name="$(basename "$arch_dir")"
+            # determine target arch dir
+            case "$artifact_name" in
+              *-arm64) target="arm64-v8a" ;;
+              *-arm32) target="arm-v7a" ;;
+              *) continue ;;
+            esac
+            for f in "$arch_dir"/*; do
+              [ -f "$f" ] || continue
+              name="$(basename "$f")"
+              # skip non-binary files
+              case "$name" in
+                *.commit|*.dynamic.txt|*.version|*.source|*.sha256|*.txt) continue ;;
+              esac
+              # skip our own code
+              for ours in $OUR_CODE; do
+                if [ "$name" = "$ours" ] || [ "${name#$ours}" != "$name" ]; then
+                  continue 2
+                fi
+              done
+              # only copy ELF binaries
+              if file "$f" | grep -qE 'ELF|executable'; then
+                cp -f "$f" "prebuilt/bin/$target/$name"
+                chmod 755 "prebuilt/bin/$target/$name"
+                echo "  $target: $name"
+              fi
+            done
+          done
+
+          # Also copy Lua files from nfqws2 artifacts
+          for arch_dir in out/sync/nfqws2-*/; do
+            [ -d "$arch_dir/lua" ] || continue
+            case "$(basename "$arch_dir")" in
+              nfqws2-arm64) target="arm64-v8a" ;;
+              nfqws2-arm32) target="arm-v7a" ;;
+              *) continue ;;
+            esac
+            mkdir -p "prebuilt/bin/$target"
+            for lf in "$arch_dir/lua"/*.lua; do
+              [ -f "$lf" ] || continue
+              name="$(basename "$lf")"
+              cp -f "$lf" "prebuilt/bin/$target/$name"
+              echo "  $target lua: $name"
+            done
+          done
+
+      - name: Commit prebuilt binaries
+        run: |
+          git config user.name "ZDT-D Bot"
+          git config user.email "actions@github.com"
+          git add prebuilt/bin/
+          if git diff --cached --quiet; then
+            echo "No prebuilt changes to commit"
+          else
+            git commit -m "sync prebuilt binaries [skip ci]"
+            git push
+          fi
 
   publish_service:
     name: Publish service build
