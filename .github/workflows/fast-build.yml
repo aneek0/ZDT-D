@@ -244,6 +244,8 @@ jobs:
 
   build_busybox:
     name: build BusyBox
+    if: needs.check_changes.outputs.busybox == 'true'
+    needs: check_changes
     runs-on: ubuntu-latest
 
     steps:
@@ -340,14 +342,13 @@ jobs:
           path: prebuilt/bin/arm64-v8a
 
       - name: Verify BusyBox
+        if: needs.build_busybox.result == 'success'
         run: |
           test -s prebuilt/bin/arm64-v8a/busybox
           chmod 755 prebuilt/bin/arm64-v8a/busybox
           # Stub for arm32 — avoids ensurePrebuiltBusyBox building from source
           mkdir -p prebuilt/bin/arm-v7a
           cp prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox
-
-
 
       - name: Prepare module zip (prebuilt + fresh zdtd)
         run: |
