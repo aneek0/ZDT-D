@@ -254,92 +254,13 @@ private suspend fun isMyProxyWebPanelPortOpen(port: Int): Boolean = withContext(
 }
 
 @Composable
-private fun MyProxySectionCard(
-  title: String,
-  desc: String? = null,
-  accent: Color = Color(0xFFFACC15),
-  icon: @Composable (() -> Unit)? = null,
-  trailing: @Composable (() -> Unit)? = null,
-  modifier: Modifier = Modifier,
-  content: @Composable (() -> Unit)? = null,
-) {
-  val compact = rememberIsCompactWidth()
-  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
-  Surface(
-    modifier = modifier.fillMaxWidth(),
-    shape = shape,
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
-    contentColor = MaterialTheme.colorScheme.onSurface,
-    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-  ) {
-    Box(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(
-          Brush.linearGradient(
-            listOf(
-              accent.copy(alpha = 0.13f),
-              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
-              Color.Transparent,
-            )
-          ),
-          shape = shape,
-        )
-        .padding(if (compact) 12.dp else 14.dp),
-    ) {
-      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
-        ) {
-          if (icon != null) {
-            Surface(
-              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
-              shape = CircleShape,
-              color = accent.copy(alpha = 0.16f),
-              contentColor = accent,
-              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
-            ) {
-              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
-            }
-          }
-          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-              title,
-              style = MaterialTheme.typography.titleSmall,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            if (desc != null) {
-              Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-          if (trailing != null) trailing()
-        }
-        if (content != null) content()
-      }
-    }
-  }
-}
-
 @Composable
 private fun MyProxyProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,
 ) {
   val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
-  MyProxySectionCard(
+  SectionCard(
     title = stringResource(R.string.enabled_card_profile_title),
     desc = stringResource(R.string.enabled_card_apply_hint),
     accent = accent,
@@ -372,7 +293,7 @@ private fun MyProxyWebPanelCard(
   checking: Boolean,
   onOpen: () -> Unit,
 ) {
-  MyProxySectionCard(
+  SectionCard(
     title = "t2s",
     desc = "Нативная панель состояния t2s",
     accent = Color(0xFF38BDF8),
@@ -631,7 +552,7 @@ fun MyProxyProfileScreen(
       onSavedSelection = { selectedApps = it },
     )
 
-    MyProxySectionCard(
+    SectionCard(
       title = stringResource(R.string.myproxy_ports_title),
       desc = stringResource(R.string.myproxy_ports_desc),
       accent = Color(0xFF38BDF8),
@@ -679,7 +600,7 @@ fun MyProxyProfileScreen(
       }
     }
 
-    MyProxySectionCard(
+    SectionCard(
       title = stringResource(R.string.myproxy_upstream_title),
       desc = stringResource(R.string.myproxy_upstream_desc),
       accent = Color(0xFFFACC15),

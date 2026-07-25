@@ -257,10 +257,6 @@ data class ProgramUpdatesUiState(
   val operaProxy: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_operaproxy_title),
 )
 
-sealed class BackupEvent {
-  data object RequestImport : BackupEvent()
-  data class ShareFile(val filePath: String, val mime: String) : BackupEvent()
-}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -2046,11 +2042,12 @@ fi""".trimIndent()
   }
 
 
-  // ----- Backup / Restore (working_folder) -----
 
+  // ----- Backup / Restore (working_folder) -----
+  
   private val backupDirPath = "/storage/emulated/0/ZDT-D_Backups"
   private val workingFolderPath = "/data/adb/modules/ZDT-D/working_folder"
-
+  
   fun refreshBackups() {
     if (_rootState.value != RootState.GRANTED) {
       _backup.update { it.copy(loading = false, items = emptyList(), error = str(R.string.mv_auto_022)) }
@@ -2076,7 +2073,7 @@ fi""".trimIndent()
           .map { it.trim() }
           .filter { it.isNotEmpty() }
           .toList()
-
+  
         val items = lines.mapNotNull { line ->
           val parts = line.split("|", limit = 2)
           if (parts.isEmpty()) return@mapNotNull null
@@ -2089,22 +2086,22 @@ fi""".trimIndent()
             createdAtText = parseBackupCreatedAtText(name),
           )
         }.sortedByDescending { it.name }
-
+  
         _backup.update { it.copy(loading = false, items = items, error = null) }
       }.onFailure { e ->
         _backup.update { it.copy(loading = false, error = str(R.string.mv_backup_list_read_error, (e.message ?: e.toString()))) }
       }
     }
   }
-
+  
   fun createBackup() {
   if (_rootState.value != RootState.GRANTED) return
   // Prevent starting another operation while one is running.
   if (_backup.value.progressVisible && !_backup.value.progressFinished) return
-
+  
   launchIO {
     showBackupProgress(title = str(R.string.mv_auto_023), text = str(R.string.mv_auto_024), percent = 0)
-
+  
     // Pre-check source.
     if (!rootPathExists(workingFolderPath)) {
       finishBackupProgress(error = str(R.string.mv_backup_settings_folder_missing, workingFolderPath))
@@ -2115,23 +2112,23 @@ fi""".trimIndent()
       finishBackupProgress(error = str(R.string.mv_auto_025))
       return@launchIO
     }
-
+  
     root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
-
+  
     val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
     val createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
     val backupName = "ZDT-D_backup_${tsForFile}.zdtb"
     val dest = "${backupDirPath}/${backupName}"
-
+  
     // Stage folder (snapshot) to avoid tar warnings like "file changed as we read it"
     // and to avoid relying on tar append (-r), which is not supported by some Android tar builds.
     val tmpStage = "/data/local/tmp/zdt_backup_stage_${tsForFile}"
     val tmpTar = "${backupDirPath}/.tmp_${tsForFile}.tar"
     val warnings = mutableListOf<String>()
-
+  
     // Prepare temp locations.
     root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true; mkdir -p ${shQuote(tmpStage)}")
-
+  
     // Write manifest into stage.
     val manifest = buildBackupManifest(createdAt = createdAt, dirsFull = dirsFull)
     val wrote = runCatching { root.writeTextFile("${tmpStage}/zdt_backup_manifest.json", manifest) }.getOrDefault(false)
@@ -2142,7 +2139,7 @@ fi""".trimIndent()
     }
     // Ensure manifest stays readable across different root managers / shells.
     root.execRootSh("chmod 0644 ${shQuote(tmpStage)}/zdt_backup_manifest.json 2>/dev/null || true")
-
+  
     // Compute weights for progress (based on source folders).
     val sizes = mutableMapOf<String, Long>()
     var total = 0L
@@ -2152,17 +2149,17 @@ fi""".trimIndent()
       total += sz
     }
     if (total <= 0L) total = dirsFull.size.toLong().coerceAtLeast(1L)
-
+  
     var done = 0L
-
+  
     // Copy directories into stage one by one for progress.
     for (d in dirsFull) {
       currentCoroutineContext().ensureActive()
       val name = d.substringAfterLast('/').ifBlank { "folder" }
-
+  
       val pct = ((done * 80L) / total).toInt().coerceIn(0, 80)
       _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, name), progressPercent = pct) }
-
+  
       val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(tmpStage)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(tmpStage)}/")
       if (!rCopy.isSuccess) {
         val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
@@ -2171,11 +2168,11 @@ fi""".trimIndent()
         finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, name, detail))
         return@launchIO
       }
-
+  
       val w = sizes[d] ?: 0L
       done += if (w > 0L) w else 1L
     }
-
+  
     _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_027), progressPercent = 85) }
     val rTar = root.execRootSh("tar -cf ${shQuote(tmpTar)} -C ${shQuote(tmpStage)} .")
     if (!rTar.isSuccess) {
@@ -2190,7 +2187,7 @@ fi""".trimIndent()
         return@launchIO
       }
     }
-
+  
     // Verify that the tar contains something besides the manifest (otherwise we produced a useless backup).
     val rHas = root.execRootSh(
       "tar -tf ${shQuote(tmpTar)} 2>/dev/null | " +
@@ -2208,7 +2205,7 @@ fi""".trimIndent()
       finishBackupProgress(error = msg.trim())
       return@launchIO
     }
-
+  
     _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_028), progressPercent = 95) }
     val gzipScript = buildString {
       append("rm -f ")
@@ -2244,7 +2241,7 @@ fi""".trimIndent()
       finishBackupProgress(error = str(R.string.mv_backup_compress_failed, detail))
       return@launchIO
     }
-
+  
     if (warnings.isNotEmpty()) {
       val first = warnings.first().lineSequence().firstOrNull()?.take(200).orEmpty()
       finishBackupProgress(text = str(R.string.mv_backup_done_with_warning, backupName), percent = 100)
@@ -2254,7 +2251,7 @@ fi""".trimIndent()
     }
     refreshBackups()
   }
-}
+  }
   fun requestBackupImport() {
     if (_rootState.value != RootState.GRANTED) {
       toast(str(R.string.mv_auto_029))
@@ -2262,7 +2259,7 @@ fi""".trimIndent()
     }
     _backupEvents.tryEmit(BackupEvent.RequestImport)
   }
-
+  
   fun onBackupImportResult(uri: Uri?) {
     if (_rootState.value != RootState.GRANTED) return
     if (uri == null) {
@@ -2270,7 +2267,7 @@ fi""".trimIndent()
       return
     }
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
-
+  
     launchIO {
       showBackupProgress(title = str(R.string.mv_auto_031), text = str(R.string.mv_auto_032), percent = 5)
       val tmp = File(ctx.cacheDir, "zdtb_import_${System.currentTimeMillis()}.zdtb")
@@ -2282,13 +2279,13 @@ fi""".trimIndent()
         } ?: return@runCatching false
         true
       }.getOrDefault(false)
-
+  
       if (!okCopy || !tmp.exists()) {
         finishBackupProgress(error = str(R.string.mv_auto_033))
         runCatching { tmp.delete() }
         return@launchIO
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 20) }
       val v = validateBackupFile(tmp.absolutePath)
       if (!v.ok) {
@@ -2296,13 +2293,13 @@ fi""".trimIndent()
         runCatching { tmp.delete() }
         return@launchIO
       }
-
+  
       root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val name = "ZDT-D_backup_${tsForFile}_import.zdtb"
       val dest = "${backupDirPath}/${name}"
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 60) }
-
+  
       val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
       runCatching { tmp.delete() }
       if (!r.isSuccess) {
@@ -2311,12 +2308,12 @@ fi""".trimIndent()
         finishBackupProgress(error = str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
-
+  
       finishBackupProgress(text = str(R.string.mv_backup_import_done, name), percent = 100)
       refreshBackups()
     }
   }
-
+  
   fun onExternalBackupOpen(uri: Uri) {
     externalBackupOpenJob?.cancel()
     externalBackupOpenJob = launchIO {
@@ -2331,13 +2328,13 @@ fi""".trimIndent()
         return@launchIO
       }
       if (_backup.value.progressVisible && !_backup.value.progressFinished) return@launchIO
-
+  
       showBackupProgress(
         title = str(R.string.backup_external_restore_checking),
         text = str(R.string.mv_auto_032),
         percent = 5,
       )
-
+  
       val tmp = File(ctx.cacheDir, "zdtb_external_${System.currentTimeMillis()}.zdtb")
       val okCopy = runCatching {
         ctx.contentResolver.openInputStream(uri)?.use { input ->
@@ -2345,14 +2342,14 @@ fi""".trimIndent()
         } ?: return@runCatching false
         true
       }.getOrDefault(false)
-
+  
       if (!okCopy || !tmp.exists()) {
         runCatching { tmp.delete() }
         _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
         toast(str(R.string.mv_auto_033))
         return@launchIO
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 25) }
       // Validate the archive structure here, but let restoreBackup() do the strict versionCode
       // decision so the existing "Restore anyway" path still works for external files.
@@ -2363,7 +2360,7 @@ fi""".trimIndent()
         toast(validation.error ?: str(R.string.backup_external_restore_invalid))
         return@launchIO
       }
-
+  
       root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val importedName = "ZDT-D_backup_${tsForFile}_external.zdtb"
@@ -2378,13 +2375,13 @@ fi""".trimIndent()
         toast(str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
-
+  
       val displayName = uri.lastPathSegment
         ?.substringAfterLast('/')
         ?.substringAfterLast(':')
         ?.takeIf { it.isNotBlank() }
         ?: importedName
-
+  
       _backup.update { st ->
         st.copy(
           progressVisible = false,
@@ -2398,7 +2395,7 @@ fi""".trimIndent()
       refreshBackups()
     }
   }
-
+  
   fun confirmExternalBackupRestore() {
     val name = _backup.value.externalRestoreName ?: return
     _backup.update { st ->
@@ -2410,7 +2407,7 @@ fi""".trimIndent()
     }
     restoreBackup(name, ignoreVersionCode = false)
   }
-
+  
   fun dismissExternalBackupRestore() {
     val name = _backup.value.externalRestoreName
     _backup.update { st ->
@@ -2427,20 +2424,20 @@ fi""".trimIndent()
       }
     }
   }
-
+  
   fun restoreBackup(name: String, ignoreVersionCode: Boolean) {
     if (_rootState.value != RootState.GRANTED) return
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
-
+  
     launchIO {
       showBackupProgress(title = str(R.string.mv_auto_037), text = str(R.string.mv_auto_034), percent = 0)
       val path = "${backupDirPath}/${name}"
-
+  
       if (!rootPathExists(path)) {
         finishBackupProgress(error = str(R.string.mv_backup_file_not_found, name))
         return@launchIO
       }
-
+  
       val v = validateBackupFile(path, ignoreVersionCode = ignoreVersionCode)
       if (!v.ok) {
         // If this is a versionCode mismatch, offer "Restore anyway" in UI.
@@ -2452,7 +2449,7 @@ fi""".trimIndent()
         )
         return@launchIO
       }
-
+  
       // Stop is async: after /api/stop the processes may still be shutting down and API may temporarily reject start.
       // We must wait until /api/status confirms everything is stopped.
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_038), progressPercent = 5) }
@@ -2461,7 +2458,7 @@ fi""".trimIndent()
         finishBackupProgress(error = str(R.string.mv_auto_039))
         return@launchIO
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_040), progressPercent = 8) }
       val waitStart = System.currentTimeMillis()
       val waitTimeoutMs = 30_000L
@@ -2481,14 +2478,14 @@ fi""".trimIndent()
         finishBackupProgress(error = str(R.string.mv_auto_041))
         return@launchIO
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_042), progressPercent = 10) }
       val wipe = root.execRootSh("rm -rf ${shQuote(workingFolderPath)} 2>/dev/null || true; mkdir -p ${shQuote(workingFolderPath)} 2>/dev/null || true")
       if (!wipe.isSuccess) {
         finishBackupProgress(error = str(R.string.mv_auto_043))
         return@launchIO
       }
-
+  
       // Extract into temp dir first to avoid polluting working_folder with manifest.
       val tmpDir = "/data/local/tmp/zdt_restore_${System.currentTimeMillis()}"
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_044), progressPercent = 20) }
@@ -2503,19 +2500,19 @@ fi""".trimIndent()
       }
       val rMf = root.execRootSh(
   "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
-)
-val mf = rMf.out.joinToString("\n").trim()
-if (mf.isNotBlank()) {
+  )
+  val mf = rMf.out.joinToString("\n").trim()
+  if (mf.isNotBlank()) {
   root.execRootSh("rm -f ${shQuote(mf)} 2>/dev/null || true")
-}
-
+  }
+  
       val dirs = listSubdirs(tmpDir)
       if (dirs.isEmpty()) {
         root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
         finishBackupProgress(error = str(R.string.mv_auto_045))
         return@launchIO
       }
-
+  
       val sizes = mutableMapOf<String, Long>()
       var total = 0L
       for (d in dirs) {
@@ -2524,15 +2521,15 @@ if (mf.isNotBlank()) {
         total += sz
       }
       if (total <= 0L) total = dirs.size.toLong().coerceAtLeast(1L)
-
+  
       var done = 0L
       for ((i, d) in dirs.withIndex()) {
         currentCoroutineContext().ensureActive()
         val folderName = d.substringAfterLast('/').ifBlank { "folder" }
-
+  
         val pct = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
         _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, folderName), progressPercent = pct) }
-
+  
         val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(workingFolderPath)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(workingFolderPath)}/")
         if (!rCopy.isSuccess) {
           val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
@@ -2541,15 +2538,15 @@ if (mf.isNotBlank()) {
           finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, folderName, detail))
           return@launchIO
         }
-
+  
         val w = sizes[d] ?: 0L
         done += if (w > 0L) w else 1L
         val pct2 = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
         _backup.update { st -> st.copy(progressText = str(R.string.mv_copied_count, i + 1, dirs.size), progressPercent = pct2) }
       }
-
+  
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-
+  
       // After status becomes OFF we must allow a short cool-down window before sending start.
       // Restore work can happen inside this window.
       val elapsedSinceStopped = System.currentTimeMillis() - (stoppedAt ?: System.currentTimeMillis())
@@ -2559,7 +2556,7 @@ if (mf.isNotBlank()) {
         _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_046), progressPercent = 96) }
         delay(remain)
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_047), progressPercent = 97) }
       // Per requirement: send start only once (no retries/spam).
       val started = runCatching { api.startService() }.getOrDefault(false)
@@ -2567,34 +2564,34 @@ if (mf.isNotBlank()) {
         finishBackupProgress(error = str(R.string.mv_auto_048))
         return@launchIO
       }
-
+  
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_049), progressPercent = 99) }
       refreshAfterBackupRestore()
       finishBackupProgress(text = str(R.string.mv_auto_049), percent = 100)
     }
   }
-
+  
   private suspend fun refreshAfterBackupRestore() {
     lastStatusFetchAtMs = 0L
     lastProgramsFetchAtMs = 0L
-
+  
     val delays = listOf(0L, 800L, 2_000L)
     for (waitMs in delays) {
       if (waitMs > 0L) delay(waitMs)
       currentCoroutineContext().ensureActive()
-
+  
       runCatching { fetchAndUpdateStatus(force = true) }
         .onFailure { log("ERR", "restore status refresh failed: ${it.message ?: it}") }
-
+  
       lastProgramsFetchAtMs = 0L
       runCatching { refreshProgramsNow(force = true) }
         .onFailure { log("ERR", "restore programs refresh failed: ${it.message ?: it}") }
-
+  
       runCatching { refreshDaemonSettingsNow() }
         .onFailure { log("ERR", "restore settings refresh failed: ${it.message ?: it}") }
     }
   }
-
+  
   fun deleteBackup(name: String) {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
@@ -2604,7 +2601,7 @@ if (mf.isNotBlank()) {
       refreshBackups()
     }
   }
-
+  
   fun shareBackup(name: String) {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
@@ -2622,7 +2619,7 @@ if (mf.isNotBlank()) {
       _backupEvents.tryEmit(BackupEvent.ShareFile(outFile.absolutePath, "application/octet-stream"))
     }
   }
-
+  
   fun closeBackupProgress() {
     _backup.update { st ->
       st.copy(
@@ -2637,8 +2634,7 @@ if (mf.isNotBlank()) {
       )
     }
   }
-
-
+  
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
   fun resetProgramUpdatesUi() {

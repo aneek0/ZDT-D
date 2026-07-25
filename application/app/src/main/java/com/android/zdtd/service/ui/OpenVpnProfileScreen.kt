@@ -513,7 +513,7 @@ fun OpenVpnProfileScreen(
       }
     }
 
-    OpenVpnSectionCard(
+    SectionCard(
       title = stringResource(R.string.openvpn_settings_title),
       desc = stringResource(R.string.openvpn_autosave_hint),
       accent = Color(0xFF38BDF8),
@@ -600,91 +600,13 @@ fun OpenVpnProfileScreen(
 }
 
 @Composable
-private fun OpenVpnSectionCard(
-  title: String,
-  desc: String? = null,
-  accent: Color = Color(0xFF38BDF8),
-  icon: (@Composable () -> Unit)? = null,
-  trailing: (@Composable () -> Unit)? = null,
-  content: (@Composable ColumnScope.() -> Unit)? = null,
-) {
-  val compact = rememberIsCompactWidth()
-  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
-  Surface(
-    modifier = Modifier.fillMaxWidth(),
-    shape = shape,
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
-    contentColor = MaterialTheme.colorScheme.onSurface,
-    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-  ) {
-    Box(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(
-          Brush.linearGradient(
-            listOf(
-              accent.copy(alpha = 0.13f),
-              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
-              Color.Transparent,
-            )
-          ),
-          shape = shape,
-        )
-        .padding(if (compact) 12.dp else 14.dp),
-    ) {
-      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
-        ) {
-          if (icon != null) {
-            Surface(
-              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
-              shape = CircleShape,
-              color = accent.copy(alpha = 0.16f),
-              contentColor = accent,
-              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
-            ) {
-              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
-            }
-          }
-          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-              title,
-              style = MaterialTheme.typography.titleSmall,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            if (desc != null) {
-              Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-          if (trailing != null) trailing()
-        }
-        if (content != null) content()
-      }
-    }
-  }
-}
-
 @Composable
 private fun OpenVpnProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,
 ) {
   val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
-  OpenVpnSectionCard(
+  SectionCard(
     title = stringResource(R.string.enabled_card_profile_title),
     desc = stringResource(R.string.enabled_card_apply_hint),
     accent = accent,
@@ -717,7 +639,7 @@ private fun OpenVpnConfigSummaryCard(
   onEdit: () -> Unit,
   onUpload: () -> Unit,
 ) {
-  OpenVpnSectionCard(
+  SectionCard(
     title = stringResource(R.string.openvpn_config_title),
     desc = stringResource(R.string.openvpn_config_summary_desc),
     accent = Color(0xFFA78BFA),
