@@ -402,7 +402,6 @@ fun MieruProfileScreen(
 }
 
 @Composable
-@Composable
 private fun MieruProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

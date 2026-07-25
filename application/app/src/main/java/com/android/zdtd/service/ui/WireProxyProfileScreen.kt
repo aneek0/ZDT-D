@@ -313,7 +313,6 @@ private suspend fun isWireProxyWebPanelPortOpen(port: Int): Boolean = withContex
 }
 
 @Composable
-@Composable
 private fun WireProxyProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

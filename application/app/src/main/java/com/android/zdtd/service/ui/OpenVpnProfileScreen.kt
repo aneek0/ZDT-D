@@ -600,7 +600,6 @@ fun OpenVpnProfileScreen(
 }
 
 @Composable
-@Composable
 private fun OpenVpnProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

@@ -220,7 +220,6 @@ private fun createSnackFunction(
 }
 
 @Composable
-@Composable
 private fun SingBoxProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

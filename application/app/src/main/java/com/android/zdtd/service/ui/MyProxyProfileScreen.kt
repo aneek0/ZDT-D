@@ -254,7 +254,6 @@ private suspend fun isMyProxyWebPanelPortOpen(port: Int): Boolean = withContext(
 }
 
 @Composable
-@Composable
 private fun MyProxyProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

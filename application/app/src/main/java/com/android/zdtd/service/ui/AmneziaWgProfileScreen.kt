@@ -251,7 +251,6 @@ private fun amneziaWgProfileIndex(name: String): Int {
 
 
 @Composable
-@Composable
 private fun AmneziaWgProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,

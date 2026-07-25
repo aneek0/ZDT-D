@@ -187,38 +187,6 @@ data class LogLine(
   val msg: String,
 )
 
-// ----- Backup / Restore (working_folder) -----
-
-data class BackupItem(
-  val name: String,
-  val sizeBytes: Long = 0L,
-  val createdAtText: String = "",
-)
-
-data class BackupUiState(
-  val loading: Boolean = false,
-  val items: List<BackupItem> = emptyList(),
-  val error: String? = null,
-
-  // Progress dialog (create / restore / import / delete)
-  val progressVisible: Boolean = false,
-  val progressTitle: String = "",
-  val progressText: String = "",
-  val progressPercent: Int = 0,
-  val progressFinished: Boolean = false,
-  val progressError: String? = null,
-
-  // Version mismatch: allow user to force restore (advanced).
-  val forceRestoreAvailable: Boolean = false,
-  val forceRestoreName: String? = null,
-
-  // Backup file opened externally by Android file manager (.zdtb ACTION_VIEW).
-  val externalRestorePromptVisible: Boolean = false,
-  val externalRestoreName: String? = null,
-  val externalRestoreDisplayName: String = "",
-)
-
-
 // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
 data class ProgramReleaseUi(
@@ -2425,7 +2393,7 @@ fi""".trimIndent()
     }
   }
   
-  fun restoreBackup(name: String, ignoreVersionCode: Boolean) {
+  fun restoreBackup(name: String, ignoreVersionCode: Boolean = false) {
     if (_rootState.value != RootState.GRANTED) return
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
   
@@ -5339,7 +5307,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun setProgramEnabled(programId: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
+  fun setProgramEnabled(programId: String, enabled: Boolean, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ap = activeJsonPath(programId)
       val ok = runCatching {
@@ -5414,7 +5382,7 @@ private fun shQuote(s: String): String {
     return runCatching { api.getPrograms() }.getOrElse { _uiState.value.programs }
   }
 
-  fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
+  fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       if (enabled) {
         val conflict = checkEnableProfileConflict(programId, profile)
@@ -5437,7 +5405,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit) {
+  fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ok = runCatching { api.deleteProfile(programId, profile) }.getOrDefault(false)
       if (ok) {
@@ -5451,7 +5419,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit) {
+  fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim().ifBlank { "main" }
       val ok = if (safeProfile.contains('/') || safeProfile.contains('\\') || safeProfile == "." || safeProfile == ".." || safeProfile.contains("../")) {
@@ -5476,7 +5444,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
+  fun createNextProfile(programId: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val guardPrograms = freshestProgramsForProfileGuard()
       val requestedName = if (programId in guardedProfileProgramIds) nextGlobalProfileName(programId, guardPrograms) else ""
@@ -5504,7 +5472,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
+  fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val p = profile.trim()
       val before = uiState.value.programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
@@ -5529,7 +5497,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit) {
+  fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5544,7 +5512,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+  fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5558,7 +5526,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit) {
+  fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val requested = server.trim()
@@ -5597,7 +5565,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+  fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val safeServer = server.trim()
@@ -5611,7 +5579,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val ok = runCatching {
@@ -5622,7 +5590,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit) {
+  fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val safeFile = URLEncoder.encode(filename.trim(), "UTF-8")
@@ -5634,7 +5602,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit) {
+  fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val ok = runCatching {
@@ -5646,7 +5614,7 @@ private fun shQuote(s: String): String {
   }
 
 
-  fun uploadOpenVpnConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadOpenVpnConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val ok = runCatching {
@@ -5658,7 +5626,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
       val ok = runCatching {
@@ -5670,7 +5638,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun loadText(path: String, onDone: (String?) -> Unit) {
+  fun loadText(path: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val content = runCatching { api.getTextContent(path) }.getOrNull()
       if (content == null) log("ERR", "$path: load failed")
@@ -5678,7 +5646,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun loadRootTextFile(path: String, onDone: (String?) -> Unit) {
+  fun loadRootTextFile(path: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val content = runCatching { root.readTextFile(path) }.getOrNull()
       if (content == null) log("ERR", "$path: root read failed")
@@ -5686,7 +5654,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun saveText(path: String, content: String, onDone: (Boolean) -> Unit) {
+  fun saveText(path: String, content: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ok = runCatching { api.putTextContent(path, content) }.getOrDefault(false)
       if (ok) log("OK", "$path: saved (apply after stop/start)")
@@ -5754,7 +5722,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
+  fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)
       if (ok) log("OK", "$path: root saved")
@@ -5799,7 +5767,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
+  fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)
       if (ok) log("OK", "$path: saved (apply after stop/start)")
@@ -5818,7 +5786,7 @@ fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit) {
   }
 }
 
-fun loadStrategicText(dir: String, filename: String, onDone: (String?) -> Unit) {
+fun loadStrategicText(dir: String, filename: String, onDone: (String?) -> Unit = {}) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val obj = runCatching { api.getJsonData("/api/strategic/$dir/$enc") }.getOrNull()
@@ -5827,7 +5795,7 @@ fun loadStrategicText(dir: String, filename: String, onDone: (String?) -> Unit) 
   }
 }
 
-fun saveStrategicText(dir: String, filename: String, content: String, onDone: (Boolean) -> Unit) {
+fun saveStrategicText(dir: String, filename: String, content: String, onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val payload = JSONObject().put("content", content)
@@ -5836,7 +5804,7 @@ fun saveStrategicText(dir: String, filename: String, content: String, onDone: (B
   }
 }
 
-fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean) -> Unit) {
+fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val enc = URLEncoder.encode(filename, "UTF-8")
     val ok = runCatching { api.deletePath("/api/strategic/$dir/$enc") }.getOrDefault(false)
@@ -5844,7 +5812,7 @@ fun deleteStrategicFile(dir: String, filename: String, onDone: (Boolean) -> Unit
   }
 }
 
-fun uploadStrategicFile(dir: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit) {
+fun uploadStrategicFile(dir: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val ok = runCatching { api.uploadMultipart("/api/strategic/$dir/upload", filename, bytes) }.getOrDefault(false)
     withContext(Dispatchers.Main.immediate) { onDone(ok) }
@@ -5884,7 +5852,7 @@ fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVar
   }
 }
 
-fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
+fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String> = emptyList(), excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
@@ -5899,7 +5867,7 @@ fun applyStrategicVariant(programId: String, profile: String, file: String, host
   }
 }
 
-fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String>, onDone: (Boolean) -> Unit) {
+fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
@@ -6258,7 +6226,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
     }
   }
 
-  fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit) {
+  fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit = {}) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
@@ -6294,7 +6262,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
   }
 
 
-  fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit) {
+  fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit = {}) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
@@ -6354,7 +6322,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
     }
   }
 
-  fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit) {
+  fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit = {}) {
     val normalized = content
       .lineSequence()
       .map { it.trim() }
