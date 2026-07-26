@@ -146,14 +146,16 @@ fun BlockcheckScreen(
                             label = { Text(context.getString(R.string.blockcheck_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
-                        hostFiles.forEach { file ->
-                            val path = "/data/adb/modules/ZDT-D/strategic/list/$file"
-                            FilterChip(
-                                selected = selectedHostFile == path,
-                                onClick = { selectedHostFile = path },
-                                label = { Text(file.removeSuffix(".txt")) },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            hostFiles.forEach { file ->
+                                val path = "/data/adb/modules/ZDT-D/strategic/list/$file"
+                                FilterChip(
+                                    selected = selectedHostFile == path,
+                                    onClick = { selectedHostFile = path },
+                                    label = { Text(file.removeSuffix(".txt")) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

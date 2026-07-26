@@ -824,19 +824,18 @@ fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, St
     let timeout_str = timeout_secs.to_string();
     let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
+    // blockcheck2.sh approach: quick HEAD, no redirects, no body
     let args = vec![
         "-sS", "-o", "/dev/null",
-        "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
+        "-w", "%{http_code}",
         "--max-time", &timeout_str,
         "--connect-timeout", &timeout_str,
+        "-I",
         "-A", user_agent,
-        "--compressed",
-        "-L",
-        "--max-redirs", "3",
         &url,
     ];
 
-    let (code, out) = run(
+    let (_, out) = run(
         "sh",
         &[
             "-c",
@@ -849,12 +848,9 @@ fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, St
             ),
         ],
     )?;
-    let mut lines: Vec<&str> = out.lines().collect();
-    let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
-    let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-    let size = lines.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+    let http_code = out.trim().parse::<u32>().unwrap_or(0);
 
-    Ok((http_code, location, size))
+    Ok((http_code, String::new(), String::new()))
 }
 
 fn emit_event(event: &serde_json::Value) {

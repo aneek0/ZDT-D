@@ -58,6 +58,27 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+private const val HOSTLIST_PREFIX = "/data/adb/modules/ZDT-D/strategic/list/"
+
+private fun parseHostlistText(text: String): Pair<List<String>, List<String>> {
+  val include = mutableListOf<String>()
+  val exclude = mutableListOf<String>()
+  for (token in text.split(Regex("\\s+"))) {
+    val t = token.trim()
+    when {
+      t.startsWith("--hostlist=") -> {
+        val path = t.removePrefix("--hostlist=")
+        if (path.startsWith(HOSTLIST_PREFIX)) include.add(path.removePrefix(HOSTLIST_PREFIX))
+      }
+      t.startsWith("--hostlist-exclude=") -> {
+        val path = t.removePrefix("--hostlist-exclude=")
+        if (path.startsWith(HOSTLIST_PREFIX)) exclude.add(path.removePrefix(HOSTLIST_PREFIX))
+      }
+    }
+  }
+  return Pair(include, exclude)
+}
+
 private fun sha256HexUtf8(s: String): String {
   val md = MessageDigest.getInstance("SHA-256")
   val bytes = md.digest(s.toByteArray(Charsets.UTF_8))
@@ -97,6 +118,8 @@ fun StrategicVarConfigCard(
   var selectedExcludeHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
   var hostlistChooserOpen by remember(programId, profile) { mutableStateOf(false) }
   var applyingHostlists by remember(programId, profile) { mutableStateOf(false) }
+  var lastLoadedHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var lastLoadedExcludeHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
 
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
@@ -104,8 +127,14 @@ fun StrategicVarConfigCard(
   fun reloadConfig() {
     loading = true
     actions.loadText(configPath) { content ->
-      text = content ?: ""
-      lastLoaded = text
+      val t = content ?: ""
+      text = t
+      lastLoaded = t
+      val (h, e) = parseHostlistText(t)
+      selectedHostlists = h
+      selectedExcludeHostlists = e
+      lastLoadedHostlists = h
+      lastLoadedExcludeHostlists = e
       loading = false
     }
   }
@@ -145,6 +174,7 @@ fun StrategicVarConfigCard(
     applyingHostlists = true
     actions.applyProfileHostlists(programId, profile, selectedHostlists, selectedExcludeHostlists) { ok ->
       applyingHostlists = false
+      if (ok) reloadConfig()
       scope.launch {
         snackHost.showSnackbar(
           if (ok) ctx.getString(R.string.strategic_hostlists_applied)
@@ -171,12 +201,30 @@ fun StrategicVarConfigCard(
   }
   val isUserConfig = !variantsLoading && variants.isNotEmpty() && matched == null
   val canChooseVariant = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty()
+  val hostlistsChanged = selectedHostlists != lastLoadedHostlists || selectedExcludeHostlists != lastLoadedExcludeHostlists
+  val canSave = !loading && !saving && !applying && (text != lastLoaded || hostlistsChanged)
 
   fun saveConfig() {
     saving = true
-    actions.saveText(configPath, text) { ok ->
+    val hostlistArgs = buildList {
+      for (hl in selectedHostlists) add("--hostlist=$HOSTLIST_PREFIX$hl")
+      for (ex in selectedExcludeHostlists) add("--hostlist-exclude=$HOSTLIST_PREFIX$ex")
+    }
+    val cleaned = text
+      .replace(Regex("""--hostlist=[^\s]+"""), "")
+      .replace(Regex("""--hostlist-exclude=[^\s]+"""), "")
+      .replace(Regex("""[ \t]{2,}"""), " ")
+      .trimEnd()
+    val newText = if (hostlistArgs.isEmpty()) cleaned else {
+      cleaned + "\n" + hostlistArgs.joinToString(" ") + "\n"
+    }
+    actions.saveText(configPath, newText) { ok ->
       saving = false
-      if (ok) lastLoaded = text
+      if (ok) {
+        lastLoaded = newText
+        lastLoadedHostlists = selectedHostlists
+        lastLoadedExcludeHostlists = selectedExcludeHostlists
+      }
       scope.launch {
         snackHost.showSnackbar(
           if (ok) ctx.getString(R.string.editor_saved_apply_restart)
@@ -214,7 +262,7 @@ fun StrategicVarConfigCard(
           }
           Button(
             onClick = { saveConfig() },
-            enabled = !loading && !saving && !applying && text != lastLoaded,
+            enabled = canSave,
             modifier = Modifier.fillMaxWidth(),
           ) {
             Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
@@ -237,7 +285,7 @@ fun StrategicVarConfigCard(
           }
           Button(
             onClick = { saveConfig() },
-            enabled = !loading && !saving && !applying && text != lastLoaded,
+            enabled = canSave,
           ) {
             Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
           }
