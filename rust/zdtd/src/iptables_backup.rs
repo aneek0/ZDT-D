@@ -3,9 +3,9 @@ use std::{fs, path::PathBuf};
 
 use crate::{logging, settings, shell};
 
-const IPT_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-const IPT_RESTORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-const IPT_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const IPT_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const IPT_RESTORE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const IPT_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn capture_table_v4(table: &str) -> Result<String> {
     let cmd_c = format!("iptables-save -c -t {table}");

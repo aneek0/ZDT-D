@@ -8,11 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-const INITIAL_CHECK: Duration = Duration::from_secs(10);
-const FALLBACK_WAIT: Duration = Duration::from_secs(120);
+const INITIAL_CHECK: Duration = Duration::from_secs(3);
+const FALLBACK_WAIT: Duration = Duration::from_secs(30);
 const PROBE_INTERVAL: Duration = Duration::from_secs(3);
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(600);
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 
 static WAIT_ACTIVE: AtomicBool = AtomicBool::new(false);
 static COUNTDOWN_ACTIVE: AtomicBool = AtomicBool::new(false);

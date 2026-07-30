@@ -252,7 +252,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
         let mut st = lock_state(state);
         st.start = start.clone();
     }
-    api_status::write_stopping();
+    api_status::write_off();
 
     logging::info("stop requested -> scheduling stop_full in background");
 

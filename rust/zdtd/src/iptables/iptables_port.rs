@@ -4,8 +4,8 @@ use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
 use crate::{settings, shell::{self, Capture}, xtables_lock};
 
-const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
-const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(15);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
+const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
 
 // IMPORTANT: All iptables/ip6tables work in this module MUST go through the

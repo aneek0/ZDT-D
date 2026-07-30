@@ -386,7 +386,7 @@ fn parse_listen_port(toml_path: &Path) -> Result<u16> {
     Ok(0)
 }
 
-const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const XT_WAIT_SECS: &str = "5";
 
 fn supports_wait_fallback(out: &str) -> bool {

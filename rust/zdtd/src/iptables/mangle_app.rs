@@ -1,11 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{info, warn};
-use std::time::Duration;
+use std::{fs, io::Write, path::PathBuf, time::Duration};
 
 use crate::shell::Capture;
 use crate::xtables_lock;
 
-const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const XT_WAIT_SECS: &str = "5";
 const CHAIN: &str = "MANGLE_APP";
 
@@ -124,6 +124,7 @@ fn scoped_chain_name(label: &str) -> String {
 pub struct PreparedScopedMangleApp {
     cmd: String,
     chain: String,
+    rules_buf: Vec<Vec<String>>,
 }
 
 /// Prepare a per-runtime-profile NFQUEUE subchain under MANGLE_APP.
@@ -154,6 +155,7 @@ pub fn prepare_scoped(cmd: &str, scope_label: &str) -> Result<PreparedScopedMang
     Ok(PreparedScopedMangleApp {
         cmd: cmd.to_string(),
         chain,
+        rules_buf: Vec::new(),
     })
 }
 
@@ -190,32 +192,94 @@ pub fn remove_scoped(cmd: &str, scope_label: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn add_scoped_rule(prepared: &PreparedScopedMangleApp, rule_tail: &[String]) -> Result<()> {
-    let mut add: Vec<String> = vec![
-        "-t".into(),
-        "mangle".into(),
-        "-A".into(),
-        prepared.chain.clone(),
-    ];
-    add.extend_from_slice(rule_tail);
-    let (rc, out) = runv_timeout_retry(prepared.cmd.as_str(), &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+pub fn add_scoped_rule(prepared: &mut PreparedScopedMangleApp, rule_tail: &[String]) -> Result<()> {
+    prepared.rules_buf.push(rule_tail.to_vec());
+    Ok(())
+}
+
+pub fn finish_scoped(prepared: &mut PreparedScopedMangleApp) -> Result<()> {
+    // Add final RETURN
+    prepared.rules_buf.push(vec!["-j".into(), "RETURN".into()]);
+
+    if prepared.rules_buf.is_empty() {
+        return Ok(());
+    }
+
+    // Build an iptables-restore script: *mangle\n<rules>\nCOMMIT
+    let mut script = String::from("*mangle\n");
+    for tail in &prepared.rules_buf {
+        script.push_str("-A ");
+        script.push_str(&prepared.chain);
+        for arg in tail {
+            script.push(' ');
+            script.push_str(arg);
+        }
+        script.push('\n');
+    }
+    script.push_str("COMMIT\n");
+
+    // Write script to temp file
+    let tmp_dir = shell_preferred_tmp_dir();
+    let tmp_name = format!("zdt_mangle_{}", prepared.chain);
+    let tmp_path = tmp_dir.join(&tmp_name);
+    {
+        let mut f = fs::File::create(&tmp_path)
+            .with_context(|| format!("create mangle restore script: {}", tmp_path.display()))?;
+        f.write_all(script.as_bytes())
+            .with_context(|| format!("write mangle restore script: {}", tmp_path.display()))?;
+    }
+
+    // Fall back to individual iptables calls if iptables-restore --noflush fails
+    let restore_cmd = format!("{}-restore", prepared.cmd);
+    let (rc, out) = match run_timeout_retry(
+        &restore_cmd,
+        &["--noflush", tmp_path.to_str().unwrap_or(&tmp_name)],
+        Capture::Both,
+        IPT_CMD_TIMEOUT,
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("{}-restore --noflush unavailable, falling back to per-rule apply: {e:#}", prepared.cmd);
+            let _ = fs::remove_file(&tmp_path);
+            return apply_buffered_individually(prepared);
+        }
+    };
+
+    let _ = fs::remove_file(&tmp_path);
+
     if rc != 0 {
-        anyhow::bail!("{}: add scoped mangle rule failed in {}: {}", prepared.cmd, prepared.chain, out.trim());
+        // retry with per-rule fallback
+        warn!("{}: batch apply failed (rc={}), falling back to per-rule: {}", prepared.cmd, rc, out.trim());
+        return apply_buffered_individually(prepared);
+    }
+
+    Ok(())
+}
+
+/// Fallback: apply buffered rules one by one via individual iptables calls.
+fn apply_buffered_individually(prepared: &mut PreparedScopedMangleApp) -> Result<()> {
+    for tail in &prepared.rules_buf {
+        let mut add: Vec<String> = vec![
+            "-t".into(),
+            "mangle".into(),
+            "-A".into(),
+            prepared.chain.clone(),
+        ];
+        add.extend_from_slice(tail);
+        let (rc, out) = runv_timeout_retry(prepared.cmd.as_str(), &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("{}: add scoped mangle rule failed in {}: {}", prepared.cmd, prepared.chain, out.trim());
+        }
     }
     Ok(())
 }
 
-pub fn finish_scoped(prepared: &PreparedScopedMangleApp) -> Result<()> {
-    let (rc, out) = run_timeout_retry(
-        prepared.cmd.as_str(),
-        &["-t", "mangle", "-A", prepared.chain.as_str(), "-j", "RETURN"],
-        Capture::Both,
-        IPT_CMD_TIMEOUT,
-    )?;
-    if rc != 0 {
-        anyhow::bail!("{}: add scoped final RETURN failed in {}: {}", prepared.cmd, prepared.chain, out.trim());
+fn shell_preferred_tmp_dir() -> PathBuf {
+    let p = PathBuf::from("/data/local/tmp");
+    if p.is_dir() {
+        return p;
     }
-    Ok(())
+    std::env::temp_dir()
 }
 
 

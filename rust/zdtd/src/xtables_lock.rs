@@ -7,8 +7,8 @@ use std::{
 
 use crate::shell::{self, Capture};
 
-const LOCK_RETRY_COUNT: usize = 8;
-const LOCK_RETRY_DELAY: Duration = Duration::from_millis(150);
+const LOCK_RETRY_COUNT: usize = 3;
+const LOCK_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 fn global_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

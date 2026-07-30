@@ -94,10 +94,6 @@ pub fn write_on(partial: bool) {
     }
 }
 
-pub fn write_stopping() {
-    let _ = write(&ApiStatus::new("stopping", true, false, true, false, false, ""));
-}
-
 pub fn write_error_off(message: &str) {
     let _ = write(&ApiStatus::new("error", false, false, false, false, false, message));
 }

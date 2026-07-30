@@ -6,7 +6,7 @@ use crate::iptables::{caps, mangle_app, port_filter};
 use crate::shell::Capture;
 use crate::xtables_lock;
 
-const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const XT_WAIT_SECS: &str = "5";
 
 fn run_timeout_retry(cmd: &str, args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
@@ -148,8 +148,8 @@ pub fn apply(
         }
     }
 
-    mangle_app::finish_scoped(&mangle_v4)?;
-    if let Some(mangle_v6) = mangle_v6.as_ref() {
+    mangle_app::finish_scoped(&mut mangle_v4)?;
+    if let Some(ref mut mangle_v6) = mangle_v6 {
         if let Err(e) = mangle_app::finish_scoped(mangle_v6) {
             warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
         }

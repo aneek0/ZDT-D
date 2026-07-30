@@ -10,7 +10,7 @@ use std::{
 
 use crate::{shell::{self, Capture}, xtables_lock};
 
-const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(8);
+const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 const PKG_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const PROC_NET_DEV: &str = "/proc/net/dev";
 const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";

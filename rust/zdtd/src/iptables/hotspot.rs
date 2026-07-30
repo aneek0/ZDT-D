@@ -8,7 +8,7 @@ use crate::{
     xtables_lock,
 };
 
-const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const XT_WAIT_SECS: &str = "5";
 
 pub const CHAIN: &str = "ZDT_HOTSPOT_REDIRECT";

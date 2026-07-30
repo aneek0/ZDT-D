@@ -54,8 +54,13 @@ pub struct StatusReport {
 // Compatibility alias used by daemon.rs
 pub type Report = StatusReport;
 
-/// Backward-compatible entrypoint (daemon passes a flag; we ignore it and detect running processes).
-pub fn collect_report(_services_running: bool) -> Result<Report> {
+/// Backward-compatible entrypoint.
+/// When services are known to be stopped, return an empty report immediately
+/// without probing /proc or executing pidof.
+pub fn collect_report(services_running: bool) -> Result<Report> {
+    if !services_running {
+        return Ok(Report::default());
+    }
     collect_status()
 }
 

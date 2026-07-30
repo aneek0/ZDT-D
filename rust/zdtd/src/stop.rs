@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{path::Path, thread, time::Duration};
 
-use crate::{iptables_backup, shell};
+use crate::{api_status, iptables_backup, shell};
 
 const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";
 const LYREBIRD_BIN: &str = "/data/adb/modules/ZDT-D/bin/lyrebird";
@@ -182,38 +182,48 @@ fn stop_process_groups_parallel() -> Result<()> {
 }
 
 pub fn stop_services_and_restore_iptables() -> Result<()> {
-    crate::programs::dnscrypt::request_stop();
-    crate::programs::dnscrypt::clear_ipv6_resetprops();
-    // Clean routing/iptables hooks before killing services. This prevents clients from
-    // being routed to already-stopped t2s/VPN interfaces during shutdown.
-    if let Err(e) = crate::vpn_tether::cleanup() {
-        log::warn!("vpn_tether cleanup failed during stop: {e:#}");
-    }
-    if let Err(e) = crate::iptables::hotspot::cleanup() {
-        log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
-    }
-    if let Err(e) = crate::vpn_netd::stop_applied() {
-        log::warn!("vpn_netd cleanup failed during stop: {e:#}");
-    }
-    // 1) stop background processes
-    // Use `pidof` to avoid killing similarly-named processes.
-    stop_process_groups_parallel()?;
-    let _ = crate::programs::myprogram::stop_all();
-    // Stop VPN profile engines only when they were launched from this module path.
-    kill_exact_pids("openvpn --config <profile>/client.ovpn", &crate::programs::openvpn::main_pids_exact())?;
-    kill_exact_pids("amneziawg-go -f <profile tun>", &crate::programs::amneziawg::main_pids_exact())?;
-    crate::programs::amneziawg::cleanup_all_interfaces();
-    kill_exact_pids("mihomo -d <profile>/work -f config.runtime.yaml", &crate::programs::mihomo::main_pids_exact())?;
-    kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
-    kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;
-    kill_exact_pids("mieru tun2proxy -device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
-    kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
+    // Skip process-kill logic if api_status already reports "off" (e.g. stop was
+    // requested while services were never started — handle_stop_async writes
+    // write_off() before spawning this thread). This avoids unnecessary pidof calls.
+    let services_possibly_active = match api_status::read() {
+        Ok(Some(st)) => st.state != "off",
+        _ => true,
+    };
 
-    // IMPORTANT: do not stop plain substring/name matches for Tor.
-    // Some Android systems have unrelated processes containing "tor".
-    // Stop only the exact Tor command using our torrc, plus our exact lyrebird.
-    kill_exact_pids("torproxy -f <our torrc>", &tor_main_pids_exact())?;
-    kill_exact_pids("lyrebird <our binary>", &lyrebird_pids_exact())?;
+    if services_possibly_active {
+        crate::programs::dnscrypt::request_stop();
+        crate::programs::dnscrypt::clear_ipv6_resetprops();
+        // Clean routing/iptables hooks before killing services. This prevents clients from
+        // being routed to already-stopped t2s/VPN interfaces during shutdown.
+        if let Err(e) = crate::vpn_tether::cleanup() {
+            log::warn!("vpn_tether cleanup failed during stop: {e:#}");
+        }
+        if let Err(e) = crate::iptables::hotspot::cleanup() {
+            log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
+        }
+        if let Err(e) = crate::vpn_netd::stop_applied() {
+            log::warn!("vpn_netd cleanup failed during stop: {e:#}");
+        }
+        // 1) stop background processes
+        // Use `pidof` to avoid killing similarly-named processes.
+        stop_process_groups_parallel()?;
+        let _ = crate::programs::myprogram::stop_all();
+        // Stop VPN profile engines only when they were launched from this module path.
+        kill_exact_pids("openvpn --config <profile>/client.ovpn", &crate::programs::openvpn::main_pids_exact())?;
+        kill_exact_pids("amneziawg-go -f <profile tun>", &crate::programs::amneziawg::main_pids_exact())?;
+        crate::programs::amneziawg::cleanup_all_interfaces();
+        kill_exact_pids("mihomo -d <profile>/work -f config.runtime.yaml", &crate::programs::mihomo::main_pids_exact())?;
+        kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
+        kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;
+        kill_exact_pids("mieru tun2proxy -device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
+        kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
+
+        // IMPORTANT: do not stop plain substring/name matches for Tor.
+        // Some Android systems have unrelated processes containing "tor".
+        // Stop only the exact Tor command using our torrc, plus our exact lyrebird.
+        kill_exact_pids("torproxy -f <our torrc>", &tor_main_pids_exact())?;
+        kill_exact_pids("lyrebird <our binary>", &lyrebird_pids_exact())?;
+    }
 
     // 2) remove runtime guard chains before restore
     let _ = crate::proxyinfo::clear_rules();
