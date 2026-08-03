@@ -240,7 +240,7 @@ private fun LogsSheetContent(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth().weight(1f),
       ) {
-        items(logs, key = { it.ts + it.msg }, contentType = { "log_entry" }) { l ->
+        items(logs, key = { it.id }, contentType = { "log_entry" }) { l ->
           Card(colors = CardDefaults.cardColors(containerColor = logsSheetCardContainerColor())) {
             Column(Modifier.padding(12.dp)) {
               Text("${l.ts} • ${l.level}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))

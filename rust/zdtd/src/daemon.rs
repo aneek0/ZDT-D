@@ -252,6 +252,16 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
         let mut st = lock_state(state);
         st.start = start.clone();
     }
+
+    // Capture whether services were actually running BEFORE flipping api_status
+    // to "off". write_off() must stay before the background thread so the UI
+    // updates immediately, but stop_full's kill logic decides on this flag —
+    // reading api_status inside the thread would always see "off" and skip
+    // killing every running proxy/Tor/VPN process.
+    let was_running = match api_status::read() {
+        Ok(Some(st)) => st.state != "off",
+        _ => true,
+    };
     api_status::write_off();
 
     logging::info("stop requested -> scheduling stop_full in background");
@@ -261,7 +271,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
             crate::scan_detector::stop();
             energy_saver::stop_monitor();
-            runtime::stop_full().context("stop_full")
+            runtime::stop_full(was_running).context("stop_full")
         }));
         match outcome {
             Ok(res) => match res {

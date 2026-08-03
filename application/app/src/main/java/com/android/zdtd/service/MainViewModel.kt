@@ -182,6 +182,7 @@ data class UiState(
 
 
 data class LogLine(
+  val id: Long,
   val ts: String,
   val level: String,
   val msg: String,
@@ -273,6 +274,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   private val _logs = MutableStateFlow<List<LogLine>>(emptyList())
   val logs: StateFlow<List<LogLine>> = _logs.asStateFlow()
+  // Monotonic id so each log line keeps a stable, unique LazyColumn key even when
+  // multiple lines share the same second-resolution timestamp and message text.
+  private val logLineId = java.util.concurrent.atomic.AtomicLong(0)
 
   // ----- Backup / Restore -----
   private val _backup = MutableStateFlow(BackupUiState())
@@ -5046,7 +5050,7 @@ private fun shQuote(s: String): String {
 
   private fun log(level: String, msg: String) {
     val ts = ApiModels.fmtTs()
-    _logs.update { (it + LogLine(ts, level, msg)).takeLast(250) }
+    _logs.update { (it + LogLine(logLineId.incrementAndGet(), ts, level, msg)).takeLast(250) }
   }
 
   fun refreshDaemonLog() {

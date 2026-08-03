@@ -282,8 +282,9 @@ if !any_main_service_running() {
     let _ = settings::write_start_settings(&st);
 
     // Stop services and restore baseline iptables; always restore captive portal settings.
+    // Services may have partially started, so always run the process-kill phase.
     crate::runtime_state::clear();
-    let stop_res = stop::stop_services();
+    let stop_res = stop::stop_services(true);
     crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
@@ -482,7 +483,11 @@ fn final_sync_runtime_settings_best_effort(context: &str) {
 }
 
 /// Stop all services and restore baseline iptables.
-pub fn stop_full() -> Result<()> {
+///
+/// `services_possibly_active` is captured by the caller before api_status is
+/// flipped to "off"; it controls whether the process-kill phase runs (skips
+/// redundant pidof calls when nothing was ever started).
+pub fn stop_full(services_possibly_active: bool) -> Result<()> {
     crate::logging::user_info("Остановка: начало");
     // Temporary Permissive while we touch iptables. Keep stop best-effort even if
     // SELinux cannot be toggled on a specific firmware.
@@ -496,7 +501,7 @@ pub fn stop_full() -> Result<()> {
 
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
-    let stop_res = stop::stop_services();
+    let stop_res = stop::stop_services(services_possibly_active);
     crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(

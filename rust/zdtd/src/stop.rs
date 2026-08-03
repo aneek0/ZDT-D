@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{path::Path, thread, time::Duration};
 
-use crate::{api_status, iptables_backup, shell};
+use crate::{iptables_backup, shell};
 
 const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";
 const LYREBIRD_BIN: &str = "/data/adb/modules/ZDT-D/bin/lyrebird";
@@ -181,15 +181,11 @@ fn stop_process_groups_parallel() -> Result<()> {
     Ok(())
 }
 
-pub fn stop_services_and_restore_iptables() -> Result<()> {
-    // Skip process-kill logic if api_status already reports "off" (e.g. stop was
-    // requested while services were never started — handle_stop_async writes
-    // write_off() before spawning this thread). This avoids unnecessary pidof calls.
-    let services_possibly_active = match api_status::read() {
-        Ok(Some(st)) => st.state != "off",
-        _ => true,
-    };
-
+pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Result<()> {
+    // Skip process-kill logic only when services were never started. The flag is
+    // captured by the caller (handle_stop_async) BEFORE api_status is flipped to
+    // "off", so a real stop still kills every running process while a redundant
+    // stop avoids unnecessary pidof calls.
     if services_possibly_active {
         crate::programs::dnscrypt::request_stop();
         crate::programs::dnscrypt::clear_ipv6_resetprops();
@@ -244,6 +240,6 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
 }
 
 // Compatibility alias: runtime expects stop::stop_services()
-pub fn stop_services() -> Result<()> {
-    stop_services_and_restore_iptables()
+pub fn stop_services(services_possibly_active: bool) -> Result<()> {
+    stop_services_and_restore_iptables(services_possibly_active)
 }
