@@ -32,7 +32,24 @@ fn pidof_any(names: &[&str]) -> Vec<i32> {
 }
 
 fn pid_alive(pid: i32) -> bool {
-    Path::new("/proc").join(pid.to_string()).is_dir()
+    let dir = Path::new("/proc").join(pid.to_string());
+    if !dir.is_dir() {
+        return false;
+    }
+    // A zombie (state Z) is already dead; it only lingers until the parent
+    // reaps it with waitpid(). Treat it as not alive so stop doesn't spin on
+    // SIGTERM/SIGKILL against an unkillable process and then log a false
+    // "failed to kill" warning.
+    if let Ok(stat) = std::fs::read_to_string(dir.join("stat")) {
+        // Format: pid (comm) state ...  comm may contain spaces/parens, so
+        // parse the state after the last ')'
+        if let Some(idx) = stat.rfind(')') {
+            if let Some(state) = stat[idx + 1..].split_whitespace().next() {
+                return state != "Z";
+            }
+        }
+    }
+    true
 }
 
 fn kill_pids_with_escalation(label: &str, pids: &[i32]) -> Result<()> {
