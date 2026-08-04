@@ -476,7 +476,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   private fun releaseApkUrl(tag: String): String {
     // Asset name is stable by design.
-    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
+    return "https" + "://github.com/aneek0/ZDT-D/releases/download/${tag}/app-release.apk"
   }
 
   private suspend fun httpGetMaybeCached(
@@ -548,7 +548,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
   private suspend fun fetchReleaseJsonByTag(tag: String): JSONObject? {
-    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/tags/${tag}") ?: return null
+    val body = httpGetText("https" + "://api.github.com/repos/aneek0/ZDT-D/releases/tags/${tag}") ?: return null
     return runCatching { JSONObject(body) }.getOrNull()
   }
 
@@ -602,13 +602,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   )
 
   private suspend fun fetchModulePropCommitSha(): String? {
-    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
+    val body = httpGetText("https://api.github.com/repos/aneek0/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
     val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
     return arr.optJSONObject(0)?.optString("sha")?.takeIf { it.isNotBlank() }
   }
 
   private suspend fun fetchRelevantBuildRun(expectedSha: String?, publishedSha: String?): WorkflowRunInfo? {
-    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
+    val body = httpGetText("https://api.github.com/repos/aneek0/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
     val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
     val runs = buildList {
       for (i in 0 until arr.length()) {
@@ -628,7 +628,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   private suspend fun fetchWorkflowJobs(runId: Long): List<WorkflowJobInfo> {
-    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
+    val body = httpGetText("https" + "://api.github.com/repos/aneek0/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
     val arr = runCatching { JSONObject(body).optJSONArray("jobs") }.getOrNull() ?: return emptyList()
     return buildList {
       for (i in 0 until arr.length()) {
@@ -793,7 +793,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     _appUpdate.update { it.copy(enabled = true, checking = true, errorText = null) }
 
     // 1) Latest release
-    val latestUrl = "https://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/latest"
+    val latestUrl = "https://api.github.com/repos/aneek0/ZDT-D/releases/latest"
     val etagRel = root.getGitHubEtagLatestRelease()
     val (codeRel, bodyRel, newEtagRel) = runCatching { httpGetMaybeCached(latestUrl, etagRel) }
       .getOrElse {
@@ -832,7 +832,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // 2) module.prop (always main)
-    val modulePropUrl = "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/module.prop"
+    val modulePropUrl = "https://raw.githubusercontent.com/aneek0/ZDT-D/main/module.prop"
     val etagProp = root.getGitHubEtagModuleProp()
     val (codeProp, bodyProp, newEtagProp) = runCatching { httpGetMaybeCached(modulePropUrl, etagProp) }
       .getOrElse {
@@ -877,7 +877,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // If latest release is still older, keep showing the preparation state instead of hiding the update.
     val tagVer = normalizeTagToVersion(tag)
     val stableTag = if (tagVer == remoteVersion) tag else "V${remoteVersion}"
-    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/tag/${stableTag}"
+    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/aneek0/ZDT-D/releases/tag/${stableTag}"
 
     // Local comparison is based on the bundled module.prop inside the APK (next to the installer payload).
     // This ensures that online update checks follow the same versioning as the embedded module.
@@ -6811,7 +6811,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
 
   fun startAppUpdateDownload() {
     val url = _appUpdate.value.downloadUrl
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/aneek0/ZDT-D/releases"
     if (url.isNullOrBlank()) {
       if (_appUpdate.value.releaseBuild.status !in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
         _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
@@ -6860,14 +6860,14 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
   }
 
   fun declineUnknownSourcesPermission() {
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/aneek0/ZDT-D/releases"
     clearDownloadedUpdateApk()
     _appUpdate.update { it.copy(bannerVisible = false, errorText = null) }
     _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
   }
 
   fun onUnknownSourcesPermissionResult(granted: Boolean) {
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/aneek0/ZDT-D/releases"
     val path = _appUpdate.value.downloadedPath
     _appUpdate.update { it.copy(needsUnknownSourcesPermission = false) }
 
