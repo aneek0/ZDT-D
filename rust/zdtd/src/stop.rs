@@ -242,6 +242,13 @@ pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Res
     let _ = crate::proxyinfo::clear_rules();
     let _ = crate::blockedquic::clear_rules();
 
+    // Collect zombie children left by killed/stopped services. Daemon-spawned
+    // binaries are never waited on, so without this every stopped nfqws/etc.
+    // lingers as a zombie until the daemon restarts. Done here (not a global
+    // background waitpid) so we never race with code that waits on its own
+    // child, e.g. amneziawg's try_wait() loop.
+    reap_children();
+
     // 3) flush nat/mangle and restore baseline backups independently for IPv4 and IPv6
     crate::runtime_refresh::clear_routing_cache();
     let restored_v4 = iptables_backup::reset_restore_v4_if_present()?;
@@ -259,4 +266,16 @@ pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Res
 // Compatibility alias: runtime expects stop::stop_services()
 pub fn stop_services(services_possibly_active: bool) -> Result<()> {
     stop_services_and_restore_iptables(services_possibly_active)
+}
+
+/// Reap any finished child processes of the daemon (zombies).
+fn reap_children() {
+    unsafe {
+        loop {
+            let pid = libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG);
+            if pid <= 0 {
+                break;
+            }
+        }
+    }
 }
