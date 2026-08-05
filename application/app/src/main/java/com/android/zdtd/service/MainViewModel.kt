@@ -19,7 +19,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
-import com.android.zdtd.service.api.DeviceInfo
 import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteRootClient
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
@@ -176,7 +175,7 @@ data class UiState(
   val token: String = "",
   val remoteTargetName: String = "",
   val remoteTargetAddress: String = "",
-  val device: DeviceInfo = DeviceInfo(),
+  val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,

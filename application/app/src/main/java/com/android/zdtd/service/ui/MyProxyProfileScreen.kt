@@ -350,7 +350,7 @@ private fun MyProxyProtoModeCard(
   onSelect: (String) -> Unit,
 ) {
   val accent = Color(0xFFA855F7)
-  MyProxySectionCard(
+  SectionCard(
     title = stringResource(R.string.myproxy_proto_mode_title),
     desc = stringResource(R.string.myproxy_proto_mode_desc),
     accent = accent,
