@@ -18,17 +18,32 @@ class BlockcheckRunner(
     private val context: Context,
 ) {
     suspend fun listStrategies(program: String): List<String> = withContext(Dispatchers.IO) {
-        val binary = NfqwsTesterBinary(context).ensureInstalled()
-        val cmd = buildShellCommand(binary.absolutePath, listOf("list", "--program", program))
-        val result = runRoot(cmd)
-        val json = runCatching { JSONObject(result) }.getOrNull() ?: return@withContext emptyList()
-        val arr = json.optJSONArray("strategies") ?: return@withContext emptyList()
-        buildList {
-            for (i in 0 until arr.length()) {
-                val v = arr.optString(i, "")
-                if (v.isNotBlank()) add(v)
+        val fromBinary = runCatching {
+            val binary = NfqwsTesterBinary(context).ensureInstalled()
+            val cmd = buildShellCommand(binary.absolutePath, listOf("list", "--program", program))
+            val result = runRoot(cmd)
+            val json = runCatching { JSONObject(result) }.getOrNull() ?: return@runCatching emptyList<String>()
+            val arr = json.optJSONArray("strategies") ?: return@runCatching emptyList<String>()
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val v = arr.optString(i, "")
+                    if (v.isNotBlank()) add(v)
+                }
             }
-        }
+        }.getOrDefault(emptyList())
+        // Old/missing tester binaries (or empty stubs from fast-build fallback) return nothing
+        // for the "list" command. Fall back to reading the installed module's strategy dir,
+        // which is what the tester itself scans at runtime.
+        if (fromBinary.isNotEmpty()) fromBinary else listStrategiesFromModuleDir(program)
+    }
+
+    private suspend fun listStrategiesFromModuleDir(program: String): List<String> = withContext(Dispatchers.IO) {
+        val dir = "/data/adb/modules/ZDT-D/strategic/strategicvar/$program"
+        val result = runRoot("ls -1 '$dir' 2>&1 || true")
+        result.lines().mapNotNull { line ->
+            val name = line.trim()
+            if (name.endsWith(".txt") && !name.contains('/')) name else null
+        }.sorted()
     }
 
     suspend fun listHostFiles(): List<String> = withContext(Dispatchers.IO) {
