@@ -556,6 +556,7 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
         addStatic("tor.log", "/data/adb/modules/ZDT-D/working_folder/tor/log/tor.log")
         addStatic("t2s.log", "/data/adb/modules/ZDT-D/working_folder/tor/log/t2s.log")
       }
+      "tgwsproxy" -> addStatic("tg-ws-proxy.log", "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/log/tg-ws-proxy.log")
     }
   } else {
     when (target.programId) {
@@ -567,6 +568,12 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
         val base = "/data/adb/modules/ZDT-D/working_folder/singbox/profile/$profile"
         addStatic("t2s.log", "$base/log/t2s.log")
         addFindExact("$base/server", 3, "sing-box.log")
+      }
+      "hysteria2" -> {
+        val base = "/data/adb/modules/ZDT-D/working_folder/hysteria2/profile/$profile"
+        addStatic("t2s.log", "$base/log/t2s.log")
+        addStatic("tun2socks.log", "$base/log/tun2socks.log")
+        addFindExact("$base/server", 3, "hysteria2.log")
       }
       "wireproxy" -> {
         val base = "/data/adb/modules/ZDT-D/working_folder/wireproxy/profile/$profile"

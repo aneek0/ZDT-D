@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.AltRoute
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,14 +59,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 import java.util.Locale
 
 @Composable
 fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
+  tgWsProxy: TgWsProxyComponentState,
   onOpenProgram: (String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -79,7 +85,13 @@ fun AppsListScreen(
   var query by rememberSaveable { mutableStateOf("") }
   val q = query.trim()
 
-  val all = programs
+  val all = remember(programs, tgWsProxy.installed) {
+    if (tgWsProxy.installed && programs.none { it.id == "tgwsproxy" }) {
+      programs + ApiModels.Program(id = "tgwsproxy", name = "Telegram WS Proxy", enabled = true)
+    } else {
+      programs
+    }
+  }
   val filtered = remember(all, q) {
     if (q.isBlank()) {
       all
@@ -135,6 +147,21 @@ fun AppsListScreen(
         onQueryChange = { query = it },
         onClearQuery = { query = "" },
         onOpenAnalysisTools = onOpenAnalysisTools,
+      )
+    }
+
+    item(key = "optional_tools_entry") {
+      OptionalToolsEntryCard(
+        compact = compactCards,
+        installedCount = if (tgWsProxy.installed) 1 else 0,
+        onClick = onOpenOptionalTools,
+      )
+    }
+
+    item(key = "vps_servers_entry") {
+      VpsServersEntryCard(
+        compact = compactCards,
+        onClick = onOpenVpsServers,
       )
     }
 
@@ -245,6 +272,128 @@ fun AppsListScreen(
     }
 
     item { Spacer(Modifier.height(4.dp)) }
+  }
+}
+
+
+@Composable
+private fun OptionalToolsEntryCard(
+  compact: Boolean,
+  installedCount: Int,
+  onClick: () -> Unit,
+) {
+  val accentColor = MaterialTheme.colorScheme.primary
+  Card(
+    onClick = onClick,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(if (compact) 48.dp else 54.dp),
+        shape = CircleShape,
+        color = accentColor.copy(alpha = 0.14f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Outlined.Extension, contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 27.dp))
+        }
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          stringResource(R.string.optional_tools_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          stringResource(R.string.optional_tools_entry_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        ProgramBadgeRow(
+          label = if (installedCount > 0) stringResource(R.string.optional_tools_installed_count, installedCount) else stringResource(R.string.optional_tools_available),
+          containerColor = accentColor.copy(alpha = 0.14f),
+          contentColor = accentColor,
+        )
+      }
+      Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f), modifier = Modifier.size(22.dp))
+    }
+  }
+}
+
+@Composable
+private fun VpsServersEntryCard(
+  compact: Boolean,
+  onClick: () -> Unit,
+) {
+  val accentColor = MaterialTheme.colorScheme.tertiary
+  Card(
+    onClick = onClick,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(if (compact) 48.dp else 54.dp),
+        shape = CircleShape,
+        color = accentColor.copy(alpha = 0.14f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 27.dp))
+        }
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          stringResource(R.string.vps_servers_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          stringResource(R.string.vps_servers_entry_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        ProgramBadgeRow(
+          label = stringResource(R.string.vps_servers_badge),
+          containerColor = accentColor.copy(alpha = 0.14f),
+          contentColor = accentColor,
+        )
+      }
+      Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f), modifier = Modifier.size(22.dp))
+    }
   }
 }
 
@@ -726,6 +875,7 @@ internal fun programIconRes(id: String): Int? {
     "mihomo" -> R.drawable.ic_tool_mihomo
     "mieru" -> R.drawable.ic_tool_mieru
     "sing-box" -> R.drawable.ic_tool_sing_box
+    "hysteria2" -> R.drawable.ic_tool_hysteria2
     else -> null
   }
 }
@@ -749,6 +899,8 @@ internal fun programIcon(id: String): ImageVector {
     "mihomo" -> Icons.Outlined.AltRoute
     "mieru" -> Icons.Outlined.Extension
     "sing-box" -> Icons.Outlined.Extension
+    "hysteria2" -> Icons.Outlined.Extension
+    "tgwsproxy" -> Icons.Outlined.AddCircleOutline
     else -> Icons.Outlined.Extension
   }
 }

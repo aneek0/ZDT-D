@@ -25,8 +25,8 @@ redirection and proxy engines that expose SOCKS5-compatible local ports.
 - evaluate traffic rules from `TRAFFIC_RULES`;
 - sniff HTTP Host, HTTP CONNECT target and TLS SNI on a best-effort basis.
 
-This build is TCP-only. It does not proxy UDP and it does not implement DNS
-resolution/routing internally.
+TCP proxying is always available. When ZDT-D enables `tproxy_enabled`, t2s also
+starts a UDP TPROXY relay. DNS resolution/routing policy remains external to t2s.
 
 ## Where ZDT-D uses it
 
@@ -213,7 +213,7 @@ Both must be used together. If both are omitted, transparent mode is used.
 
 ### Runtime and limits
 
-- `--buffer-size <BYTES>` — socket buffer size. Default: `131072`.
+- `--buffer-size <BYTES>` — socket buffer size. Default: `65536`.
 - `--idle-timeout <SECONDS>` — idle timeout. `0` disables it. Default: `600`.
 - `--connect-timeout <SECONDS>` — backend connect timeout. Default: `8`.
 - `--enable-http2` — compatibility flag retained for parity; currently no-op.
@@ -329,8 +329,8 @@ runtime state and kill selected connections.
 
 ## Limitations
 
-- TCP only;
-- no UDP proxying;
+- TCP proxying is always available;
+- UDP relay is enabled only by ZDT-D `tproxy_enabled`; without it, only TCP is started;
 - no internal DNS server;
 - `--enable-http2` is a compatibility flag, not a separate HTTP/2 engine;
 - host detection is best-effort and depends on early traffic bytes;
@@ -342,3 +342,10 @@ runtime state and kill selected connections.
 ```bash
 cargo build --release -p t2s
 ```
+
+
+## TPROXY transparent mode
+
+When `/data/adb/modules/ZDT-D/setting/setting.json` has `"tproxy_enabled": true`, t2s opens TCP as a transparent listener and starts a UDP TPROXY receiver on the same numeric listen port. No CLI arguments are added. Firewall, mark and policy-routing rules are managed outside t2s. When `tproxy_enabled` is false, UDP is not started.
+
+UDP routing: balance mode uses a GREEN backend with SOCKS5 UDP ASSOCIATE support, otherwise direct. Priority mode first finds the first GREEN priority group; UDP may use only UDP-capable backends in that group, otherwise direct.

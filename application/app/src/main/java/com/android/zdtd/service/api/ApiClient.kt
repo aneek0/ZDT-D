@@ -62,6 +62,11 @@ class ApiClient(
     return ApiModels.parseTrafficReport(obj)
   }
 
+fun getRuntimeApplyStatus(): ApiModels.RuntimeApplyStatus {
+    val obj = requestJson("GET", "/api/runtime-apply/status", null)
+    return ApiModels.parseRuntimeApplyStatus(obj)
+  }
+
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
     val body = JSONObject().put("enabled", enabled)
@@ -86,7 +91,7 @@ class ApiClient(
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
     val p = profile?.trim().orEmpty()
-    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo" || programId == "mieru" || programId == "amneziawg" || programId == "sing-box") {
+    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo" || programId == "mieru" || programId == "hysteria2" || programId == "amneziawg" || programId == "sing-box") {
       val body = JSONObject()
       if (p.isNotEmpty()) body.put("name", p)
       return requestOk("POST", "/api/programs/${enc(programId)}/profiles", body)
@@ -106,6 +111,20 @@ class ApiClient(
 
   fun deleteSingBoxServer(profile: String, server: String): Boolean {
     val path = "/api/programs/sing-box/profiles/${enc(profile)}/servers/${enc(server)}"
+    return requestOk("DELETE", path, null)
+  }
+
+
+  fun createHysteria2Server(profile: String, server: String? = null): Boolean {
+    val path = "/api/programs/hysteria2/profiles/${enc(profile)}/servers"
+    val body = JSONObject()
+    val s = server?.trim().orEmpty()
+    if (s.isNotEmpty()) body.put("name", s)
+    return requestOk("POST", path, body)
+  }
+
+  fun deleteHysteria2Server(profile: String, server: String): Boolean {
+    val path = "/api/programs/hysteria2/profiles/${enc(profile)}/servers/${enc(server)}"
     return requestOk("DELETE", path, null)
   }
 
@@ -232,12 +251,46 @@ class ApiClient(
   fun setAdvancedSettings(
     selinuxPermissiveEnabled: Boolean? = null,
     ipForwardEnabled: Boolean? = null,
+    tproxyEnabled: Boolean? = null,
   ): ApiModels.DaemonSettings {
     val body = JSONObject()
     selinuxPermissiveEnabled?.let { body.put("selinux_permissive_enabled", it) }
     ipForwardEnabled?.let { body.put("ip_forward_enabled", it) }
+    tproxyEnabled?.let { body.put("tproxy_enabled", it) }
     val obj = requestJson("POST", "/api/setting", body)
     return ApiModels.parseDaemonSettings(obj)
+  }
+
+  // ----- Captive portal (hotspot device authorization) -----
+
+  fun setCaptivePortalEnabled(enabled: Boolean): ApiModels.DaemonSettings {
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject().put("captive_portal_enabled", enabled),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun getCaptivePortalStatus(): ApiModels.CaptivePortalStatus {
+    val obj = requestJson("GET", "/api/hotspot/captive/status", null)
+    return ApiModels.parseCaptivePortalStatus(obj)
+  }
+
+  fun getCaptiveDevices(): List<ApiModels.CaptiveDevice> {
+    val obj = requestJson("GET", "/api/hotspot/captive/devices", null)
+    return ApiModels.parseCaptiveDevices(obj)
+  }
+
+  fun allowCaptiveDevice(id: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/allow", JSONObject().put("id", id))
+  }
+
+  fun denyCaptiveDevice(id: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/deny", JSONObject().put("id", id))
+  }
+  fun renameCaptiveDevice(id: String, name: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/rename", JSONObject().put("id", id).put("name", name))
   }
 
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
@@ -398,9 +451,10 @@ fun uploadMultipart(path: String, filename: String, file: File): Boolean {
       if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
-    // fall through to root-proxy
+    // fall through to root-proxy only for the local daemon
   }
 
+  if (!isLocalBaseUrl(baseUrl)) return false
   return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, file))
 }
 
@@ -433,9 +487,10 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
       if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
-    // fall through to root-proxy
+    // fall through to root-proxy only for the local daemon
   }
 
+  if (!isLocalBaseUrl(baseUrl)) return false
   return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, bytes))
 }
 
@@ -478,8 +533,9 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
 
   private fun requestJson(method: String, path: String, body: JSONObject?): JSONObject? {
     // 1) Try normal HTTP.
+    val baseUrl = baseUrlProvider().trimEnd('/').ifEmpty { "h" + "ttp://127.0.0.1:1006" }
     try {
-      val url = baseUrlProvider().trimEnd('/') + path
+      val url = baseUrl + path
       val req = buildRequest(method, url, body)
       http.newCall(req).execute().use { resp ->
         val text = resp.body?.string().orEmpty()
@@ -487,6 +543,7 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
         return parseJsonOrThrow(text)
       }
     } catch (e: Throwable) {
+      if (!isLocalBaseUrl(baseUrl)) throw e
       // 2) Root-proxy fallback.
       val raw = when (method.uppercase()) {
         "GET", "HEAD" -> rootManager.proxyGet(path)
@@ -535,6 +592,13 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
       "DELETE" -> b.delete((body ?: JSONObject()).toString().toRequestBody(jsonMedia)).build()
       else -> b.method(method.uppercase(), (body ?: JSONObject()).toString().toRequestBody(jsonMedia)).build()
     }
+  }
+
+  private fun isLocalBaseUrl(baseUrl: String): Boolean {
+    val value = baseUrl.trim().lowercase()
+    return value.startsWith("http://127.0.0.1") ||
+      value.startsWith("http://localhost") ||
+      value.startsWith("http://[::1]")
   }
 
   private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")

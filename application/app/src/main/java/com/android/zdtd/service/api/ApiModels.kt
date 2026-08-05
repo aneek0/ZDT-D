@@ -29,11 +29,13 @@ object ApiModels {
     val dnscrypt: ProcAgg = ProcAgg(),
     val dpitunnel: ProcAgg = ProcAgg(),
     val singBox: ProcAgg = ProcAgg(),
+    val hysteria2: ProcAgg = ProcAgg(),
     val wireProxy: ProcAgg = ProcAgg(),
     val tor: ProcAgg = ProcAgg(),
     val openVpn: ProcAgg = ProcAgg(),
     val mihomo: ProcAgg = ProcAgg(),
     val mieru: ProcAgg = ProcAgg(),
+    val tgwsproxy: ProcAgg = ProcAgg(),
     val tun2Proxy: ProcAgg = ProcAgg(),
     val amneziaWg: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
@@ -49,6 +51,35 @@ object ApiModels {
     val statusUpdatedAtUnix: Long = 0L,
     val lastError: String = "",
   )
+
+
+  data class RuntimeApplyStatus(
+    val ok: Boolean = true,
+    val state: String = "idle",
+    val program: String? = null,
+    val profile: String? = null,
+    val slot: String? = null,
+    val message: String = "",
+    val error: String? = null,
+    val updatedAtUnixMs: Long = 0L,
+  ) {
+    val visible: Boolean get() = state !in setOf("idle", "")
+    val finished: Boolean get() = state in setOf("success", "failed", "deferred_until_start", "no_active_runtime")
+  }
+
+  fun parseRuntimeApplyStatus(obj: JSONObject?): RuntimeApplyStatus {
+    if (obj == null) return RuntimeApplyStatus()
+    return RuntimeApplyStatus(
+      ok = obj.optBoolean("ok", true),
+      state = obj.optString("state", "idle"),
+      program = obj.optString("program", "").takeIf { it.isNotBlank() },
+      profile = obj.optString("profile", "").takeIf { it.isNotBlank() },
+      slot = obj.optString("slot", "").takeIf { it.isNotBlank() },
+      message = obj.optString("message", ""),
+      error = obj.optString("error", "").takeIf { it.isNotBlank() },
+      updatedAtUnixMs = obj.optLong("updated_at_unix_ms", 0L),
+    )
+  }
 
   data class Profile(
     val name: String,
@@ -204,6 +235,32 @@ object ApiModels {
     val hotspotT2sCaptureAll: Boolean = false,
     val selinuxPermissiveEnabled: Boolean = false,
     val ipForwardEnabled: Boolean = false,
+    val tproxyEnabled: Boolean = false,
+    val captivePortalEnabled: Boolean = false,
+  )
+
+  data class CaptiveDevice(
+    val id: String = "",
+    val shortId: String = "",
+    val ip: String = "",
+    val mac: String = "",
+    val model: String = "",
+    val alias: String = "",
+    val userAgent: String = "",
+    val allowed: Boolean = false,
+    val status: String = "pending",
+    val firstSeen: Long = 0L,
+    val lastSeen: Long = 0L,
+    val allowedAt: Long? = null,
+    val deniedAt: Long? = null,
+    val notifiedAt: Long? = null,
+  )
+
+  data class CaptivePortalStatus(
+    val enabled: Boolean = false,
+    val active: Boolean = false,
+    val hotspotProxy: Boolean = false,
+    val serverRunning: Boolean = false,
   )
 
   data class SingBoxProfileChoice(
@@ -360,11 +417,13 @@ object ApiModels {
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
       dpitunnel = parseProcAgg(o.optJSONObject("dpitunnel")),
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
+      hysteria2 = parseProcAgg(o.optJSONObject("hysteria2")),
       wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
       tor = parseProcAgg(o.optJSONObject("tor")),
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
       mihomo = parseProcAgg(o.optJSONObject("mihomo")),
       mieru = parseProcAgg(o.optJSONObject("mieru")),
+      tgwsproxy = parseProcAgg(o.optJSONObject("tgwsproxy")),
       tun2Proxy = parseProcAgg(o.optJSONObject("tun2proxy")),
       amneziaWg = parseProcAgg(o.optJSONObject("amneziawg")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
@@ -420,7 +479,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.hysteria2.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -456,11 +515,13 @@ object ApiModels {
       add(r.dnscrypt)
       add(r.dpitunnel)
       add(r.singBox)
+      add(r.hysteria2)
       add(r.wireProxy)
       add(r.tor)
       add(r.openVpn)
       add(r.mihomo)
       add(r.mieru)
+      add(r.tgwsproxy)
       add(r.tun2Proxy)
       add(r.amneziaWg)
       add(r.t2s)
@@ -541,7 +602,46 @@ object ApiModels {
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
+      tproxyEnabled = setting?.optBoolean("tproxy_enabled", false) ?: false,
+      captivePortalEnabled = setting?.optBoolean("captive_portal_enabled", false) ?: false,
     )
+  }
+
+  fun parseCaptivePortalStatus(wrapper: JSONObject?): CaptivePortalStatus {
+    if (wrapper == null) return CaptivePortalStatus()
+    return CaptivePortalStatus(
+      enabled = wrapper.optBoolean("enabled", false),
+      active = wrapper.optBoolean("active", false),
+      hotspotProxy = wrapper.optBoolean("hotspot_proxy", false),
+      serverRunning = wrapper.optBoolean("server_running", false),
+    )
+  }
+
+  fun parseCaptiveDevices(wrapper: JSONObject?): List<CaptiveDevice> {
+    val arr = wrapper?.optJSONArray("devices") ?: return emptyList()
+    val out = ArrayList<CaptiveDevice>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      out.add(
+        CaptiveDevice(
+          id = o.optString("id", ""),
+          shortId = o.optString("short_id", ""),
+          ip = o.optString("ip", ""),
+          mac = o.optString("mac", ""),
+          model = o.optString("model", ""),
+          alias = o.optString("alias", ""),
+          userAgent = o.optString("user_agent", ""),
+          allowed = o.optBoolean("allowed", false),
+          status = o.optString("status", "pending").ifBlank { "pending" },
+          firstSeen = o.optLong("first_seen", 0L),
+          lastSeen = o.optLong("last_seen", 0L),
+          allowedAt = if (o.isNull("allowed_at")) null else o.optLong("allowed_at").takeIf { it > 0 },
+          deniedAt = if (o.isNull("denied_at")) null else o.optLong("denied_at").takeIf { it > 0 },
+          notifiedAt = if (o.isNull("notified_at")) null else o.optLong("notified_at").takeIf { it > 0 },
+        )
+      )
+    }
+    return out
   }
 
 
@@ -972,6 +1072,7 @@ object ApiModels {
         "myvpn" -> rawName ?: "myvpn"
         "mihomo" -> rawName?.takeUnless { it.equals("mihomo", ignoreCase = true) } ?: "Mihomo"
         "mieru" -> rawName?.takeUnless { it.equals("mieru", ignoreCase = true) } ?: "mieru"
+        "tgwsproxy" -> rawName?.takeUnless { it.equals("tgwsproxy", ignoreCase = true) } ?: "Telegram WS Proxy"
         "amneziawg" -> rawName?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
         else -> rawName
       }

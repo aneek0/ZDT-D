@@ -1,3 +1,4 @@
+pub mod common;
 pub mod nfqws_filters;
 pub mod nfqws;
 pub mod nfqws2;
@@ -6,6 +7,7 @@ pub mod dpitunnel;
 pub mod dnscrypt;
 pub mod operaproxy;
 pub mod singbox;
+pub mod hysteria2;
 pub mod wireproxy;
 pub mod tor;
 pub mod myproxy;
@@ -18,3 +20,4 @@ pub mod tun2socks;
 pub mod myvpn;
 pub mod mihomo;
 pub mod mieru;
+pub mod tgwsproxy;

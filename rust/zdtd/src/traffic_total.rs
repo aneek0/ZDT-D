@@ -10,7 +10,7 @@ use std::{
 
 use crate::{shell::{self, Capture}, xtables_lock};
 
-const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(3);
+const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(8);
 const PKG_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const PROC_NET_DEV: &str = "/proc/net/dev";
 const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";
@@ -79,6 +79,10 @@ pub struct TrafficRuleCounter {
     pub redirect_port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mark: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_table: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub backend_ports: Vec<TrafficBackendPort>,
 
@@ -201,6 +205,16 @@ enum RoutingSnapshot {
         port_preference: u8,
         dpi_ports: String,
     },
+    Tproxy {
+        uid_file: String,
+        dest_port: u16,
+        proto_choice: String,
+        ifaces_raw: Option<String>,
+        port_preference: u8,
+        dpi_ports: String,
+        mark: u32,
+        table: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -212,6 +226,8 @@ struct RouteMeta {
     uid_file: Option<String>,
     dest_port: Option<u16>,
     queue: Option<u16>,
+    mark: Option<u32>,
+    table: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -447,6 +463,8 @@ fn build_counter(
 
     let note = match semantic.as_str() {
         "nat_redirect" | "dns_redirect" => Some("rule counter shows traffic matched the NAT/redirect rule; it is not a full-flow app total".to_string()),
+        "tproxy" => Some("rule counter shows traffic delivered by TPROXY; it is not a full-flow app total".to_string()),
+        "mark" => Some("rule counter shows traffic marked for TPROXY policy routing".to_string()),
         "chain_jump" => Some("jump/pass-through counter; do not sum as processed traffic".to_string()),
         "chain_return" | "guard_return" => Some("return/pass-through counter; traffic was not processed by an action rule here".to_string()),
         _ => None,
@@ -470,6 +488,8 @@ fn build_counter(
         dest_ports,
         redirect_port,
         queue: queue.or(meta.queue),
+        mark: meta.mark,
+        route_table: meta.table,
         backend_ports,
         packets: parsed.packets,
         bytes: parsed.bytes,
@@ -627,13 +647,36 @@ fn normalize_port_vec(ports: Vec<u16>) -> Vec<u16> {
 fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
     let mut out = HashMap::new();
     collect_singbox_ports(root, &mut out);
+    collect_hysteria2_ports(root, &mut out);
     collect_wireproxy_ports(root, &mut out);
     collect_operaproxy_ports(root, &mut out);
     collect_tor_socks_port(root, &mut out);
     collect_mihomo_profile_ports(root, &mut out);
     collect_mieru_profile_ports(root, &mut out);
     collect_myprogram_t2s_ports(root, &mut out);
+    collect_tgwsproxy_ports(root, &mut out);
     out
+}
+
+fn collect_tgwsproxy_ports(_root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    if !crate::programs::tgwsproxy::is_installed() { return; }
+    let Ok(setting) = crate::programs::tgwsproxy::read_setting() else { return; };
+    if setting.port == 0 { return; }
+    let host = crate::programs::tgwsproxy::effective_host(&setting).to_string();
+    out.entry(setting.port).or_insert_with(|| TrafficBackendPort {
+        port: setting.port,
+        label: format!("tgwsproxy:{}", setting.port),
+        host: Some(host),
+        program_id: Some("tgwsproxy".to_string()),
+        profile: None,
+        server: None,
+        wrapped_host: None,
+        wrapped_port: None,
+        wrapped_label: None,
+        wrapped_program_id: None,
+        wrapped_profile: None,
+        wrapped_server: None,
+    });
 }
 
 fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
@@ -650,6 +693,24 @@ fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>
             if !server_dir.is_dir() { continue; }
             let server = file_name_string(&server_dir);
             collect_simple_json_port(server_dir.join("setting.json"), "singbox", Some(profile.clone()), server, &["port", "listen_port"], out);
+        }
+    }
+}
+
+fn collect_hysteria2_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("hysteria2/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = file_name_string(&server_dir);
+            collect_simple_json_port(server_dir.join("setting.json"), "hysteria2", Some(profile.clone()), server, &["socks5_port"], out);
         }
     }
 }
@@ -924,7 +985,7 @@ fn parse_dest_ports(tokens: &[&str]) -> Vec<String> {
 }
 
 fn parse_redirect_port(tokens: &[&str]) -> Option<u16> {
-    for key in ["--to-destination", "--to-ports", "--to"] {
+    for key in ["--to-destination", "--to-ports", "--to", "--on-port"] {
         if let Some(v) = value_after(tokens, key) {
             if let Some(port) = v.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
                 return Some(port);
@@ -944,6 +1005,8 @@ fn classify_semantic<'a>(chain: &str, target: &'a str, dest_ports: &[String], re
             let dns_ports = dest_ports.iter().any(|p| p == "53" || p.contains("53")) || redirect_port == Some(53) || redirect_port == Some(853) || redirect_port == Some(5353);
             if chain == "NAT_DPI" && dns_ports { "dns_redirect" } else { "nat_redirect" }
         }
+        "TPROXY" => "tproxy",
+        "MARK" => "mark",
         "DROP" => "drop",
         "REJECT" => "reject",
         "MASQUERADE" => "masquerade",
@@ -957,13 +1020,16 @@ fn classify_semantic<'a>(chain: &str, target: &'a str, dest_ports: &[String], re
 }
 
 fn is_action_semantic(s: &str) -> bool {
-    matches!(s, "nfqueue" | "nat_redirect" | "dns_redirect" | "drop" | "reject" | "masquerade" | "accept")
+    matches!(s, "nfqueue" | "nat_redirect" | "dns_redirect" | "tproxy" | "mark" | "drop" | "reject" | "masquerade" | "accept")
 }
 
 fn classify_chain(chain: &str) -> &'static str {
     if chain.starts_with("ZDTN_") { "scoped_nat" }
+    else if chain.starts_with("ZDTPP_") { "scoped_tproxy_pre" }
+    else if chain.starts_with("ZDTP_") { "scoped_tproxy_out" }
     else if chain.starts_with("ZDTM_") { "scoped_mangle" }
     else if chain == "NAT_DPI" || chain == "NAT_DPI_LOCAL" { "base_nat" }
+    else if chain == "ZDT_TPROXY_OUT" || chain == "ZDT_TPROXY_PRE" { "base_tproxy" }
     else if chain == "MANGLE_APP" { "base_mangle" }
     else if chain.starts_with("ZDT_VPN_TETHER") { "vpn_tether" }
     else if chain == "ZDT_BLOCKEDQUIC" { "blocked_quic" }
@@ -1059,6 +1125,25 @@ fn load_route_meta(warnings: &mut Vec<String>) -> HashMap<String, RouteMeta> {
                 out.insert(scoped_nat_chain_name(&scope), meta.clone());
                 out.insert(scoped_nat_chain_name(&format!("local:{scope}")), meta);
             }
+            RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark, table } => {
+                let mut meta = meta_from_uid_file(&uid_file);
+                meta.kind = "tproxy".to_string();
+                meta.uid_file = Some(uid_file.clone());
+                meta.dest_port = Some(dest_port);
+                meta.mark = Some(mark);
+                meta.table = Some(table);
+                let scope = format!(
+                    "tproxy:uid={}:dest={}:proto={}:ifaces={}:pref={}:ports={}",
+                    uid_file,
+                    dest_port,
+                    proto_choice_debug(&proto_choice),
+                    ifaces_raw.unwrap_or_default(),
+                    port_preference,
+                    dpi_ports,
+                );
+                out.insert(scoped_tproxy_out_chain_name(&scope), meta.clone());
+                out.insert(scoped_tproxy_pre_chain_name(&scope), meta);
+            }
         }
     }
     out
@@ -1074,6 +1159,8 @@ fn proto_choice_debug(s: &str) -> &'static str {
 
 fn scoped_mangle_chain_name(label: &str) -> String { scoped_hash_name("ZDTM", label) }
 fn scoped_nat_chain_name(label: &str) -> String { scoped_hash_name("ZDTN", label) }
+fn scoped_tproxy_out_chain_name(label: &str) -> String { scoped_hash_name("ZDTP", label) }
+fn scoped_tproxy_pre_chain_name(label: &str) -> String { scoped_hash_name("ZDTPP", label) }
 
 fn scoped_hash_name(prefix: &str, label: &str) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
@@ -1341,6 +1428,7 @@ fn resolve_vpn_proxy_endpoint(owner_program: &str, profile: &str, registry: &Has
         "mihomo" => profile_setting_endpoint(root, "mihomo", profile, "mixed_port", registry),
         "mieru" => profile_setting_endpoint(root, "mieru", profile, "socks5_port", registry),
         "singbox" | "sing-box" => singbox_vpn_endpoint(root, profile, registry),
+        "hysteria2" => hysteria2_vpn_endpoint(root, profile, registry),
         _ => None,
     }
 }
@@ -1369,13 +1457,36 @@ fn singbox_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, Traf
         if !dir.is_dir() { continue; }
         let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
         let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+        if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
         let Some(port) = v.get("port").and_then(json_u16) else { continue; };
         return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
             port,
             label: format!("sing-box/{profile}:{}", port),
             host: Some("127.0.0.1".to_string()),
             program_id: Some("sing-box".to_string()),
+            profile: Some(profile.to_string()),
+            server: file_name_string(&dir),
+            ..Default::default()
+        }));
+    }
+    None
+}
+
+fn hysteria2_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let server_root = root.join("hysteria2/profile").join(profile).join("server");
+    let entries = fs::read_dir(server_root).ok()?;
+    for ent in entries.flatten() {
+        let dir = ent.path();
+        if !dir.is_dir() { continue; }
+        let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
+        let Some(port) = v.get("socks5_port").and_then(json_u16) else { continue; };
+        return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+            port,
+            label: format!("hysteria2/{profile}:{}", port),
+            host: Some("127.0.0.1".to_string()),
+            program_id: Some("hysteria2".to_string()),
             profile: Some(profile.to_string()),
             server: file_name_string(&dir),
             ..Default::default()

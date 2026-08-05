@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Needed to request installing APK updates downloaded by the app (online update). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Android 13+ runtime permission (requested only when user enables notifications). -->
@@ -95,6 +97,10 @@
         </activity>
 
         <activity
+            android:name=".RemoteSetupActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".WorldMapActivity"
             android:exported="false" />
 
@@ -109,6 +115,10 @@
 
         <activity
             android:name=".ProxyInfoProbeDetailsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".CaptiveDevicesActivity"
             android:exported="false" />
 
         <service
@@ -136,6 +146,25 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receives fire-once captive-portal "device pending" broadcasts from the daemon. -->
+        <receiver
+            android:name=".CaptiveDeviceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_DEVICE_PENDING" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Handles Allow/Deny action buttons; app-private (not exported). -->
+        <receiver
+            android:name=".CaptiveActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_ALLOW" />
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_DENY" />
             </intent-filter>
         </receiver>
 

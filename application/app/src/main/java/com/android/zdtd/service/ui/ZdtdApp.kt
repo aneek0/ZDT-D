@@ -2,9 +2,13 @@ package com.android.zdtd.service.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -25,6 +29,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,9 +49,11 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -62,6 +69,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -104,6 +112,14 @@ import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
 
+private const val REMOTE_CONTROL_FEATURE_ENABLED = false
+// Remote control is intentionally hidden/disabled for now: the feature is not stable yet.
+// Keep the implementation in the tree so it can be restored and continued later.
+
+private fun supportsArm64ToolUpdates(): Boolean {
+  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+}
+
 @Composable
 fun ZdtdApp(
   rootState: RootState,
@@ -124,7 +140,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -146,7 +162,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -157,7 +173,7 @@ fun ZdtdApp(
       SetupStep.DONE -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
             UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
@@ -714,6 +730,11 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
+  AppsRoute.OptionalTools -> AppsRoute.List
+  AppsRoute.VpsServers -> AppsRoute.List
+  is AppsRoute.VpsServer -> AppsRoute.VpsServers
+  is AppsRoute.VpsService -> AppsRoute.VpsServer(route.serverId)
+  is AppsRoute.VpsProfile -> AppsRoute.VpsService(route.serverId, route.serviceId)
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
@@ -743,6 +764,11 @@ private fun MainShell(
   val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
   val internalOnOpenProgram: (String) -> Unit = { appsRoute = AppsRoute.Program(it) }
   val internalOnOpenProfile: (String, String) -> Unit = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) }
+  val internalOnOpenOptionalTools: () -> Unit = { appsRoute = AppsRoute.OptionalTools }
+  val internalOnOpenVpsServers: () -> Unit = { appsRoute = AppsRoute.VpsServers }
+  val internalOnOpenVpsServer: (String) -> Unit = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) }
+  val internalOnOpenVpsService: (String, String) -> Unit = { serverId, serviceId -> appsRoute = AppsRoute.VpsService(serverId, serviceId) }
+  val internalOnOpenVpsProfile: (String, String, String) -> Unit = { serverId, serviceId, profileId -> appsRoute = AppsRoute.VpsProfile(serverId, serviceId, profileId) }
   var showLogs by remember { mutableStateOf(false) }
   var showBackup by remember { mutableStateOf(false) }
   var showProgramUpdates by remember { mutableStateOf(false) }
@@ -878,6 +904,17 @@ private fun MainShell(
   var deleteModulePrepareRequested by remember { mutableStateOf(false) }
 
   var programsPrefetched by remember { mutableStateOf(false) }
+
+  LaunchedEffect(uiState.remoteTargetName) {
+    programsPrefetched = false
+    if (uiState.remoteTargetName.isNotBlank()) {
+      showSettings = false
+      settingsCloseRequested = false
+      tab = Tab.APPS
+      appsRoute = AppsRoute.List
+      actions.refreshPrograms()
+    }
+  }
 
   // Prefetch program list once after startup so the Programs tab opens warmer and keeps route state.
   LaunchedEffect(uiState.daemonOnline, uiState.startup.visible) {
@@ -1037,6 +1074,7 @@ private fun MainShell(
                 onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
+                tproxyEnabled = appUpdate.tproxyEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
                 hotspotMode = appUpdate.hotspotMode,
@@ -1057,6 +1095,8 @@ private fun MainShell(
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
                 onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
+                captivePortalEnabled = appUpdate.captivePortalEnabled,
+                onCaptivePortalEnabledChange = actions::setCaptivePortalEnabled,
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
@@ -1132,6 +1172,7 @@ private fun MainShell(
                 onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
+                tproxyEnabled = appUpdate.tproxyEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
                 hotspotMode = appUpdate.hotspotMode,
@@ -1152,6 +1193,8 @@ private fun MainShell(
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
                 onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
+                captivePortalEnabled = appUpdate.captivePortalEnabled,
+                onCaptivePortalEnabledChange = actions::setCaptivePortalEnabled,
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
@@ -1250,7 +1293,7 @@ private fun MainShell(
     .calculateBottomPadding() + (if (compactBottomBar) 82.dp else 94.dp)
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
-    .calculateTopPadding() + 74.dp
+    .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
 
   LaunchedEffect(tab) {
     actions.setActiveMainTab(tab.name)
@@ -1263,6 +1306,11 @@ private fun MainShell(
     tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
     tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.OptionalTools -> stringResource(R.string.optional_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.VpsServers -> stringResource(R.string.vps_servers_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsServer -> stringResource(R.string.vps_server_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsService -> stringResource(R.string.vps_service_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsProfile -> stringResource(R.string.vps_profile_title)
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
@@ -1286,6 +1334,11 @@ private fun MainShell(
       when (val route = appsRoute) {
         AppsRoute.List -> null
         AppsRoute.AnalysisTools -> null
+        AppsRoute.OptionalTools -> null
+        AppsRoute.VpsServers -> null
+        is AppsRoute.VpsServer -> null
+        is AppsRoute.VpsService -> null
+        is AppsRoute.VpsProfile -> null
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
@@ -1382,12 +1435,21 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
+          onOpenRemoteSetup = actions::openRemoteSetup,
+          remoteTargetName = uiState.remoteTargetName,
+          remoteTargetAddress = uiState.remoteTargetAddress,
+          onRemoteDisconnect = actions::exitRemoteControl,
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
           onOpenProgram = internalOnOpenProgram,
           onOpenProfile = internalOnOpenProfile,
           onOpenAnalysisTools = internalOnOpenAnalysisTools,
+          onOpenOptionalTools = internalOnOpenOptionalTools,
+          onOpenVpsServers = internalOnOpenVpsServers,
+          onOpenVpsServer = internalOnOpenVpsServer,
+          onOpenVpsService = internalOnOpenVpsService,
+          onOpenVpsProfile = internalOnOpenVpsProfile,
           onOpenConstructionStudio = internalOnOpenConstructionStudio,
           onOpenDpiDetector = internalOnOpenDpiDetector,
           onOpenNfqwsTester = internalOnOpenNfqwsTester,
@@ -1414,12 +1476,18 @@ private fun MainShell(
               onOpenProgram = internalOnOpenProgram,
               onOpenProfile = internalOnOpenProfile,
               onOpenAnalysisTools = internalOnOpenAnalysisTools,
+              onOpenOptionalTools = internalOnOpenOptionalTools,
+              onOpenVpsServers = internalOnOpenVpsServers,
+              onOpenVpsServer = internalOnOpenVpsServer,
+              onOpenVpsService = internalOnOpenVpsService,
+              onOpenVpsProfile = internalOnOpenVpsProfile,
               onOpenConstructionStudio = internalOnOpenConstructionStudio,
               onOpenDpiDetector = internalOnOpenDpiDetector,
               onOpenNfqwsTester = internalOnOpenNfqwsTester,
               onOpenBlockcheck = internalOnOpenBlockcheck,
               actions = actions,
               snackHost = snackHost,
+              tproxyEnabled = appUpdate.tproxyEnabled,
               landscapeControl = false,
               topContentPadding = floatingTopBarReserve,
               bottomContentPadding = floatingBottomBarReserve + 18.dp,
@@ -1466,6 +1534,10 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
+          onOpenRemoteSetup = actions::openRemoteSetup,
+          remoteTargetName = uiState.remoteTargetName,
+          remoteTargetAddress = uiState.remoteTargetAddress,
+          onRemoteDisconnect = actions::exitRemoteControl,
         )
 
         FloatingBottomNavigationCard(
@@ -1480,16 +1552,28 @@ private fun MainShell(
         )
       }
 
+      val notificationBottomPadding = if (landscapeControl) {
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
+      } else {
+        floatingBottomBarReserve + 10.dp
+      }
+
+      RuntimeApplyStatusCard(
+        visible = appUpdate.runtimeApplyVisible,
+        status = appUpdate.runtimeApplyStatus,
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .zIndex(4.8f),
+        bottomPadding = notificationBottomPadding + 62.dp,
+      )
+
+
       FloatingSnackbarHost(
         hostState = snackHost,
         modifier = Modifier
           .align(Alignment.BottomCenter)
           .zIndex(5f),
-        bottomPadding = if (landscapeControl) {
-          WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
-        } else {
-          floatingBottomBarReserve + 10.dp
-        },
+        bottomPadding = notificationBottomPadding,
       )
     }
 
@@ -1522,12 +1606,21 @@ private fun LandscapeShellContent(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteDisconnect: () -> Unit,
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
+  onOpenVpsServer: (String) -> Unit,
+  onOpenVpsService: (String, String) -> Unit,
+  onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -1567,12 +1660,18 @@ private fun LandscapeShellContent(
           onOpenProgram = onOpenProgram,
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
+          onOpenOptionalTools = onOpenOptionalTools,
+          onOpenVpsServers = onOpenVpsServers,
+          onOpenVpsServer = onOpenVpsServer,
+          onOpenVpsService = onOpenVpsService,
+          onOpenVpsProfile = onOpenVpsProfile,
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
           onOpenBlockcheck = onOpenBlockcheck,
           actions = actions,
           snackHost = snackHost,
+          tproxyEnabled = appUpdate.tproxyEnabled,
           landscapeControl = true,
         )
       }
@@ -1587,6 +1686,10 @@ private fun LandscapeShellContent(
       onOpenBackup = onOpenBackup,
       onOpenProgramUpdates = onOpenProgramUpdates,
       onOpenSettings = onOpenSettings,
+      onOpenRemoteSetup = onOpenRemoteSetup,
+      remoteTargetName = remoteTargetName,
+      remoteTargetAddress = remoteTargetAddress,
+      onRemoteDisconnect = onRemoteDisconnect,
     )
 
     LandscapeRightNav(
@@ -1642,6 +1745,111 @@ private fun LandscapeContentHeader(
         Modifier.weight(1f)
       },
     )
+  }
+}
+
+
+@Composable
+private fun RuntimeApplyStatusCard(
+  visible: Boolean,
+  status: ApiModels.RuntimeApplyStatus,
+  modifier: Modifier = Modifier,
+  bottomPadding: Dp,
+) {
+  val density = LocalDensity.current.density
+
+  AnimatedVisibility(
+    visible = visible && status.visible,
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 18.dp)
+      .padding(bottom = bottomPadding),
+    enter = slideInVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { it / 2 } + fadeIn(tween(180)),
+    exit = slideOutVertically(animationSpec = tween(240, easing = FastOutSlowInEasing)) { it / 2 } + fadeOut(tween(180)),
+  ) {
+    val shape = RoundedCornerShape(24.dp)
+    val accent = when (status.state) {
+      "success", "deferred_until_start" -> Color(0xFF22C55E)
+      "no_active_runtime" -> MaterialTheme.colorScheme.primary
+      "failed" -> MaterialTheme.colorScheme.error
+      else -> MaterialTheme.colorScheme.primary
+    }
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(shape),
+      shape = shape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+      tonalElevation = 0.dp,
+      shadowElevation = 8.dp,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.16f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+        ) {
+          val icon = when (status.state) {
+            "success", "deferred_until_start" -> Icons.Filled.CheckCircle
+            "failed" -> Icons.Filled.ErrorOutline
+            else -> Icons.Filled.Sync
+          }
+          Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier
+              .padding(7.dp)
+              .size(18.dp),
+            tint = accent,
+          )
+        }
+
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .clipToBounds(),
+        ) {
+          AnimatedContent(
+            targetState = status.state to status.message,
+            transitionSpec = {
+              val enter = slideInVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(160))
+              val exit = slideOutVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(160))
+              (enter togetherWith exit).using(SizeTransform(clip = false))
+            },
+            label = "runtime_apply_cube_bottom_to_top",
+          ) { target ->
+            val message = when (target.first) {
+              "failed" -> stringResource(R.string.runtime_apply_failed_restart_service)
+              else -> target.second
+            }
+            val flip by transition.animateFloat(
+              transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
+              label = "runtime_apply_cube_flip",
+            ) { animatedTarget -> if (animatedTarget == EnterExitState.Visible) 0f else -90f }
+            Text(
+              text = message.ifBlank { "Применяю правила" },
+              modifier = Modifier.graphicsLayer {
+                transformOrigin = TransformOrigin(0.5f, 0.5f)
+                rotationX = flip
+                cameraDistance = 18f * density
+              },
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+    }
   }
 }
 
@@ -1714,6 +1922,68 @@ private fun FloatingSnackbarHost(
   }
 }
 
+
+
+@Composable
+private fun RemoteTargetTopLine(
+  name: String,
+  address: String,
+  onRemoteSetup: () -> Unit,
+  onDisconnect: () -> Unit,
+) {
+  if (!REMOTE_CONTROL_FEATURE_ENABLED || name.isBlank()) return
+  var expanded by remember { mutableStateOf(false) }
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(28.dp),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(16.dp))
+        .clickable { expanded = true }
+        .padding(horizontal = 10.dp, vertical = 3.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+      Text(
+        text = "Настройка: $name",
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f),
+      )
+      Text(
+        text = address,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Icon(Icons.Filled.MoreVert, contentDescription = null, modifier = Modifier.size(16.dp))
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+      DropdownMenuItem(
+        text = { Text("Удалённая настройка") },
+        onClick = {
+          expanded = false
+          onRemoteSetup()
+        },
+      )
+      DropdownMenuItem(
+        text = { Text("Отключиться") },
+        onClick = {
+          expanded = false
+          onDisconnect()
+        },
+      )
+    }
+  }
+}
+
 @Composable
 private fun FloatingTopBarCard(
   modifier: Modifier = Modifier,
@@ -1727,6 +1997,10 @@ private fun FloatingTopBarCard(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteDisconnect: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
   Box(
@@ -1739,7 +2013,7 @@ private fun FloatingTopBarCard(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .height(58.dp)
+        .height(if (REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank()) 88.dp else 58.dp)
         .clip(shape),
       shape = shape,
       color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -1747,44 +2021,57 @@ private fun FloatingTopBarCard(
       shadowElevation = 0.dp,
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
     ) {
-      Row(
+      Column(
         modifier = Modifier
           .fillMaxSize()
           .padding(start = if (canGoBack) 2.dp else 16.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
       ) {
-        if (canGoBack) {
-          IconButton(
-            onClick = onBack,
-            modifier = Modifier.size(46.dp),
-          ) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          if (canGoBack) {
+            IconButton(
+              onClick = onBack,
+              modifier = Modifier.size(46.dp),
+            ) {
+              Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+            }
           }
+          Text(
+            text = title,
+            letterSpacing = 1.5.sp,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (isHome) {
+              Modifier
+                .weight(1f)
+                .clickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = null,
+                ) { onTitleClick() }
+            } else {
+              Modifier.weight(1f)
+            },
+          )
+          TopBarActionCluster(
+            programLogTarget = programLogTarget,
+            onOpenLogs = onOpenLogs,
+            onOpenBackup = onOpenBackup,
+            onOpenProgramUpdates = onOpenProgramUpdates,
+            onOpenSettings = onOpenSettings,
+            onOpenRemoteSetup = onOpenRemoteSetup,
+          )
         }
-        Text(
-          text = title,
-          letterSpacing = 1.5.sp,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = if (isHome) {
-            Modifier
-              .weight(1f)
-              .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-              ) { onTitleClick() }
-          } else {
-            Modifier.weight(1f)
-          },
-        )
-        TopBarActionCluster(
-          programLogTarget = programLogTarget,
-          onOpenLogs = onOpenLogs,
-          onOpenBackup = onOpenBackup,
-          onOpenProgramUpdates = onOpenProgramUpdates,
-          onOpenSettings = onOpenSettings,
+        RemoteTargetTopLine(
+          name = remoteTargetName,
+          address = remoteTargetAddress,
+          onRemoteSetup = onOpenRemoteSetup,
+          onDisconnect = onRemoteDisconnect,
         )
       }
     }
@@ -1933,6 +2220,10 @@ private fun LandscapeQuickActions(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteDisconnect: () -> Unit,
 ) {
   Surface(
     modifier = modifier,
@@ -1941,27 +2232,41 @@ private fun LandscapeQuickActions(
     tonalElevation = 3.dp,
     shadowElevation = 8.dp,
   ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
+    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        if (REMOTE_CONTROL_FEATURE_ENABLED) {
+          IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
+          }
+        }
+        IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
+        }
+        if (supportsArm64ToolUpdates()) {
+          IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
+            Icon(
+              painter = painterResource(R.drawable.ic_program_updates_custom),
+              contentDescription = stringResource(R.string.cd_program_updates),
+              modifier = Modifier.size(26.dp),
+            )
+          }
+        }
+        IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
+        }
+        IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
+        }
       }
-      IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
-        Icon(
-          painter = painterResource(R.drawable.ic_program_updates_custom),
-          contentDescription = stringResource(R.string.cd_program_updates),
-          modifier = Modifier.size(26.dp),
-        )
-      }
-      IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
-      }
-      IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
-      }
+      RemoteTargetTopLine(
+        name = remoteTargetName,
+        address = remoteTargetAddress,
+        onRemoteSetup = onOpenRemoteSetup,
+        onDisconnect = onRemoteDisconnect,
+      )
     }
   }
 }
@@ -2162,7 +2467,7 @@ private fun LandscapeLogsShelf(
 
 private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
   return if (profile == null) {
-    programId in setOf("operaproxy", "dnscrypt", "tor")
+    programId in setOf("operaproxy", "dnscrypt", "tor", "tgwsproxy")
   } else {
     programId in setOf(
       "nfqws",
@@ -2170,6 +2475,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "byedpi",
       "dpitunnel",
       "sing-box",
+      "hysteria2",
       "wireproxy",
       "myproxy",
       "myprogram",
@@ -2190,6 +2496,7 @@ private fun TopBarActionCluster(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
@@ -2251,17 +2558,26 @@ private fun TopBarActionCluster(
       IconButton(onClick = { onOpenLogs(target) }) {
         Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
       }
+      if (REMOTE_CONTROL_FEATURE_ENABLED) {
+        CollapsingTopBarAction(visible = showFullActions) {
+          IconButton(onClick = onOpenRemoteSetup) {
+            Icon(Icons.Filled.Sync, contentDescription = "Remote")
+          }
+        }
+      }
       CollapsingTopBarAction(visible = showFullActions) {
         IconButton(onClick = onOpenBackup) {
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup))
         }
       }
-      CollapsingTopBarAction(visible = showFullActions) {
-        IconButton(onClick = onOpenProgramUpdates) {
-          Icon(
-            painter = painterResource(R.drawable.ic_program_updates_custom),
-            contentDescription = stringResource(R.string.cd_program_updates),
-          )
+      if (supportsArm64ToolUpdates()) {
+        CollapsingTopBarAction(visible = showFullActions) {
+          IconButton(onClick = onOpenProgramUpdates) {
+            Icon(
+              painter = painterResource(R.drawable.ic_program_updates_custom),
+              contentDescription = stringResource(R.string.cd_program_updates),
+            )
+          }
         }
       }
       CollapsingTopBarAction(visible = showFullActions) {
@@ -2317,12 +2633,18 @@ private fun TabBody(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
+  onOpenVpsServer: (String) -> Unit,
+  onOpenVpsService: (String, String) -> Unit,
+  onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   onOpenBlockcheck: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  tproxyEnabled: Boolean = false,
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -2358,12 +2680,18 @@ private fun TabBody(
             onOpenProgram = onOpenProgram,
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
+            onOpenOptionalTools = onOpenOptionalTools,
+            onOpenVpsServers = onOpenVpsServers,
+            onOpenVpsServer = onOpenVpsServer,
+            onOpenVpsService = onOpenVpsService,
+            onOpenVpsProfile = onOpenVpsProfile,
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,
             onOpenBlockcheck = onOpenBlockcheck,
             actions = actions,
             snackHost = snackHost,
+            tproxyEnabled = tproxyEnabled,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
           )

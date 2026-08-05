@@ -3,6 +3,7 @@ package com.android.zdtd.service
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -18,6 +19,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.api.DeviceInfo
+import com.android.zdtd.service.remote.RemoteControlCenter
+import com.android.zdtd.service.remote.RemoteRootClient
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -39,6 +46,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -166,7 +174,9 @@ data class StartupUiState(
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
-  val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
+  val remoteTargetName: String = "",
+  val remoteTargetAddress: String = "",
+  val device: DeviceInfo = DeviceInfo(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,
@@ -176,6 +186,7 @@ data class UiState(
   val busy: Boolean = false,
   val daemonLogTail: String = "",
   val daemonLogDetailedTail: String = "",
+  val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
 )
 
 
@@ -187,6 +198,38 @@ data class LogLine(
   val level: String,
   val msg: String,
 )
+
+// ----- Backup / Restore (working_folder) -----
+
+data class BackupItem(
+  val name: String,
+  val sizeBytes: Long = 0L,
+  val createdAtText: String = "",
+)
+
+data class BackupUiState(
+  val loading: Boolean = false,
+  val items: List<BackupItem> = emptyList(),
+  val error: String? = null,
+
+  // Progress dialog (create / restore / import / delete)
+  val progressVisible: Boolean = false,
+  val progressTitle: String = "",
+  val progressText: String = "",
+  val progressPercent: Int = 0,
+  val progressFinished: Boolean = false,
+  val progressError: String? = null,
+
+  // Version mismatch: allow user to force restore (advanced).
+  val forceRestoreAvailable: Boolean = false,
+  val forceRestoreName: String? = null,
+
+  // Backup file opened externally by Android file manager (.zdtb ACTION_VIEW).
+  val externalRestorePromptVisible: Boolean = false,
+  val externalRestoreName: String? = null,
+  val externalRestoreDisplayName: String = "",
+)
+
 
 // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
@@ -240,6 +283,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     baseUrlProvider = { _uiState.value.baseUrl },
     tokenProvider = { _uiState.value.token },
   )
+  private val remoteRoot = RemoteRootClient()
+  private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -304,6 +349,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       hotspotT2sCaptureAll = false,
       selinuxPermissiveEnabled = false,
       ipForwardEnabled = false,
+      tproxyEnabled = false,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -355,6 +401,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
+  private fun isRuntimeApplyAppListPath(path: String): Boolean {
+    val p = path.substringBefore('?')
+    if (p == "/api/blockedquic/apps" || p == "/api/proxyinfo/apps") return false
+    if (p == "/api/programs/tor/apps") return true
+    if (p.startsWith("/api/programs/operaproxy/apps/")) return true
+    return Regex("^/api/programs/[^/]+/profiles/[^/]+/apps/[^/]+$").matches(p)
+  }
+
+  private fun beginRuntimeApplyPolling(reason: String) {
+    runtimeApplyPollJob?.cancel()
+    runtimeApplyPollJob = launchIO {
+      var lastState = ""
+      repeat(40) {
+        val status = runCatching { api.getRuntimeApplyStatus() }.getOrElse {
+          log("WARN", "runtime apply status failed ($reason): ${it.message ?: it}")
+          return@launchIO
+        }
+        if (status.state != "idle") {
+          _appUpdate.update { it.copy(runtimeApplyStatus = status, runtimeApplyVisible = true) }
+          if (status.state != lastState) {
+            lastState = status.state
+            log("OK", "runtime apply ${status.state}: ${status.message}")
+          }
+        }
+        if (status.finished) {
+          delay(if (status.state == "failed") 4200L else 2400L)
+          _appUpdate.update { it.copy(runtimeApplyVisible = false) }
+          return@launchIO
+        }
+        delay(550L)
+      }
+    }
+  }
+
+  private fun beginRuntimeApplyPollingIfAppList(path: String, reason: String = path) {
+    if (isRuntimeApplyAppListPath(path)) {
+      beginRuntimeApplyPolling(reason)
+    }
+  }
+
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
   private var appReleaseBuildPollJob: Job? = null
@@ -367,6 +453,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
+  private var runtimeApplyPollJob: Job? = null
   private val proxyInfoApplyDelayMs: Long = 1_200L
   private var appVisible: Boolean = false
   private var startupCompleted: Boolean = false
@@ -392,6 +479,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   init {
     // Initialization is triggered from MainActivity.onCreate via onAppStart().
+    viewModelScope.launch(Dispatchers.Main.immediate + ceh) {
+      RemoteControlCenter.target.collect { target ->
+        if (target == null) {
+          _uiState.update {
+            it.copy(
+              baseUrl = "http" + "://127.0.0.1:1006",
+              remoteTargetName = "",
+              remoteTargetAddress = "",
+            )
+          }
+        } else {
+          startupJob?.cancel()
+          startupCompleted = true
+          statusPollFailureCount = 0
+          lastStatusOkAtMs = System.currentTimeMillis()
+          lastStatusFetchAtMs = 0L
+          lastProgramsFetchAtMs = 0L
+          programsRefreshInFlight = false
+          _uiState.update {
+            it.copy(
+              baseUrl = target.baseUrl,
+              token = target.sessionToken,
+              remoteTargetName = target.device.displayTitle(),
+              remoteTargetAddress = "${target.device.host}:${target.device.port}",
+              status = null,
+              programs = emptyList(),
+              daemonOnline = true,
+              daemonUnavailableVisible = false,
+              startup = StartupUiState.hidden(),
+            )
+          }
+          log("OK", "remote connected: ${target.device.displayTitle()} (${target.device.host}:${target.device.port})")
+          refreshStatus()
+          launchIO { refreshProgramsNow(force = true) }
+          refreshDaemonSettings()
+          refreshEnergySaver()
+          refreshProxyInfo()
+          refreshBlockedQuic()
+        }
+      }
+    }
   }
 
   fun onAppStart(fromLauncher: Boolean) {
@@ -1476,10 +1604,14 @@ private fun clearDownloadedUpdateApk() {
 
   private fun handleDaemonUnreachable() {
     _uiState.update { st ->
-      val showOverlay = startupCompleted && appVisible
-      val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
-      if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
-      else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+      if (st.remoteTargetName.isNotBlank()) {
+        st.copy(daemonOnline = false, daemonUnavailableVisible = false)
+      } else {
+        val showOverlay = startupCompleted && appVisible
+        val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
+        if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
+        else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+      }
     }
   }
 
@@ -1568,6 +1700,29 @@ private fun clearDownloadedUpdateApk() {
     runCatching { root.resetRootShell() }
     _rootState.value = RootState.CHECKING
     ensureRootAndLoadToken()
+  }
+
+  fun openRemoteSetup() {
+    // Remote control is intentionally disabled/hidden for now: the feature is not stable yet.
+    // Keep the implementation in the project so it can be restored and continued later.
+    log("WARN", "remote setup is disabled")
+    return
+
+    @Suppress("UNREACHABLE_CODE")
+    val intent = Intent(ctx, RemoteSetupActivity::class.java).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { ctx.startActivity(intent) }
+      .onFailure { log("ERR", "remote setup open failed: ${it.message ?: it}") }
+  }
+
+  fun exitRemoteControl() {
+    RemoteControlCenter.exit()
+    launchIO {
+      val token = runCatching { root.readApiToken() }.getOrDefault("")
+      _uiState.update { it.copy(token = token) }
+    }
+    log("OK", "remote disconnected")
   }
 
   fun acceptWelcome() {
@@ -2285,7 +2440,7 @@ fi""".trimIndent()
       refreshBackups()
     }
   }
-  
+
   fun onExternalBackupOpen(uri: Uri) {
     externalBackupOpenJob?.cancel()
     externalBackupOpenJob = launchIO {
@@ -2300,13 +2455,13 @@ fi""".trimIndent()
         return@launchIO
       }
       if (_backup.value.progressVisible && !_backup.value.progressFinished) return@launchIO
-  
+
       showBackupProgress(
         title = str(R.string.backup_external_restore_checking),
         text = str(R.string.mv_auto_032),
         percent = 5,
       )
-  
+
       val tmp = File(ctx.cacheDir, "zdtb_external_${System.currentTimeMillis()}.zdtb")
       val okCopy = runCatching {
         ctx.contentResolver.openInputStream(uri)?.use { input ->
@@ -2314,14 +2469,14 @@ fi""".trimIndent()
         } ?: return@runCatching false
         true
       }.getOrDefault(false)
-  
+
       if (!okCopy || !tmp.exists()) {
         runCatching { tmp.delete() }
         _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
         toast(str(R.string.mv_auto_033))
         return@launchIO
       }
-  
+
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 25) }
       // Validate the archive structure here, but let restoreBackup() do the strict versionCode
       // decision so the existing "Restore anyway" path still works for external files.
@@ -2332,7 +2487,7 @@ fi""".trimIndent()
         toast(validation.error ?: str(R.string.backup_external_restore_invalid))
         return@launchIO
       }
-  
+
       root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val importedName = "ZDT-D_backup_${tsForFile}_external.zdtb"
@@ -2347,13 +2502,13 @@ fi""".trimIndent()
         toast(str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
-  
+
       val displayName = uri.lastPathSegment
         ?.substringAfterLast('/')
         ?.substringAfterLast(':')
         ?.takeIf { it.isNotBlank() }
         ?: importedName
-  
+
       _backup.update { st ->
         st.copy(
           progressVisible = false,
@@ -2367,7 +2522,7 @@ fi""".trimIndent()
       refreshBackups()
     }
   }
-  
+
   fun confirmExternalBackupRestore() {
     val name = _backup.value.externalRestoreName ?: return
     _backup.update { st ->
@@ -2379,7 +2534,7 @@ fi""".trimIndent()
     }
     restoreBackup(name, ignoreVersionCode = false)
   }
-  
+
   fun dismissExternalBackupRestore() {
     val name = _backup.value.externalRestoreName
     _backup.update { st ->
@@ -2396,7 +2551,7 @@ fi""".trimIndent()
       }
     }
   }
-  
+
   fun restoreBackup(name: String, ignoreVersionCode: Boolean = false) {
     if (_rootState.value != RootState.GRANTED) return
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
@@ -5287,13 +5442,21 @@ private fun shQuote(s: String): String {
     try {
       val list = api.getPrograms()
       // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
-      val patched = list.map { p ->
-        val ap = activeJsonPath(p.id)
-        if (ap != null) {
-          val en = root.readEnabledFlag(ap)
-          if (en != null) p.copy(enabled = en) else p
-        } else {
-          p
+      val remoteActive = RemoteControlCenter.target.value != null
+      if (remoteActive && list.isEmpty()) {
+        log("WARN", "remote programs returned empty list")
+      }
+      val patched = if (remoteActive) {
+        list
+      } else {
+        list.map { p ->
+          val ap = activeJsonPath(p.id)
+          if (ap != null) {
+            val en = root.readEnabledFlag(ap)
+            if (en != null) p.copy(enabled = en) else p
+          } else {
+            p
+          }
         }
       }
       lastProgramsFetchAtMs = System.currentTimeMillis()
@@ -5308,6 +5471,48 @@ private fun shQuote(s: String): String {
   fun refreshPrograms() {
     launchIO {
       refreshProgramsNow(force = false)
+    }
+  }
+
+
+  fun refreshOptionalTools() {
+    launchIO {
+      val state = runCatching { tgWsProxyRepository.currentState() }.getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
+      _uiState.update { it.copy(tgWsProxy = state) }
+    }
+  }
+
+  fun installTgWsProxy() {
+    launchIO {
+      val initial = TgWsProxyComponentState(stage = TgWsProxyComponentStage.DOWNLOADING, selectedAbi = _uiState.value.tgWsProxy.selectedAbi)
+      _uiState.update { it.copy(tgWsProxy = initial) }
+      val finalState = tgWsProxyRepository.downloadAndInstall { state ->
+        _uiState.update { it.copy(tgWsProxy = state) }
+      }
+      _uiState.update { it.copy(tgWsProxy = finalState) }
+      if (finalState.installed) {
+        log("OK", "tg-ws-proxy installed (${finalState.selectedAbi})")
+      } else {
+        log("ERR", "tg-ws-proxy install failed: ${finalState.errorMessage ?: "unknown"}")
+      }
+    }
+  }
+
+  fun removeTgWsProxy() {
+    launchIO {
+      val state = runCatching { tgWsProxyRepository.remove() }.getOrElse {
+        TgWsProxyComponentState(
+          stage = TgWsProxyComponentStage.FAILED,
+          installed = tgWsProxyRepository.isInstalled(),
+          errorMessage = it.message ?: it.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(tgWsProxy = state) }
+      if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) {
+        log("OK", "tg-ws-proxy removed")
+      } else if (state.stage == TgWsProxyComponentStage.FAILED) {
+        log("ERR", "tg-ws-proxy remove failed: ${state.errorMessage ?: "unknown"}")
+      }
     }
   }
 
@@ -5340,6 +5545,7 @@ private fun shQuote(s: String): String {
     return when (programId) {
       "dnscrypt" -> "/data/adb/modules/ZDT-D/working_folder/dnscrypt/active.json"
       "operaproxy" -> "/data/adb/modules/ZDT-D/working_folder/operaproxy/active.json"
+      "tgwsproxy" -> "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/active.json"
       else -> null
     }
   }
@@ -5350,6 +5556,7 @@ private fun shQuote(s: String): String {
     "byedpi",
     "dpitunnel",
     "sing-box",
+    "hysteria2",
     "wireproxy",
     "myproxy",
     "myprogram",
@@ -5530,6 +5737,36 @@ private fun shQuote(s: String): String {
     }
   }
 
+
+  fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.createHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "hysteria2/$safeProfile/$safeServer created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
+      } else {
+        log("ERR", "hysteria2/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+      }
+    }
+  }
+
+  fun deleteHysteria2Server(profile: String, server: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "hysteria2/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "hysteria2/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit = {}) {
     launchIO {
       val safeProfile = profile.trim()
@@ -5652,7 +5889,10 @@ private fun shQuote(s: String): String {
 
   fun loadRootTextFile(path: String, onDone: (String?) -> Unit = {}) {
     launchIO {
-      val content = runCatching { root.readTextFile(path) }.getOrNull()
+      val target = RemoteControlCenter.target.value
+      val content = runCatching {
+        if (target != null) remoteRoot.readText(target, path) else root.readTextFile(path)
+      }.getOrNull()
       if (content == null) log("ERR", "$path: root read failed")
       withContext(Dispatchers.Main.immediate) { onDone(content) }
     }
@@ -5661,8 +5901,14 @@ private fun shQuote(s: String): String {
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
       val ok = runCatching { api.putTextContent(path, content) }.getOrDefault(false)
-      if (ok) log("OK", "$path: saved (apply after stop/start)")
-      else log("ERR", "$path: save failed")
+      if (ok) {
+        if (isRuntimeApplyAppListPath(path)) {
+          log("OK", "$path: saved (runtime apply queued if service is running)")
+          beginRuntimeApplyPolling(path)
+        } else {
+          log("OK", "$path: saved (apply after stop/start)")
+        }
+      } else log("ERR", "$path: save failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }
@@ -5721,14 +5967,20 @@ private fun shQuote(s: String): String {
         false
       }
 
-      if (ok) log("OK", "$targetPath: saved and conflicts resolved (apply after stop/start)")
+      if (ok) {
+        log("OK", "$targetPath: saved and conflicts resolved")
+        beginRuntimeApplyPollingIfAppList(targetPath, "conflict-resolve")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }
 
   fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit = {}) {
     launchIO {
-      val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)
+      val target = RemoteControlCenter.target.value
+      val ok = runCatching {
+        if (target != null) remoteRoot.writeText(target, path, content) else root.writeTextFile(path, content)
+      }.getOrDefault(false)
       if (ok) log("OK", "$path: root saved")
       else log("ERR", "$path: root save failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
@@ -5743,6 +5995,7 @@ private fun shQuote(s: String): String {
     }
   }
 
+
   fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit) {
     launchIO {
       val report = runCatching { api.getTrafficRules() }.getOrNull()
@@ -5751,6 +6004,7 @@ private fun shQuote(s: String): String {
     }
   }
 
+
   fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit) {
     launchIO {
       val endpoints = runCatching { api.getConstructionProxyEndpoints() }.getOrNull()
@@ -5758,6 +6012,7 @@ private fun shQuote(s: String): String {
       withContext(Dispatchers.Main.immediate) { onDone(endpoints) }
     }
   }
+
 
   fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
     launchIO {
@@ -5770,6 +6025,7 @@ private fun shQuote(s: String): String {
       withContext(Dispatchers.Main.immediate) { onDone(result) }
     }
   }
+
 
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit = {}) {
     launchIO {
@@ -5944,6 +6200,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
+
   fun setThemeMode(mode: String) {
     root.setThemeMode(mode)
     _themeMode.value = com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode())
@@ -5997,8 +6254,10 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
         hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
+        captivePortalEnabled = settings.captivePortalEnabled,
         selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
         ipForwardEnabled = settings.ipForwardEnabled,
+        tproxyEnabled = settings.tproxyEnabled,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
         hotspotProxyPrograms = proxyPrograms,
@@ -6052,6 +6311,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
       when (safeKey) {
         "selinux_permissive_enabled" -> current.copy(selinuxPermissiveEnabled = enabled)
         "ip_forward_enabled" -> current.copy(ipForwardEnabled = enabled)
+        "tproxy_enabled" -> current.copy(tproxyEnabled = enabled)
         else -> current
       }
     }
@@ -6061,6 +6321,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
         when (safeKey) {
           "selinux_permissive_enabled" -> api.setAdvancedSettings(selinuxPermissiveEnabled = enabled)
           "ip_forward_enabled" -> api.setAdvancedSettings(ipForwardEnabled = enabled)
+          "tproxy_enabled" -> api.setAdvancedSettings(tproxyEnabled = enabled)
           else -> api.getDaemonSettings()
         }
       }.getOrElse {
@@ -6084,6 +6345,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6094,6 +6356,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
 
   @Suppress("DEPRECATION")
   private fun syncLsposedHidePreferences(enabled: Boolean, content: String) {
+    if (RemoteControlCenter.target.value != null) return
     val packages = content
       .lineSequence()
       .map { it.substringBefore('#').trim() }
@@ -6385,6 +6648,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6437,6 +6701,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6480,6 +6745,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
     }
@@ -6526,6 +6792,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
@@ -6578,6 +6845,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6622,6 +6890,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6666,6 +6935,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6705,8 +6975,34 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  fun setCaptivePortalEnabled(enabled: Boolean) {
+    val previous = _appUpdate.value.captivePortalEnabled
+    if (previous == enabled) return
+
+    _appUpdate.update { it.copy(captivePortalEnabled = enabled) }
+
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setCaptivePortalEnabled(enabled) }
+      }.getOrElse {
+        log("ERR", "captive portal toggle failed: ${it.message ?: it}")
+        _appUpdate.update { it.copy(captivePortalEnabled = previous) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        return@launchIO
+      }
+
+      _appUpdate.update { it.copy(captivePortalEnabled = applied.captivePortalEnabled) }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_hotspot_saved))
       }

@@ -1,17 +1,19 @@
 mod cli;
 mod socks5;
 mod transparent;
+mod udp;
 mod rules;
 mod stats;
 mod web;
 mod sniff;
 mod api_runtime;
+mod net_utils;
 
 use anyhow::{anyhow, Context, Result};
 use cli::{Args, PriorityZeroMode};
 use parking_lot::Mutex;
-use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, signal, sync::{broadcast, Semaphore}};
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, os::unix::io::AsRawFd, sync::Arc, time::Duration};
+use tokio::{signal, sync::{broadcast, Semaphore}};
 use tracing::{error, info, warn};
 
 #[derive(Clone)]
@@ -25,6 +27,8 @@ pub struct AppState {
     pub events: broadcast::Sender<stats::Event>,
     pub semaphore: Arc<Semaphore>,
     pub api: Arc<api_runtime::ApiRuntime>,
+    pub tproxy_enabled: bool,
+    pub wrapped_socks_addr: Option<SocketAddr>,
 }
 
 
@@ -84,7 +88,27 @@ fn should_log_policy_drop(drop_count: u64) -> bool {
 }
 
 fn conn_stats_flush_threshold() -> u64 {
-    16 * 1024
+    64 * 1024
+}
+
+fn conn_stats_flush_interval() -> Duration {
+    Duration::from_millis(250)
+}
+
+fn reset_tcp_stream(stream: &tokio::net::TcpStream) {
+    let linger = libc::linger { l_onoff: 1, l_linger: 0 };
+    let rc = unsafe {
+        libc::setsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_LINGER,
+            &linger as *const _ as *const libc::c_void,
+            std::mem::size_of_val(&linger) as libc::socklen_t,
+        )
+    };
+    if rc != 0 {
+        tracing::debug!("failed to arm TCP RST via SO_LINGER: {}", std::io::Error::last_os_error());
+    }
 }
 
 fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
@@ -151,6 +175,19 @@ async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
     let started_at = stats::now_ts();
     let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
+    let tproxy_enabled = transparent::tproxy_enabled_from_settings();
+    let wrapped_socks_addr = if args.wrapped_socks_host.trim().is_empty() || args.wrapped_socks_port == 0 {
+        None
+    } else {
+        Some(
+            net_utils::resolve_prefer_ipv4(&args.wrapped_socks_host, args.wrapped_socks_port)
+                .await
+                .context("resolve wrapped SOCKS5")?,
+        )
+    };
+    if tproxy_enabled {
+        info!("ZDT-D tproxy_enabled=true: enabling TCP TPROXY listener and UDP TPROXY receiver");
+    }
 
     let rules = rules::Rules::load_from_env();
     let stats = Arc::new(stats::Stats::default());
@@ -160,10 +197,10 @@ async fn async_main(workers: usize) -> Result<()> {
         let bps = (args.download_limit_mbit * 1024.0 * 1024.0 / 8.0) as u64;
         runtime.download_limit_bps.store(bps, std::sync::atomic::Ordering::Relaxed);
     }
-    let conns = Arc::new(stats::ConnRegistry::default());
+    let conns = Arc::new(stats::ConnRegistry::new(args.priority_speed_aware));
     let (events, _rx) = broadcast::channel(1024);
 
-    let backends = Arc::new(Mutex::new(stats::SocksBackends::new(&args)?));
+    let backends = Arc::new(Mutex::new(stats::SocksBackends::new(&args).await?));
     let semaphore = Arc::new(Semaphore::new(args.max_conns as usize));
 
     let state = AppState {
@@ -176,6 +213,8 @@ async fn async_main(workers: usize) -> Result<()> {
         events,
         semaphore,
         api,
+        tproxy_enabled,
+        wrapped_socks_addr,
     };
 
     // Background: periodic backend checks + stats tick
@@ -201,10 +240,14 @@ async fn async_main(workers: usize) -> Result<()> {
         let api = state.api.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(10));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tick.tick().await;
-                if let Err(e) = api.write_metadata() {
-                    tracing::warn!("failed to refresh t2s API metadata: {:#}", e);
+                let api = api.clone();
+                match tokio::task::spawn_blocking(move || api.refresh_metadata()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => tracing::warn!("failed to refresh t2s API metadata: {:#}", e),
+                    Err(e) => tracing::warn!("t2s API metadata refresh task failed: {}", e),
                 }
             }
         });
@@ -220,7 +263,7 @@ async fn async_main(workers: usize) -> Result<()> {
         });
     }
 
-    // TCP listener (TCP-only build)
+    // TCP listener; UDP TPROXY is started separately when enabled
     {
         let st = state.clone();
         tokio::spawn(async move {
@@ -228,6 +271,15 @@ async fn async_main(workers: usize) -> Result<()> {
                 error!("tcp server error: {:#}", e);
             }
         });
+
+        if state.tproxy_enabled {
+            let st = state.clone();
+            tokio::spawn(async move {
+                if let Err(e) = udp::run_udp_tproxy(st).await {
+                    error!("udp tproxy server error: {:#}", e);
+                }
+            });
+        }
 
         // Optional external listener on 0.0.0.0:<external_port>
         if args.external_port != 0 {
@@ -270,7 +322,7 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
         }
     }
 
-    let listener = TcpListener::bind(addr).await.context("bind tcp listener")?;
+    let listener = transparent::bind_tcp_listener(addr, state.tproxy_enabled && ingress == stats::Ingress::Internal).await.context("bind tcp listener")?;
     info!("TCP ({:?}) listening on {}", ingress, addr);
 
     loop {
@@ -406,8 +458,8 @@ async fn proxy_tcp(
     } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
         stats::Target::HostPort(h, p)
     } else {
-        let dst = transparent::get_original_dst(&client)
-            .context("SO_ORIGINAL_DST failed (need iptables REDIRECT/TPROXY style setup)")?;
+        let dst = transparent::get_transparent_dst(&client, &state.args.listen_addr, state.args.listen_port, state.tproxy_enabled)
+            .context("transparent destination lookup failed")?;
         stats::Target::SockAddr(dst)
     };
 
@@ -474,6 +526,7 @@ async fn proxy_tcp(
         }
         Some(rules::Action::Reset) => {
             state.stats.inc_policy_drop();
+            reset_tcp_stream(&client);
             return Ok(());
         }
         Some(rules::Action::Wait) => {
@@ -657,12 +710,14 @@ async fn proxy_tcp(
     let st1 = state.clone();
     let be1 = chosen_backend;
     let c1 = cancel.clone();
-    let t1 = tokio::spawn(async move {
+    let upload = async move {
         // client -> upstream (upload)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
         let mut conn_acc: u64 = 0;
         let conn_flush_threshold = conn_stats_flush_threshold();
+        let conn_flush_interval = conn_stats_flush_interval();
+        let mut conn_last_flush = Instant::now();
         let mut idle_sleep = idle.map(|d| Box::pin(tokio::time::sleep(d)));
         loop {
             let n = if idle.is_some() {
@@ -698,9 +753,10 @@ async fn proxy_tcp(
             st1.stats.add_up(n as u64);
             st1.stats.add_up_ingress(ingress, n as u64);
             conn_acc = conn_acc.saturating_add(n as u64);
-            if conn_acc >= conn_flush_threshold {
+            if conn_acc >= conn_flush_threshold || conn_last_flush.elapsed() >= conn_flush_interval {
                 st1.conns.add_bytes_up(cid, conn_acc);
                 conn_acc = 0;
+                conn_last_flush = Instant::now();
             }
             if let Some(b) = be1 {
                 be_acc = be_acc.saturating_add(n as u64);
@@ -720,17 +776,19 @@ async fn proxy_tcp(
         }
         let _ = uw.shutdown().await;
         anyhow::Ok(())
-    });
+    };
 
     let st2 = state.clone();
     let be2 = chosen_backend;
     let c2 = cancel.clone();
-    let t2 = tokio::spawn(async move {
+    let download = async move {
         // upstream -> client (download)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
         let mut conn_acc: u64 = 0;
         let conn_flush_threshold = conn_stats_flush_threshold();
+        let conn_flush_interval = conn_stats_flush_interval();
+        let mut conn_last_flush = Instant::now();
         let mut window_start = Instant::now();
         let mut window_bytes: u64 = 0;
         let mut idle_sleep = idle.map(|d| Box::pin(tokio::time::sleep(d)));
@@ -791,9 +849,10 @@ async fn proxy_tcp(
             st2.stats.add_down(n as u64);
             st2.stats.add_down_ingress(ingress, n as u64);
             conn_acc = conn_acc.saturating_add(n as u64);
-            if conn_acc >= conn_flush_threshold {
+            if conn_acc >= conn_flush_threshold || conn_last_flush.elapsed() >= conn_flush_interval {
                 st2.conns.add_bytes_down(cid, conn_acc);
                 conn_acc = 0;
+                conn_last_flush = Instant::now();
             }
             if let Some(b) = be2 {
                 be_acc = be_acc.saturating_add(n as u64);
@@ -813,9 +872,9 @@ async fn proxy_tcp(
         }
         let _ = cw.shutdown().await;
         anyhow::Ok(())
-    });
+    };
 
-    let (upload_res, download_res) = tokio::try_join!(t1, t2)?;
+    let (upload_res, download_res) = tokio::join!(upload, download);
     let mut first_error: Option<anyhow::Error> = None;
     let mut suspect_reason: Option<String> = None;
 
@@ -1139,7 +1198,7 @@ async fn connect_socks(
         state.conns.set_mode(cid, "socks_connecting");
         state.conns.set_backend(cid, Some(backend));
 
-        let wrapper = state.args.wrapped_socks_addr()?;
+        let wrapper = state.wrapped_socks_addr;
         let wrapper_auth = state.args.wrapped_socks_auth();
         let attempt = if let Some(wrapper) = wrapper {
             socks5::connect_via_socks5_wrapped(wrapper, backend, taddr.clone(), wrapper_auth, auth, timeout).await

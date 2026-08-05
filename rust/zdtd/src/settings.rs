@@ -125,7 +125,11 @@ pub struct ApiSettings {
     #[serde(default)]
     pub hotspot_t2s_capture_all: bool,
     #[serde(default)]
+    pub captive_portal_enabled: bool,
+    #[serde(default)]
     pub allow_loopback_redirect: bool,
+    #[serde(default)]
+    pub tproxy_enabled: bool,
     #[serde(default)]
     pub selinux_permissive_enabled: bool,
     #[serde(default)]
@@ -144,7 +148,9 @@ impl Default for ApiSettings {
             hotspot_t2s_singbox_profile: String::new(),
             hotspot_t2s_wireproxy_profile: String::new(),
             hotspot_t2s_capture_all: false,
+            captive_portal_enabled: false,
             allow_loopback_redirect: false,
+            tproxy_enabled: false,
             selinux_permissive_enabled: false,
             ip_forward_enabled: false,
         }
@@ -371,8 +377,10 @@ pub fn ensure_minimal_program_layouts() -> Result<()> {
 "#;
     const ENABLED_FALSE_JSON: &str = r#"{"enabled":false}
 "#;
+    // Written as a real bool: every setting file zdtd creates uses true/false. Readers still
+    // accept the legacy 0/1 form for files created by older versions.
     const PROXYINFO_ENABLED_JSON: &str = r#"{
-  "enabled": 0
+  "enabled": false
 }
 "#;
     const TOR_SETTING_JSON: &str = r#"{
@@ -394,6 +402,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
         ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
         ("singbox", "active.json", PROFILES_DEFAULT_JSON),
+        ("hysteria2", "active.json", PROFILES_DEFAULT_JSON),
         ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myprogram", "active.json", PROFILES_DEFAULT_JSON),
@@ -405,6 +414,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("mieru", "active.json", PROFILES_DEFAULT_JSON),
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
+        ("tgwsproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
         ("blockedquic", "enabled.json", PROXYINFO_ENABLED_JSON),
         ("tor", "enabled.json", PROXYINFO_ENABLED_JSON),
@@ -427,7 +437,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         // Create the root eagerly so the Android app sees the same minimal layout after daemon start
         // even before a first profile is created through the API.
         match program {
-            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" => {
+            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "hysteria2" => {
                 fs::create_dir_all(root.join("profile"))
                     .with_context(|| format!("mkdir {}", root.join("profile").display()))?;
             }

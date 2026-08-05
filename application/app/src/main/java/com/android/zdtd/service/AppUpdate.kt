@@ -54,6 +54,8 @@ data class AppUpdateUiState(
   val hotspotT2sSingboxProfile: String = "",
   val hotspotT2sWireproxyProfile: String = "",
   val hotspotT2sCaptureAll: Boolean = false,
+  /** Captive authorization portal for hotspot clients (proxy mode). */
+  val captivePortalEnabled: Boolean = false,
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotProxyPrograms: List<ApiModels.Program> = emptyList(),
@@ -61,6 +63,7 @@ data class AppUpdateUiState(
   /** Advanced daemon/system settings. */
   val selinuxPermissiveEnabled: Boolean = false,
   val ipForwardEnabled: Boolean = false,
+  val tproxyEnabled: Boolean = false,
   /** Port scan protection (proxyInfo). */
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",
@@ -70,6 +73,9 @@ data class AppUpdateUiState(
   val blockedQuicEnabled: Boolean = false,
   val blockedQuicAppsContent: String = "",
   val blockedQuicBusy: Boolean = false,
+  /** Runtime hot-apply status for app-list UID/routing changes. */
+  val runtimeApplyStatus: ApiModels.RuntimeApplyStatus = ApiModels.RuntimeApplyStatus(),
+  val runtimeApplyVisible: Boolean = false,
   /** True while the app automatically stops the daemon, removes flag.sha256 and starts it again. */
   val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).

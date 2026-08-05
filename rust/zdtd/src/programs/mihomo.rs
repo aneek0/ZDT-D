@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,8 +25,19 @@ const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const MIHOMO_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo";
 const MIHOMO_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo/active.json";
-const NETID_BASE: u32 = 24200;
-const NETID_MAX: u32 = 24999;
+const NETID_BASE: u32 = NETID_MIHOMO.0;
+const NETID_MAX: u32 = NETID_MIHOMO.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const MIHOMO_NET_BASE: u32 = 0xC612_8C00; // 198.18.140.0
 const TUN_WAIT: Duration = Duration::from_secs(18);
 const PORT_WAIT: Duration = Duration::from_secs(20);
@@ -183,13 +195,6 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
     Ok(())
 }
 
-fn validate_loglevel(v: &str, field: &str) -> Result<()> {
-    match v {
-        "debug" | "info" | "warn" | "error" | "silent" => Ok(()),
-        _ => bail!("{field} must be debug/info/warn/error/silent"),
-    }
-}
-
 pub fn validate_enabled_tun_uniqueness_with_override(
     override_profile: Option<&str>,
     override_setting: Option<&ProfileSetting>,
@@ -246,15 +251,14 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let hotspot_profile = crate::settings::load_api_settings()
         .ok()
         .and_then(|st| st.hotspot_vpn_profile_for("mihomo").map(|s| s.to_string()));
-    let mut used_netids = BTreeSet::<u32>::new();
+    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if validate_setting(&setting).is_err() { continue; }
         let selected_for_hotspot = hotspot_profile.as_deref() == Some(name.as_str());
         if !selected_for_hotspot && !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = generate_netid(&used_netids) else { break; };
-        used_netids.insert(netid);
+        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
         if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
             out.push((format!("mihomo/{name}"), cidr));
         }
@@ -569,7 +573,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 	prepare_runtime_config(&plan)?;
 	spawn_mihomo(&plan)?;
-	wait_tcp_port("127.0.0.1", plan.setting.mixed_port)
+	wait_tcp_port("127.0.0.1", plan.setting.mixed_port, PORT_WAIT)
 		.with_context(|| format!("mihomo targeted profile={} wait mixed_port={}", plan.name, plan.setting.mixed_port))?;
 	if !plan.requires_tun {
 		info!("mihomo: targeted profile={} uses launch marker only; skipping tun2socks/vpn_netd", plan.name);
@@ -579,7 +583,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 		bail!("tun2socks binary not found: {TUN2SOCKS_BIN}");
 	}
 	spawn_tun2socks(&plan)?;
-	wait_tun_link(&plan.setting.tun)
+	wait_tun_link(&plan.setting.tun, TUN_WAIT)
 		.with_context(|| format!("mihomo targeted profile={} wait tun={}", plan.name, plan.setting.tun))?;
 	configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
 		.with_context(|| format!("mihomo targeted profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -680,7 +684,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
             );
             prepare_runtime_config(plan)?;
             spawn_mihomo(plan)?;
-            wait_tcp_port("127.0.0.1", plan.setting.mixed_port)
+            wait_tcp_port("127.0.0.1", plan.setting.mixed_port, PORT_WAIT)
                 .with_context(|| format!("mihomo profile={} wait mixed_port={}", plan.name, plan.setting.mixed_port))?;
             if !plan.requires_tun {
                 info!("mihomo: profile={} uses launch marker only; skipping tun2socks/vpn_netd", plan.name);
@@ -690,7 +694,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 bail!("tun2socks binary not found: {TUN2SOCKS_BIN}");
             }
             spawn_tun2socks(plan)?;
-            wait_tun_link(&plan.setting.tun)
+            wait_tun_link(&plan.setting.tun, TUN_WAIT)
                 .with_context(|| format!("mihomo profile={} wait tun={}", plan.name, plan.setting.tun))?;
             configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
                 .with_context(|| format!("mihomo profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -757,10 +761,10 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
     } else {
         prepare_runtime_config(&plan)?;
         spawn_mihomo(&plan)?;
-        wait_tcp_port("127.0.0.1", plan.setting.mixed_port)
+        wait_tcp_port("127.0.0.1", plan.setting.mixed_port, PORT_WAIT)
             .with_context(|| format!("mihomo hotspot profile={} wait mixed_port={}", plan.name, plan.setting.mixed_port))?;
         spawn_tun2socks(&plan)?;
-        wait_tun_link(&plan.setting.tun)
+        wait_tun_link(&plan.setting.tun, TUN_WAIT)
             .with_context(|| format!("mihomo hotspot profile={} wait tun={}", plan.name, plan.setting.tun))?;
         configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
             .with_context(|| format!("mihomo hotspot profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -825,7 +829,13 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
     if raw_config.trim().is_empty() { bail!("config.yaml is empty"); }
     let controller_port = parse_external_controller_port(&raw_config);
 
-    let netid = if requires_tun { generate_netid(used_netids)? } else { 0 };
+    let netid = if requires_tun {
+        let id = stable_netid_for(profile)?;
+        if used_netids.contains(&id) {
+            bail!("netid {id} is already used by another mihomo profile");
+        }
+        id
+    } else { 0 };
     let (tun_addr, cidr) = if requires_tun {
         generated_tun_addr_and_cidr(netid)?
     } else {
@@ -1120,36 +1130,6 @@ fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     shell::ok_sh(&cmd).is_ok()
 }
 
-fn shell_quote_for_sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-fn wait_tcp_port(host: &str, port: u16) -> Result<()> {
-    let ip: IpAddr = host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    let addr = SocketAddr::new(ip, port);
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= PORT_WAIT {
-            bail!("127.0.0.1:{port} is not listening after {:?}", PORT_WAIT);
-        }
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn wait_tun_link(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT { bail!("tun {tun} was not created after {:?}", TUN_WAIT); }
-        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT)
-            .unwrap_or((1, String::new()));
-        if code == 0 { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
 fn wait_tun_ready(tun: &str) -> Result<()> {
     let start = Instant::now();
     loop {
@@ -1163,35 +1143,12 @@ fn wait_tun_ready(tun: &str) -> Result<()> {
     }
 }
 
-fn configure_tun_addr(tun: &str, tun_addr: &str) -> Result<()> {
-    let (code, out) = shell::run_timeout("ip", &["addr", "replace", tun_addr, "dev", tun], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip addr replace {tun_addr} dev {tun}"))?;
-    if code != 0 { bail!("ip addr replace {tun_addr} dev {tun} failed: {}", out.trim()); }
-    let (code, out) = shell::run_timeout("ip", &["link", "set", tun, "up"], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip link set {tun} up"))?;
-    if code != 0 { bail!("ip link set {tun} up failed: {}", out.trim()); }
-    Ok(())
-}
-
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) { return Ok(id); }
-    }
-    bail!("no free mihomo netid in range {NETID_BASE}..={NETID_MAX}")
-}
-
 fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
     if !(NETID_BASE..=NETID_MAX).contains(&netid) { bail!("mihomo netid out of generated range: {netid}"); }
     let offset = (netid - NETID_BASE) * 4;
     let network = MIHOMO_NET_BASE.checked_add(offset).ok_or_else(|| anyhow::anyhow!("mihomo cidr overflow"))?;
     let addr = network + 1;
     Ok((format!("{}/30", u32_to_ipv4(addr)), format!("{}/30", u32_to_ipv4(network))))
-}
-
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 15
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
 }
 
 fn is_forbidden_tun_name(s: &str) -> bool {
@@ -1212,8 +1169,7 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let txt = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&txt).with_context(|| format!("parse {}", path.display()))
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
@@ -1228,17 +1184,6 @@ fn write_text_atomic(path: &Path, txt: &str) -> Result<()> {
     fs::write(&tmp, txt)?;
     fs::rename(&tmp, path)?;
     Ok(())
-}
-
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-}
-
-fn parse_pid_lines(out: &str) -> Vec<i32> {
-    out.split_whitespace()
-        .filter_map(|s| s.trim().parse::<i32>().ok())
-        .filter(|p| *p > 1)
-        .collect()
 }
 
 pub fn main_pids_exact() -> Vec<i32> {

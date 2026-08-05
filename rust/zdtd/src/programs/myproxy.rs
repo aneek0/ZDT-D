@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
-    os::unix::process::CommandExt,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -104,6 +103,15 @@ pub struct ProxyConfig {
     pub pass: String,
     #[serde(default)]
     pub wrapped_socks: WrappedSocksConfig,
+    /// Transparent routing protocol selection for the TPROXY path (myproxy only).
+    ///
+    /// Only affects routing when global TPROXY is enabled and supported:
+    /// - "tcp_udp" (default): TPROXY covers TCP and UDP.
+    /// - "tcp": TPROXY covers TCP only.
+    /// When TPROXY is unavailable the DNAT fallback is always TCP and this value
+    /// is ignored. Applied on service stop/start only.
+    #[serde(default)]
+    pub proto_mode: String,
 }
 
 impl Default for ProxyConfig {
@@ -118,6 +126,7 @@ impl Default for ProxyConfig {
             user: String::new(),
             pass: String::new(),
             wrapped_socks: WrappedSocksConfig::default(),
+            proto_mode: "tcp_udp".to_string(),
         }
     }
 }
@@ -155,6 +164,30 @@ impl ProxyConfig {
     pub fn is_priority_direct_only(&self) -> Result<bool> {
         Ok(self.effective_backend_mode()? == "priority" && self.effective_ports()? == vec![0])
     }
+
+    /// Normalize fields that may be absent from older/minimal proxy.json files.
+    pub fn normalize_defaults(&mut self) -> Result<()> {
+        self.proto_mode = match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "" | "tcp_udp" => "tcp_udp".to_string(),
+            "tcp" => "tcp".to_string(),
+            other => anyhow::bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
+        };
+        Ok(())
+    }
+
+    /// TPROXY protocol coverage for this profile: "tcp" -> TCP only, anything
+    /// else (default "tcp_udp") -> TCP + UDP. Only consulted on the TPROXY path.
+    pub fn proto_choice(&self) -> ProtoChoice {
+        match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "tcp" => ProtoChoice::Tcp,
+            _ => ProtoChoice::TcpUdp,
+        }
+    }
+}
+
+pub fn normalize_proxy_config_defaults(mut proxy: ProxyConfig) -> Result<ProxyConfig> {
+    proxy.normalize_defaults()?;
+    Ok(proxy)
 }
 
 fn collect_ports_from_value(v: &Value, out: &mut Vec<u16>) -> Result<()> {
@@ -242,7 +275,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();
@@ -269,13 +302,38 @@ pub fn start_if_enabled() -> Result<()> {
 
     for plan in &plans {
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s(&t2s_bin, &plan.setting, &plan.proxy, &plan.t2s_log, &plan.name)
+        let t2s_socks_ports_csv = plan.proxy.effective_ports_csv()?;
+        let t2s_backend_mode = plan.proxy.effective_backend_mode()?;
+        let t2s_backend_priority = plan.proxy.backend_priority_trimmed();
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: &t2s_bin,
+            listen_addr: "127.0.0.1",
+            listen_port: plan.setting.t2s_port,
+            socks_host: plan.proxy.host.trim(),
+            socks_ports_csv: &t2s_socks_ports_csv,
+            web_port: Some(plan.setting.t2s_web_port),
+            program: "myproxy",
+            profile: &plan.name,
+            scope: &format!("profile/myproxy/{}", plan.name),
+            log_path: &plan.t2s_log,
+            backend_mode: Some(t2s_backend_mode),
+            backend_priority: if t2s_backend_mode == "priority" && !t2s_backend_priority.is_empty() { Some(t2s_backend_priority) } else { None },
+            priority_speed_aware: t2s_backend_mode == "priority" && plan.proxy.priority_speed_aware,
+            socks_user: Some(plan.proxy.user.as_str()),
+            socks_pass: Some(plan.proxy.pass.as_str()),
+            wrapped_socks_host: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.host.as_str()) } else { None },
+            wrapped_socks_port: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.port) } else { None },
+            wrapped_socks_user: Some(plan.proxy.wrapped_socks.user.as_str()),
+            wrapped_socks_pass: Some(plan.proxy.wrapped_socks.pass.as_str()),
+            ..Default::default()
+        })
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
-        iptables_port::apply(
+        apply_t2s_routing_ext(
             &plan.uid_out,
             plan.setting.t2s_port,
-            ProtoChoice::Tcp,
+            plan.proxy.proto_choice(),
+            plan.proxy.proto_choice(),
             None,
             DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
         )
@@ -310,6 +368,7 @@ fn build_profile_plan(profile: &str, external_used: &BTreeSet<u16>, own_used: &B
     let proxy_path = profile_dir.join("proxy.json");
     let proxy: ProxyConfig = read_json(&proxy_path)
         .with_context(|| format!("read {}", proxy_path.display()))?;
+    let proxy = normalize_proxy_config_defaults(proxy)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
     let uid_in = profile_dir.join("app/uid/user_program");
@@ -390,6 +449,10 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     if wu_empty ^ wpass_empty {
         anyhow::bail!("wrapped_socks user and pass must both be set or both be empty");
     }
+    match proxy.proto_mode.trim().to_ascii_lowercase().as_str() {
+        "tcp" | "tcp_udp" => {}
+        other => anyhow::bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
+    }
     Ok(())
 }
 
@@ -457,20 +520,11 @@ fn validate_backend_priority(raw: &str, backend_mode: &str, effective_ports: &[u
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(p: &Path) -> Result<T> {
-    let raw = fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?;
-    let v: T = serde_json::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json_short_ctx(p)
 }
 
 fn ensure_dir(p: &str) -> Result<()> {
     fs::create_dir_all(p).with_context(|| format!("mkdir {p}"))?;
-    Ok(())
-}
-
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
     Ok(())
 }
 
@@ -480,25 +534,6 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
         fs::write(p, "").with_context(|| format!("write {}", p.display()))?;
     }
     Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
 }
 
 fn profile_root(profile: &str) -> PathBuf {
@@ -515,88 +550,6 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
         anyhow::bail!("profile name must contain only English letters/digits/_/-");
     }
-    Ok(())
-}
-
-fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path: &Path, profile: &str) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg("127.0.0.1")
-        .arg("--listen-port")
-        .arg(setting.t2s_port.to_string())
-        .arg("--socks-host")
-        .arg(proxy.host.trim())
-        .arg("--socks-port")
-        .arg(proxy.effective_ports_csv()?)
-        .arg("--backend-mode")
-        .arg(proxy.effective_backend_mode()?)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(setting.t2s_web_port.to_string())
-        .arg("--program")
-        .arg("myproxy")
-        .arg("--profile")
-        .arg(profile)
-        .arg("--scope")
-        .arg(format!("profile/myproxy/{}", profile))
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    let backend_mode = proxy.effective_backend_mode()?;
-    if backend_mode == "priority" && !proxy.backend_priority_trimmed().is_empty() {
-        cmd.arg("--backend-priority").arg(proxy.backend_priority_trimmed());
-    }
-
-    if backend_mode == "priority" && proxy.priority_speed_aware {
-        cmd.arg("--priority-speed-aware");
-    }
-
-    if !proxy.user.trim().is_empty() || !proxy.pass.trim().is_empty() {
-        cmd.arg("--socks-user").arg(proxy.user.trim())
-            .arg("--socks-pass").arg(proxy.pass.trim());
-    }
-
-    if proxy.wrapped_socks.enabled() {
-        cmd.arg("--wrapped-socks-host").arg(proxy.wrapped_socks.host.trim())
-            .arg("--wrapped-socks-port").arg(proxy.wrapped_socks.port.to_string());
-        if !proxy.wrapped_socks.user.trim().is_empty() || !proxy.wrapped_socks.pass.is_empty() {
-            cmd.arg("--wrapped-socks-user").arg(proxy.wrapped_socks.user.trim())
-                .arg("--wrapped-socks-pass").arg(proxy.wrapped_socks.pass.as_str());
-        }
-    }
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} backend_mode={} backend_priority={} priority_speed_aware={} web_port={} log={}",
-        child.id(),
-        setting.t2s_port,
-        proxy.host,
-        proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()),
-        proxy.effective_backend_mode().unwrap_or("balance"),
-        proxy.backend_priority_trimmed(),
-        proxy.priority_speed_aware,
-        setting.t2s_web_port,
-        log_path.display()
-    );
     Ok(())
 }
 

@@ -179,7 +179,9 @@ fn stop_process_groups_parallel() -> Result<()> {
         "t2s",
         "opera-proxy",
         "sing-box",
+        "hysteria2",
         "wireproxy",
+        "tg-ws-proxy",
     ] {
         let proc_name = name.to_string();
         jobs.push(thread::spawn(move || kill_by_name(&proc_name)));
@@ -211,8 +213,15 @@ pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Res
         if let Err(e) = crate::vpn_tether::cleanup() {
             log::warn!("vpn_tether cleanup failed during stop: {e:#}");
         }
+        crate::captive_portal::stop();
+        if let Err(e) = crate::iptables::captive_portal::cleanup() {
+            log::warn!("captive portal cleanup failed during stop: {e:#}");
+        }
         if let Err(e) = crate::iptables::hotspot::cleanup() {
             log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
+        }
+        if let Err(e) = crate::iptables::iptables_tproxy::cleanup_all() {
+            log::warn!("TPROXY cleanup failed during stop: {e:#}");
         }
         if let Err(e) = crate::vpn_netd::stop_applied() {
             log::warn!("vpn_netd cleanup failed during stop: {e:#}");
@@ -229,6 +238,8 @@ pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Res
         kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
         kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;
         kill_exact_pids("mieru tun2proxy -device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
+        kill_exact_pids("hysteria2 client <profile config>", &crate::programs::hysteria2::main_pids_exact())?;
+        kill_exact_pids("hysteria2 tun2socks -device tun://<profile tun>", &crate::programs::hysteria2::tun2socks_pids_exact())?;
         kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
 
         // IMPORTANT: do not stop plain substring/name matches for Tor.

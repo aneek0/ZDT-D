@@ -4,6 +4,12 @@ use std::{fs, path::{Path, PathBuf}};
 
 const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshOutcome {
+    Applied,
+    NoActiveRuntime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RangeSnapshot {
     pub start: u16,
@@ -41,6 +47,16 @@ pub enum RoutingSnapshot {
         port_preference: u8,
         dpi_ports: String,
     },
+    Tproxy {
+        uid_file: String,
+        dest_port: u16,
+        proto_choice: String,
+        ifaces_raw: Option<String>,
+        port_preference: u8,
+        dpi_ports: String,
+        mark: u32,
+        table: u32,
+    },
 }
 
 impl RoutingSnapshot {
@@ -49,12 +65,14 @@ impl RoutingSnapshot {
             RoutingSnapshot::NfqV1 { uid_file, .. } => uid_file,
             RoutingSnapshot::NfqV2 { uid_file, .. } => uid_file,
             RoutingSnapshot::Nat { uid_file, .. } => uid_file,
+            RoutingSnapshot::Tproxy { uid_file, .. } => uid_file,
         }
     }
 
     fn same_runtime_slot(&self, other: &RoutingSnapshot) -> bool {
         self == other
     }
+
 }
 
 fn filter_to_snapshot(filter: Option<&crate::iptables::port_filter::ProtoPortFilter>) -> Option<FilterSnapshot> {
@@ -164,7 +182,34 @@ pub fn register_nat(
     });
 }
 
-pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
+
+pub fn register_tproxy(
+    uid_file: &Path,
+    dest_port: u16,
+    proto_choice: crate::iptables::iptables_port::ProtoChoice,
+    ifaces_raw: Option<&str>,
+    opt: &crate::iptables::iptables_port::DpiTunnelOptions,
+    mark: u32,
+    table: u32,
+) {
+    let proto_choice = match proto_choice {
+        crate::iptables::iptables_port::ProtoChoice::Tcp => "tcp",
+        crate::iptables::iptables_port::ProtoChoice::Udp => "udp",
+        crate::iptables::iptables_port::ProtoChoice::TcpUdp => "tcp_udp",
+    };
+    register_snapshot(RoutingSnapshot::Tproxy {
+        uid_file: uid_file.display().to_string(),
+        dest_port,
+        proto_choice: proto_choice.to_string(),
+        ifaces_raw: ifaces_raw.map(str::to_string).filter(|s| !s.trim().is_empty()),
+        port_preference: opt.port_preference,
+        dpi_ports: opt.dpi_ports.clone(),
+        mark,
+        table,
+    });
+}
+
+pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
     let key = uid_file.display().to_string();
     let snapshots = read_routing_cache()
         .into_iter()
@@ -172,7 +217,7 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
         .collect::<Vec<_>>();
     if snapshots.is_empty() {
         log::info!("runtime_refresh: no active routing cache for {}", uid_file.display());
-        return Ok(false);
+        return Ok(RefreshOutcome::NoActiveRuntime);
     }
 
     for snapshot in snapshots {
@@ -190,9 +235,24 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
                 let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
                 crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;
             }
+            RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
+                let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
+                let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
+                // Preserve the exact TPROXY protocol coverage captured in the
+                // snapshot (TCP+UDP for most tools, per-profile TCP/TCP+UDP for
+                // myproxy) when replaying on network refresh or live app changes.
+                crate::programs::common::apply_t2s_routing_ext(
+                    Path::new(&uid_file),
+                    dest_port,
+                    proto_choice,
+                    proto_choice,
+                    ifaces_raw.as_deref(),
+                    opt,
+                )?;
+            }
         }
     }
-    Ok(true)
+    Ok(RefreshOutcome::Applied)
 }
 
 fn uid_output_from_input(input: &Path) -> PathBuf {
@@ -223,38 +283,49 @@ fn rebuild_uid_file(input: &Path, output: &Path) -> Result<()> {
 /// service is running. Profile settings changed on disk (ports, interfaces,
 /// TUN/netId/CIDR/DNS, hotspot settings, program configs, etc.) are not applied
 /// here and become active only after a normal stop/start cycle.
-pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
+pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<RefreshOutcome> {
     match program {
         "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
-            refresh_vpn_netd_users(program, profile)
+            refresh_vpn_netd_users(program, profile)?;
+            Ok(RefreshOutcome::Applied)
         }
         "blockedquic" => {
             let _ = crate::blockedquic::rebuild_out_program()?;
             let _ = crate::blockedquic::refresh_runtime(true)?;
-            Ok(())
+            Ok(RefreshOutcome::Applied)
         }
         "proxyinfo" => {
             let _ = crate::proxyinfo::refresh_runtime(true)?;
-            Ok(())
+            Ok(RefreshOutcome::Applied)
         }
         "nfqws" | "nfqws2" | "byedpi" | "dpitunnel" | "wireproxy" | "tor" | "operaproxy" | "myproxy" | "myprogram" => {
             let input = app_input_path(program, profile, slot)?;
             let output = uid_output_from_input(&input);
             rebuild_uid_file(&input, &output)?;
-            let _ = refresh_routing_by_uid_file(&output)?;
-            Ok(())
+            refresh_routing_by_uid_file(&output)
         }
         "sing-box" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             let input = app_input_path(program, Some(profile), slot)?;
             let output = uid_output_from_input(&input);
             rebuild_uid_file(&input, &output)?;
-            let _ = refresh_routing_by_uid_file(&output)?;
+            let routing = refresh_routing_by_uid_file(&output)?;
             if slot == "common" || slot == "user" {
                 let _ = crate::vpn_netd::refresh_profile_users("singbox", profile, &input, &output)?;
             }
-            Ok(())
+            Ok(routing)
+        }
+        "hysteria2" => {
+            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
+            let input = app_input_path(program, Some(profile), slot)?;
+            let output = uid_output_from_input(&input);
+            rebuild_uid_file(&input, &output)?;
+            let routing = refresh_routing_by_uid_file(&output)?;
+            if slot == "common" || slot == "user" {
+                let _ = crate::vpn_netd::refresh_profile_users("hysteria2", profile, &input, &output)?;
+            }
+            Ok(routing)
         }
         other => bail!("runtime_refresh: unsupported program {other}"),
     }
@@ -274,6 +345,10 @@ fn app_input_path(program: &str, profile: Option<&str>, slot: &str) -> Result<Pa
         "sing-box" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/singbox/profile/{profile}/app/uid/{file}"))
+        }
+        "hysteria2" => {
+            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
+            PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/hysteria2/profile/{profile}/app/uid/{file}"))
         }
         "wireproxy" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -9,7 +10,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
 const TOR_BIN: &str = "/data/adb/modules/ZDT-D/bin/torproxy";
@@ -439,7 +440,7 @@ pub fn start_if_enabled() -> Result<()> {
         validate_setting(&setting, socks_port)?;
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false, false)
         .unwrap_or_default();
     let mut ports_to_check = vec![socks_port];
     if needs_t2s {
@@ -460,16 +461,23 @@ pub fn start_if_enabled() -> Result<()> {
     if needs_t2s {
         truncate_file(&t2s_log_path())?;
         let t2s_bin = find_bin("t2s")?;
-        spawn_t2s(
-            &t2s_bin,
-            "127.0.0.1",
-            setting.t2s_port,
-            setting.t2s_web_port,
-            &socks_port.to_string(),
-            &t2s_log_path(),
-        )?;
+        let t2s_log = t2s_log_path();
+        let t2s_socks_ports_csv = socks_port.to_string();
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: &t2s_bin,
+            listen_addr: "127.0.0.1",
+            listen_port: setting.t2s_port,
+            socks_host: "127.0.0.1",
+            socks_ports_csv: &t2s_socks_ports_csv,
+            web_port: Some(setting.t2s_web_port),
+            program: "tor",
+            profile: "main",
+            scope: "program/tor",
+            log_path: &t2s_log,
+            ..Default::default()
+        })?;
 
-        iptables_port::apply(
+        apply_t2s_routing(
             &out_program_path(),
             setting.t2s_port,
             ProtoChoice::Tcp,
@@ -542,62 +550,6 @@ fn spawn_tor(torrc: &Path, log_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn spawn_t2s(
-    bin: &Path,
-    listen_addr: &str,
-    listen_port: u16,
-    web_port: u16,
-    socks_ports_csv: &str,
-    log_path: &Path,
-) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg(listen_addr)
-        .arg("--listen-port")
-        .arg(listen_port.to_string())
-        .arg("--socks-host")
-        .arg("127.0.0.1")
-        .arg("--socks-port")
-        .arg(socks_ports_csv)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(web_port.to_string())
-        .arg("--program")
-        .arg("tor")
-        .arg("--profile")
-        .arg("main")
-        .arg("--scope")
-        .arg("program/tor")
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} web_port={} log={}",
-        child.id(), listen_addr, listen_port, socks_ports_csv, web_port, log_path.display()
-    );
-    Ok(())
-}
-
 fn find_bin(name: &str) -> Result<PathBuf> {
     let p = Path::new("/data/adb/modules/ZDT-D/bin").join(name);
     if p.is_file() {
@@ -610,34 +562,6 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 fn truncate_file(p: &Path) -> Result<()> {
     ensure_parent_dir(p)?;
     let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
-    Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
-}
-
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
     Ok(())
 }
 

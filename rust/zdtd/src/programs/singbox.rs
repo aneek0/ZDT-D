@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{json, Map, Value};
@@ -15,7 +16,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::{hotspot, iptables_port::{self, DpiTunnelOptions, ProtoChoice}};
+use crate::iptables::{hotspot, iptables_port::{DpiTunnelOptions, ProtoChoice}};
 use crate::{
     settings,
     shell::{self, Capture},
@@ -34,8 +35,19 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/active
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
-const NETID_BASE: u32 = 22200;
-const NETID_MAX: u32 = 22999;
+const NETID_BASE: u32 = NETID_SINGBOX.0;
+const NETID_MAX: u32 = NETID_SINGBOX.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active_profiles().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const SINGBOX_NET_BASE: u32 = 0xAC1F_F000; // 172.31.240.0 (outside sing-box fakeip 198.18.0.0/15)
 const TUN_WAIT: Duration = Duration::from_secs(25);
 const PORT_WAIT: Duration = Duration::from_secs(20);
@@ -113,6 +125,8 @@ pub struct ProfileSetting {
     pub dns: Vec<String>,
     #[serde(default = "default_tun2socks_loglevel")]
     pub tun2socks_loglevel: String,
+    #[serde(default)]
+    pub proto_mode: String,
 }
 
 impl Default for ProfileSetting {
@@ -124,6 +138,16 @@ impl Default for ProfileSetting {
             tun: default_tun_name(),
             dns: default_dns(),
             tun2socks_loglevel: default_tun2socks_loglevel(),
+            proto_mode: "tcp_udp".to_string(),
+        }
+    }
+}
+
+impl ProfileSetting {
+    pub fn proto_choice(&self) -> ProtoChoice {
+        match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "tcp" => ProtoChoice::Tcp,
+            _ => ProtoChoice::TcpUdp,
         }
     }
 }
@@ -254,6 +278,11 @@ fn normalize_setting_defaults(setting: &mut ProfileSetting) -> Result<()> {
     if setting.tun2socks_loglevel.is_empty() {
         setting.tun2socks_loglevel = default_tun2socks_loglevel();
     }
+    setting.proto_mode = match setting.proto_mode.trim().to_ascii_lowercase().as_str() {
+        "" | "tcp_udp" => "tcp_udp".to_string(),
+        "tcp" => "tcp".to_string(),
+        other => bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
+    };
     Ok(())
 }
 
@@ -279,13 +308,6 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn validate_loglevel(v: &str, field: &str) -> Result<()> {
-    match v {
-        "debug" | "info" | "warn" | "error" | "silent" => Ok(()),
-        _ => bail!("{field} must be debug/info/warn/error/silent"),
-    }
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
@@ -364,15 +386,19 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     if plan.needs_t2s {
         let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s(
-            t2s_bin,
-            t2s_listen_addr,
-            plan.setting.t2s_port,
-            plan.setting.t2s_web_port,
-            &ports_csv,
-            &plan.t2s_log,
-            &plan.name,
-        )
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: t2s_bin,
+            listen_addr: t2s_listen_addr,
+            listen_port: plan.setting.t2s_port,
+            socks_host: "127.0.0.1",
+            socks_ports_csv: &ports_csv,
+            web_port: Some(plan.setting.t2s_web_port),
+            program: "sing-box",
+            profile: &plan.name,
+            scope: &format!("profile/sing-box/{}", plan.name),
+            log_path: &plan.t2s_log,
+            ..Default::default()
+        })
         .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
         if hotspot_for_plan {
@@ -384,10 +410,11 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
             })?;
         }
 
-        iptables_port::apply(
+        apply_t2s_routing_ext(
             &plan.uid_out,
             plan.setting.t2s_port,
-            ProtoChoice::Tcp,
+            plan.setting.proto_choice(),
+            plan.setting.proto_choice(),
             None,
             DpiTunnelOptions {
                 port_preference: 1,
@@ -525,15 +552,19 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         if plan.needs_t2s {
             let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
             truncate_file(&plan.t2s_log)?;
-            spawn_t2s(
-                t2s_bin,
-                t2s_listen_addr,
-                plan.setting.t2s_port,
-                plan.setting.t2s_web_port,
-                &ports_csv,
-                &plan.t2s_log,
-                &plan.name,
-            )
+            spawn_t2s_proxy(T2sSpawnConfig {
+                bin: t2s_bin,
+                listen_addr: t2s_listen_addr,
+                listen_port: plan.setting.t2s_port,
+                socks_host: "127.0.0.1",
+                socks_ports_csv: &ports_csv,
+                web_port: Some(plan.setting.t2s_web_port),
+                program: "sing-box",
+                profile: &plan.name,
+                scope: &format!("profile/sing-box/{}", plan.name),
+                log_path: &plan.t2s_log,
+                ..Default::default()
+            })
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
             if hotspot_for_plan {
@@ -545,10 +576,11 @@ pub fn start_t2s_if_enabled() -> Result<()> {
                 })?;
             }
 
-            iptables_port::apply(
+            apply_t2s_routing_ext(
                 &plan.uid_out,
                 plan.setting.t2s_port,
-                ProtoChoice::Tcp,
+                plan.setting.proto_choice(),
+                plan.setting.proto_choice(),
                 None,
                 DpiTunnelOptions {
                     port_preference: 1,
@@ -666,13 +698,13 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
             truncate_file(&plan.log_path)?;
             spawn_singbox(&plan.config_path, &plan.log_path)
                 .with_context(|| format!("spawn sing-box vpn profile={} server={}", plan.name, plan.server_name))?;
-            wait_tcp_port("127.0.0.1", plan.server_port)
+            wait_tcp_port("127.0.0.1", plan.server_port, PORT_WAIT)
                 .with_context(|| format!("sing-box vpn profile={} wait server port={}", plan.name, plan.server_port))?;
 
             truncate_file(&plan.tun2socks_log_path)?;
             spawn_tun2socks_for_vpn(&tun2socks_bin, plan)
                 .with_context(|| format!("spawn tun2socks for sing-box profile={}", plan.name))?;
-            wait_tun_link(&plan.tun)
+            wait_tun_link(&plan.tun, TUN_WAIT)
                 .with_context(|| format!("sing-box vpn profile={} wait tun={}", plan.name, plan.tun))?;
             configure_tun_addr(&plan.tun, &plan.tun_address)
                 .with_context(|| format!("sing-box vpn profile={} configure tun={}", plan.name, plan.tun))?;
@@ -874,7 +906,10 @@ fn build_vpn_profile_plan(
     singbox_check_config_with_log(&config_path, &log_path)
         .with_context(|| format!("sing-box check {}", config_path.display()))?;
 
-    let netid = generate_netid(used_netids)?;
+    let netid = stable_netid_for(profile)?;
+    if used_netids.contains(&netid) {
+        bail!("netid {netid} is already used by another sing-box profile");
+    }
     let (tun_address, cidr, _generated_dns) = generated_tun_address_for_index(netid - NETID_BASE)?;
 
     Ok(Some(VpnProfilePlan {
@@ -1192,14 +1227,13 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
 pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active_profiles() else { return out; };
-    let mut used_netids = BTreeSet::<u32>::new();
+    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if !setting.mode.is_vpn() || validate_setting(&setting).is_err() { continue; }
         if !app_list_has_real_apps(&profile_root(&name).join("app/uid/user_program")).unwrap_or(false) { continue; }
-        let Ok(netid) = generate_netid(&used_netids) else { break; };
-        used_netids.insert(netid);
+        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
         if let Ok((_, cidr, _)) = generated_tun_address_for_index(netid - NETID_BASE) {
             out.push((format!("singbox/{name}"), cidr));
         }
@@ -1864,72 +1898,6 @@ fn spawn_singbox(config_path: &Path, log_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn spawn_t2s(
-    bin: &Path,
-    listen_addr: &str,
-    listen_port: u16,
-    web_port: u16,
-    socks_ports_csv: &str,
-    log_path: &Path,
-    profile: &str,
-) -> Result<()> {
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg(listen_addr)
-        .arg("--listen-port")
-        .arg(listen_port.to_string())
-        .arg("--socks-host")
-        .arg("127.0.0.1")
-        .arg("--socks-port")
-        .arg(socks_ports_csv)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(web_port.to_string())
-        .arg("--program")
-        .arg("sing-box")
-        .arg("--profile")
-        .arg(profile)
-        .arg("--scope")
-        .arg(format!("profile/sing-box/{}", profile))
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} web_port={} log={}",
-        child.id(),
-        listen_addr,
-        listen_port,
-        socks_ports_csv,
-        web_port,
-        log_path.display()
-    );
-    Ok(())
-}
-
 fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnProfilePlan) -> Result<()> {
     let proxy = format!("socks5://127.0.0.1:{}", plan.server_port);
     if tun2socks_profile_process_running(&plan.tun, &proxy) {
@@ -1995,50 +1963,6 @@ fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     shell::ok_sh(&cmd).is_ok()
 }
 
-fn wait_tcp_port(host: &str, port: u16) -> Result<()> {
-    let ip: IpAddr = host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    let addr = SocketAddr::new(ip, port);
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= PORT_WAIT {
-            bail!("127.0.0.1:{port} is not listening after {:?}", PORT_WAIT);
-        }
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn wait_tun_link(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT {
-            bail!("tun {tun} was not created after {:?}", TUN_WAIT);
-        }
-        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT)
-            .unwrap_or((1, String::new()));
-        if code == 0 {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn configure_tun_addr(tun: &str, tun_addr: &str) -> Result<()> {
-    let (code, out) = shell::run_timeout("ip", &["addr", "replace", tun_addr, "dev", tun], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip addr replace {tun_addr} dev {tun}"))?;
-    if code != 0 {
-        bail!("ip addr replace {tun_addr} dev {tun} failed: {}", out.trim());
-    }
-    let (code, out) = shell::run_timeout("ip", &["link", "set", tun, "up"], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip link set {tun} up"))?;
-    if code != 0 {
-        bail!("ip link set {tun} up failed: {}", out.trim());
-    }
-    Ok(())
-}
-
 fn singbox_profile_process_running(config_path: &Path) -> bool {
     let pattern = format!("{} run -c {}", SINGBOX_BIN, config_path.display());
     let cmd = format!(
@@ -2046,10 +1970,6 @@ fn singbox_profile_process_running(config_path: &Path) -> bool {
         shell_quote_for_sh(&pattern)
     );
     shell::ok_sh(&cmd).is_ok()
-}
-
-fn shell_quote_for_sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 fn wait_tun_ready(tun: &str) -> Result<()> {
@@ -2120,15 +2040,6 @@ fn route_gateway_for_tun(tun: &str) -> Result<String> {
     bail!("gateway not found for {tun}")
 }
 
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) {
-            return Ok(id);
-        }
-    }
-    bail!("no free sing-box VPN netid in {NETID_BASE}..={NETID_MAX}")
-}
-
 fn generated_tun_address_for_profile(profile: &str) -> Result<(String, String, String)> {
     let dirs = read_sorted_dirs(Path::new(SINGBOX_PROFILE_ROOT)).unwrap_or_default();
     let index = dirs.iter().position(|(name, _)| name == profile).unwrap_or(0) as u32;
@@ -2176,25 +2087,6 @@ fn is_ipv4(s: &str) -> bool {
     ipv4_to_u32(s).is_some()
 }
 
-fn ipv4_to_u32(s: &str) -> Option<u32> {
-    let mut out = 0u32;
-    let mut count = 0usize;
-    for part in s.split('.') {
-        let n = part.parse::<u8>().ok()? as u32;
-        out = (out << 8) | n;
-        count += 1;
-    }
-    if count == 4 { Some(out) } else { None }
-}
-
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-}
-
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 15 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
-}
-
 fn is_forbidden_tun_name(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
     lower == "lo"
@@ -2236,11 +2128,6 @@ fn ensure_base_layout() -> Result<()> {
     fs::create_dir_all(SINGBOX_ROOT).ok();
     fs::create_dir_all(SINGBOX_PROFILE_ROOT).ok();
     Ok(())
-}
-
-fn is_nonempty_file(p: &Path) -> Result<bool> {
-    let md = fs::metadata(p).with_context(|| format!("stat {}", p.display()))?;
-    Ok(md.len() > 0)
 }
 
 fn profile_root(profile: &str) -> PathBuf {
@@ -2299,34 +2186,6 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
     Ok(())
 }
 
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
-}
-
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    Ok(())
-}
-
 fn unique_tmp_path(target: &Path) -> PathBuf {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2352,9 +2211,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let v = serde_json::from_str::<T>(&s).with_context(|| format!("parse json {}", path.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json(path)
 }
 
 fn ensure_dir(p: &str) -> Result<()> {

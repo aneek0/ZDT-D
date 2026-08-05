@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
@@ -17,8 +18,19 @@ use crate::{
 const MYVPN_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn";
 const MYVPN_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/active.json";
-const NETID_BASE: u32 = 23200;
-const NETID_MAX: u32 = 23999;
+const NETID_BASE: u32 = NETID_MYVPN.0;
+const NETID_MAX: u32 = NETID_MYVPN.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const TUN_WAIT: Duration = Duration::from_secs(20);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -253,12 +265,6 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     out
 }
 
-fn enabled_app_list_empty(path: &Path) -> bool {
-    fs::read_to_string(path)
-        .map(|raw| raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')))
-        .unwrap_or(true)
-}
-
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     for plan in plans {
@@ -355,7 +361,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     let mut used_cidrs = Vec::<(String, String)>::new();
     for plan in &plans {
         let res: Result<VpnNetdProfile> = (|| {
-            wait_tun_link(&plan.setting.tun)
+            wait_tun_link(&plan.setting.tun, TUN_WAIT)
                 .with_context(|| format!("myvpn profile={} wait tun={}", plan.name, plan.setting.tun))?;
             let cidr = match plan.setting.cidr_mode.as_str() {
                 "manual" => normalize_cidr_network(plan.setting.cidr.trim())?,
@@ -415,21 +421,11 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
     if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
         bail!("app list is empty: {}", app_in.display());
     }
-    let netid = generate_netid(used_netids)?;
-    Ok(ProfilePlan { name: profile.to_string(), setting, profile_dir, app_in, app_out, netid })
-}
-
-fn wait_tun_link(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT {
-            bail!("tun {tun} was not found after {:?}", TUN_WAIT);
-        }
-        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT)
-            .unwrap_or((1, String::new()));
-        if code == 0 { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
+    let netid = stable_netid_for(profile)?;
+    if used_netids.contains(&netid) {
+        bail!("netid {netid} is already used by another myvpn profile");
     }
+    Ok(ProfilePlan { name: profile.to_string(), setting, profile_dir, app_in, app_out, netid })
 }
 
 fn inspect_tun(tun: &str) -> Result<TunInfo> {
@@ -466,19 +462,6 @@ fn normalize_cidr_network(cidr: &str) -> Result<String> {
     Ok(format!("{}/{}", u32_to_ipv4(addr & mask), prefix))
 }
 
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) { return Ok(id); }
-    }
-    bail!("no free myvpn netid in range {NETID_BASE}..={NETID_MAX}")
-}
-
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 15
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
-}
-
 fn is_forbidden_tun_name(s: &str) -> bool {
     s == "lo"
         || s == "dummy0"
@@ -512,30 +495,6 @@ fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
     Ok(a_start <= b_end && b_start <= a_end)
 }
 
-fn cidr_network_mask(cidr: &str) -> Result<(u32, u32)> {
-    let (ip, prefix_s) = cidr.split_once('/').ok_or_else(|| anyhow::anyhow!("bad cidr {cidr}"))?;
-    let prefix = prefix_s.parse::<u8>().with_context(|| format!("bad cidr prefix {cidr}"))?;
-    if prefix > 32 { bail!("bad cidr prefix {cidr}"); }
-    let addr = ipv4_to_u32(ip).ok_or_else(|| anyhow::anyhow!("bad cidr ip {cidr}"))?;
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
-    Ok((addr & mask, mask))
-}
-
-fn ipv4_to_u32(s: &str) -> Option<u32> {
-    let mut out = 0u32;
-    let mut count = 0usize;
-    for part in s.split('.') {
-        let n = part.parse::<u8>().ok()? as u32;
-        out = (out << 8) | n;
-        count += 1;
-    }
-    if count == 4 { Some(out) } else { None }
-}
-
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-}
-
 fn ensure_file_empty(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
     if !path.exists() { fs::write(path, "")?; }
@@ -543,15 +502,9 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let txt = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&txt).with_context(|| format!("parse {}", path.display()))
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    let txt = serde_json::to_string_pretty(v)?;
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, txt)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    crate::jsonfs::write_json_pretty_tmp_rename(path, v)
 }

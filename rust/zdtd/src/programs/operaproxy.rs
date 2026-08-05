@@ -1,5 +1,6 @@
 
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,7 +20,7 @@ use crate::{
     android::pkg_uid::{self, Sha256Tracker, Mode as UidMode},
     iptables::{
         hotspot,
-        iptables_port::{self, DpiTunnelOptions, ProtoChoice},
+        iptables_port::{DpiTunnelOptions, ProtoChoice},
     },
     programs::dnscrypt,
     settings,
@@ -469,7 +470,19 @@ pub fn start_if_enabled() -> Result<()> {
         let t2s_log = log_dir.join("t2s.log");
         truncate_file(&t2s_log)?;
 
-        spawn_t2s(&t2s_bin, t2s_listen_addr, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: &t2s_bin,
+            listen_addr: t2s_listen_addr,
+            listen_port: port_cfg.t2s_port,
+            socks_host: "127.0.0.1",
+            socks_ports_csv: &ports_csv,
+            web_port: None,
+            program: "operaproxy",
+            profile: "main",
+            scope: "program/operaproxy",
+            log_path: &t2s_log,
+            ..Default::default()
+        })?;
         info!(
             "operaproxy: t2s started listen_addr={} listen_port={} socks_ports={}",
             t2s_listen_addr,
@@ -494,21 +507,21 @@ pub fn start_if_enabled() -> Result<()> {
     // - mobile/wifi lists apply to specified interfaces from port.json
     let opt = DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() };
 
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_USER),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
         None,
         opt.clone(),
     )?;
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_MOBILE),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
         Some(port_cfg.iface_mobile.as_str()),
         opt.clone(),
     )?;
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_WIFI),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
@@ -1427,62 +1440,6 @@ fn spawn_opera_proxy(
     Ok(())
 }
 
-fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &str, log_path: &Path) -> Result<()> {
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg(listen_addr)
-        .arg("--listen-port")
-        .arg(listen_port.to_string())
-        .arg("--socks-host")
-        .arg("127.0.0.1")
-        .arg("--socks-port")
-        .arg(socks_ports_csv)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--program")
-        .arg("operaproxy")
-        .arg("--profile")
-        .arg("main")
-        .arg("--scope")
-        .arg("program/operaproxy")
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} log={}",
-        child.id(),
-        listen_addr,
-        listen_port,
-        socks_ports_csv,
-        log_path.display()
-    );
-    Ok(())
-}
-
-
 fn wait_for_socks(
     min_ok: usize,
     ports: &[u16],
@@ -1688,80 +1645,11 @@ fn sanitize_for_filename(s: &str) -> String {
     out
 }
 
-fn normalize_config_args(raw: &str) -> Vec<String> {
-    // Convert multiline config into argv tokens.
-    // - Treat '\' immediately followed by newline as a line continuation (removed)
-    // - Other newlines/CR become spaces
-    // - Collapse whitespace via split_whitespace
-    // - Drop standalone "\" tokens
-    // Quotes (") are preserved; this is NOT a full shell-quoting parser.
-    let mut s = String::with_capacity(raw.len());
-    let mut it = raw.chars().peekable();
-
-    while let Some(c) = it.next() {
-        if c == '\\' {
-            match it.peek().copied() {
-                Some('\n') => {
-                    it.next();
-                    // line continuation: remove \ + newline without inserting space (shell-like)
-                    continue;
-                }
-                Some('\r') => {
-                    it.next();
-                    if matches!(it.peek().copied(), Some('\n')) {
-                        it.next();
-                    }
-                    // line continuation: remove \ + CRLF without inserting space (shell-like)
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        if c == '\n' || c == '\r' {
-            s.push(' ');
-        } else {
-            s.push(c);
-        }
-    }
-
-    let mut out: Vec<String> = Vec::new();
-    for tok in s.split_whitespace() {
-        if tok == "\\" {
-            continue;
-        }
-        out.push(tok.to_string());
-    }
-    out
-}
-
-
 
 fn truncate_file(p: &Path) -> Result<()> {
     let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)
         .with_context(|| format!("truncate {}", p.display()))?;
     Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
 }
 
 fn find_bin(name: &str) -> Result<PathBuf> {
@@ -1778,9 +1666,7 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let v = serde_json::from_str::<T>(&s).with_context(|| format!("parse {}", path.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn ensure_dir<P: AsRef<Path>>(p: P) -> Result<()> {
@@ -1800,8 +1686,4 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
     fs::write(path, b"")
         .with_context(|| format!("create empty file {}", path.display()))?;
     Ok(())
-}
-
-fn default_iface() -> String {
-    "auto".to_string()
 }

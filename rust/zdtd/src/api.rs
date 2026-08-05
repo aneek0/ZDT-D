@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats, traffic_total};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, power_mode, protector, settings, stats, traffic_total};
 use crate::runtime::simple_enabled_json;
 
 const MAX_HEADER: usize = 16 * 1024;
@@ -113,7 +113,7 @@ fn get_status_snapshot(services_running: bool) -> (stats::Report, bool, bool) {
         Ok(guard) => {
             if let Some(entry) = &*guard {
                 let age = entry.created.elapsed();
-                if age < STATUS_CACHE_TTL {
+                if age < power_mode::status_cache_ttl(STATUS_CACHE_TTL) {
                     return (entry.report.clone(), true, false);
                 }
                 let stale = entry.report.clone();
@@ -330,15 +330,23 @@ struct ConstructionReleaseEndpointReq {
 }
 
 fn refresh_apps_after_save_if_running(services_running: bool, program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
-    if !services_running {
+    if matches!(program, "proxyinfo" | "blockedquic") {
+        if services_running {
+            let _ = crate::runtime_refresh::refresh_apps(program, profile, slot)?;
+        }
         return Ok(());
     }
-    crate::runtime_refresh::refresh_apps(program, profile, slot)
-        .map_err(|e| anyhow::anyhow!("hot-refresh app UID routing for {}/{} failed: {e:#}", program, profile.unwrap_or("common")))
+    let _ = crate::runtime_apply::schedule_after_app_save(services_running, program, profile, slot);
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct ProfileState {
+    // Legacy active.json files stored 0/1 here. Without the boolish reader serde fails the whole
+    // ProfilesActive struct, and the unwrap_or_default() at the call sites would then report every
+    // profile of that program as disabled. Serialization stays a plain bool, so files are rewritten
+    // as true/false.
+    #[serde(default, deserialize_with = "deserialize_boolish")]
     enabled: bool,
 }
 
@@ -349,6 +357,8 @@ struct ProfilesActive {
 
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct EnabledActive {
+    // Same legacy 0/1 tolerance as ProfileState; written back as a real bool.
+    #[serde(default, deserialize_with = "deserialize_boolish")]
     enabled: bool,
 }
 
@@ -357,6 +367,7 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "nfqws" => "zapret",
         "nfqws2" => "zapret2",
         "operaproxy" => "opera-proxy",
+        "tgwsproxy" => "Telegram WS Proxy",
         "openvpn" => "openvpn",
         "amneziawg" => "amneziawg",
         "tun2socks" => "tun2socks",
@@ -1099,7 +1110,8 @@ fn default_singbox_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> se
         "t2s_web_port": t2s_web_port,
         "tun": "sbtun0",
         "dns": ["8.8.8.8"],
-        "tun2socks_loglevel": "info"
+        "tun2socks_loglevel": "info",
+        "proto_mode": "tcp_udp"
     })
 }
 
@@ -1144,58 +1156,206 @@ fn singbox_raw_mode_is_vpn(mode: &str) -> bool {
     )
 }
 
-fn collect_existing_singbox_ports() -> BTreeSet<u16> {
-    let mut used = BTreeSet::new();
-    let root = singbox_profiles_root();
-    if let Ok(rd) = fs::read_dir(&root) {
+/// Where a per-server port comes from when scanning a program's existing profile ports.
+#[derive(Clone, Copy)]
+enum ServerPortSource {
+    /// The program has no per-server ports at all (myproxy).
+    None,
+    /// Read this key from `server/<name>/setting.json` (sing-box: "port", hysteria2: "socks5_port").
+    SettingKey(&'static str),
+    /// Parse `server/<name>/config.conf` (wireproxy).
+    WireproxyConf,
+}
+
+/// Shared "which ports are already taken by this program's profiles" walk.
+///
+/// singbox / wireproxy / myproxy / hysteria2 each carried their own copy of this loop.
+/// The copies differed only in the fields below, so the differences are now data instead of
+/// four separate loops. Per-program behavior is preserved, including the quirks:
+///   * only singbox and hysteria2 skip t2s ports of VPN-mode profiles;
+///   * the base hysteria2 scan does not skip '.'-prefixed directories (skip_hidden: false);
+///   * only hysteria2 uses the exclude_* fields (its "_excluding" variant).
+struct ProfilePortScan {
+    profiles_root: PathBuf,
+    /// When set, profile t2s ports are skipped for VPN-mode profiles.
+    mode_is_vpn: Option<fn(&str) -> bool>,
+    /// Skip '.'-prefixed profile and server directories.
+    skip_hidden: bool,
+    server_port: ServerPortSource,
+    /// Profile whose own ports may be ignored (caller is editing it).
+    exclude_profile: Option<String>,
+    /// Server whose own ports are ignored (caller is editing it).
+    exclude_server: Option<String>,
+}
+
+impl ProfilePortScan {
+    fn collect(&self) -> BTreeSet<u16> {
+        let mut used = BTreeSet::new();
+        let Ok(rd) = fs::read_dir(&self.profiles_root) else { return used; };
         for ent in rd.flatten() {
             let profile_dir = ent.path();
             if !profile_dir.is_dir() {
                 continue;
             }
-            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+            let profile_name = profile_dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if self.skip_hidden && profile_name.starts_with('.') {
                 continue;
             }
-            let setting_path = profile_dir.join("setting.json");
-            if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
+            let is_excluded_profile = self.exclude_profile.as_deref() == Some(profile_name);
+            // Keeps the previous hysteria2 rule: the edited profile's own t2s ports are ignored
+            // only while editing the profile itself, not while editing one of its servers.
+            let skip_profile_ports = is_excluded_profile && self.exclude_server.is_none();
+            if let Ok(v) = read_json::<serde_json::Value>(&profile_dir.join("setting.json")) {
                 let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s").trim().to_ascii_lowercase();
-                if !singbox_raw_mode_is_vpn(&mode) {
-                    if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                        if port > 0 {
-                            used.insert(port);
-                        }
-                    }
-                    if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                        if port > 0 {
+                let vpn_mode = self.mode_is_vpn.map(|is_vpn| is_vpn(&mode)).unwrap_or(false);
+                if !vpn_mode && !skip_profile_ports {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).filter(|p| *p != 0) {
                             used.insert(port);
                         }
                     }
                 }
             }
 
-            let server_root = profile_dir.join("server");
-            if let Ok(server_rd) = fs::read_dir(&server_root) {
-                for server_ent in server_rd.flatten() {
-                    let server_dir = server_ent.path();
-                    if !server_dir.is_dir() {
-                        continue;
-                    }
-                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
-                        continue;
-                    }
-                    let setting_path = server_dir.join("setting.json");
-                    if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
-                        if let Some(port) = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                            if port > 0 {
+            let server_setting_key = match self.server_port {
+                ServerPortSource::None => continue,
+                ServerPortSource::SettingKey(key) => Some(key),
+                ServerPortSource::WireproxyConf => None,
+            };
+            let Ok(server_rd) = fs::read_dir(profile_dir.join("server")) else { continue; };
+            for server_ent in server_rd.flatten() {
+                let server_dir = server_ent.path();
+                if !server_dir.is_dir() {
+                    continue;
+                }
+                let server_name = server_dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if self.skip_hidden && server_name.starts_with('.') {
+                    continue;
+                }
+                if is_excluded_profile && self.exclude_server.as_deref() == Some(server_name) {
+                    continue;
+                }
+                match server_setting_key {
+                    Some(key) => {
+                        if let Ok(v) = read_json::<serde_json::Value>(&server_dir.join("setting.json")) {
+                            if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).filter(|p| *p != 0) {
                                 used.insert(port);
                             }
+                        }
+                    }
+                    None => {
+                        let Ok(raw) = fs::read_to_string(server_dir.join("config.conf")) else { continue; };
+                        let Ok(bind) = crate::programs::wireproxy::parse_socks5_bind_address_str(&raw) else { continue; };
+                        if bind.port > 0 {
+                            used.insert(bind.port);
                         }
                     }
                 }
             }
         }
+        used
     }
-    used
+}
+
+/// hysteria2 VPN-mode names, previously inlined in its two port scans.
+fn hysteria2_raw_mode_is_vpn(mode: &str) -> bool {
+    matches!(mode, "vpn" | "tun2proxy" | "tun2socks")
+}
+
+/// The parts that differ between the otherwise byte-identical "create profile" flows of
+/// singbox / wireproxy / myproxy. Note that all three intentionally reuse sing-box's name
+/// validator, exactly as before.
+struct ProfileCreateSpec {
+    active_path: fn() -> PathBuf,
+    ensure_layout: fn(&str) -> Result<()>,
+    profile_root: fn(&str) -> PathBuf,
+    suggest_ports: fn() -> Result<(u16, u16)>,
+    default_setting: fn(u16, u16) -> serde_json::Value,
+}
+
+fn create_profile_named_generic(requested: &str, spec: &ProfileCreateSpec) -> Result<String> {
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+
+    let active_path = (spec.active_path)();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) {
+        anyhow::bail!("profile already exists");
+    }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+
+    (spec.ensure_layout)(name)?;
+    let profile_setting = (spec.profile_root)(name).join("setting.json");
+    if !profile_setting.exists() {
+        let (t2s_port, t2s_web_port) = (spec.suggest_ports)()?;
+        write_json_pretty(&profile_setting, &(spec.default_setting)(t2s_port, t2s_web_port))?;
+    }
+
+    Ok(name.to_string())
+}
+
+/// Picks the next "profileN" name the same way the three per-program copies did:
+/// bare numeric names and "profile<N>" names both count towards the maximum.
+fn create_profile_next_generic(spec: &ProfileCreateSpec) -> Result<String> {
+    let active: ProfilesActive = read_json(&(spec.active_path)()).unwrap_or_default();
+    let mut max_n = 0u32;
+    for k in active.profiles.keys() {
+        if let Ok(n) = k.parse::<u32>() {
+            max_n = max_n.max(n);
+            continue;
+        }
+        if let Some(rest) = k.strip_prefix("profile") {
+            if let Ok(n) = rest.parse::<u32>() {
+                max_n = max_n.max(n);
+            }
+        }
+    }
+    let next = format!("profile{}", max_n + 1);
+    create_profile_named_generic(&next, spec)?;
+    Ok(next)
+}
+
+fn singbox_profile_create_spec() -> ProfileCreateSpec {
+    ProfileCreateSpec {
+        active_path: singbox_active_path,
+        ensure_layout: ensure_singbox_profile_layout,
+        profile_root: singbox_profile_root,
+        suggest_ports: suggest_singbox_profile_ports,
+        default_setting: default_singbox_profile_setting_value,
+    }
+}
+
+fn wireproxy_profile_create_spec() -> ProfileCreateSpec {
+    ProfileCreateSpec {
+        active_path: wireproxy_active_path,
+        ensure_layout: ensure_wireproxy_profile_layout,
+        profile_root: wireproxy_profile_root,
+        suggest_ports: suggest_wireproxy_profile_ports,
+        default_setting: default_wireproxy_profile_setting_value,
+    }
+}
+
+fn myproxy_profile_create_spec() -> ProfileCreateSpec {
+    ProfileCreateSpec {
+        active_path: myproxy_active_path,
+        ensure_layout: ensure_myproxy_profile_layout,
+        profile_root: myproxy_profile_root,
+        suggest_ports: suggest_myproxy_profile_ports,
+        default_setting: default_myproxy_profile_setting_value,
+    }
+}
+
+fn collect_existing_singbox_ports() -> BTreeSet<u16> {
+    ProfilePortScan {
+        profiles_root: singbox_profiles_root(),
+        mode_is_vpn: Some(singbox_raw_mode_is_vpn),
+        skip_hidden: true,
+        server_port: ServerPortSource::SettingKey("port"),
+        exclude_profile: None,
+        exclude_server: None,
+    }
+    .collect()
 }
 
 fn next_free_port_from_used(start: u16, used: &BTreeSet<u16>) -> Result<u16> {
@@ -1225,50 +1385,18 @@ fn suggest_singbox_server_port() -> Result<u16> {
     next_free_port_from_used(1080, &used)
 }
 
+fn next_free_port_simple(start: u16, used: &BTreeSet<u16>) -> u16 {
+    let mut p = start;
+    while used.contains(&p) && p < u16::MAX { p = p.saturating_add(1); }
+    p
+}
+
 fn create_singbox_profile_named(requested: &str) -> Result<String> {
-    let name = requested.trim();
-    ensure_valid_singbox_profile_name(name)?;
-
-    let active_path = singbox_active_path();
-    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
-    if active.profiles.contains_key(name) {
-        anyhow::bail!("profile already exists");
-    }
-    active
-        .profiles
-        .insert(name.to_string(), ProfileState { enabled: false });
-    write_json_pretty(&active_path, &active)?;
-
-    ensure_singbox_profile_layout(name)?;
-    let profile_setting = singbox_profile_root(name).join("setting.json");
-    if !profile_setting.exists() {
-        let (t2s_port, t2s_web_port) = suggest_singbox_profile_ports()?;
-        write_json_pretty(
-            &profile_setting,
-            &default_singbox_profile_setting_value(t2s_port, t2s_web_port),
-        )?;
-    }
-
-    Ok(name.to_string())
+    create_profile_named_generic(requested, &singbox_profile_create_spec())
 }
 
 fn create_singbox_profile_next() -> Result<String> {
-    let active: ProfilesActive = read_json(&singbox_active_path()).unwrap_or_default();
-    let mut max_n = 0u32;
-    for k in active.profiles.keys() {
-        if let Ok(n) = k.parse::<u32>() {
-            max_n = max_n.max(n);
-            continue;
-        }
-        if let Some(rest) = k.strip_prefix("profile") {
-            if let Ok(n) = rest.parse::<u32>() {
-                max_n = max_n.max(n);
-            }
-        }
-    }
-    let next = format!("profile{}", max_n + 1);
-    create_singbox_profile_named(&next)?;
-    Ok(next)
+    create_profile_next_generic(&singbox_profile_create_spec())
 }
 
 fn create_singbox_server_named(profile: &str, requested: &str) -> Result<String> {
@@ -1375,8 +1503,140 @@ fn normalize_and_write_singbox_profile_setting(profile: &str, v: serde_json::Val
     Ok(normalized)
 }
 
+fn normalize_myproxy_proxy_json(v: serde_json::Value) -> Result<serde_json::Value> {
+    let proxy: crate::programs::myproxy::ProxyConfig = serde_json::from_value(v)
+        .map_err(|e| anyhow::anyhow!("bad proxy.json: {e}"))?;
+    let proxy = crate::programs::myproxy::normalize_proxy_config_defaults(proxy)?;
+    Ok(serde_json::to_value(&proxy)?)
+}
 
 
+
+
+
+fn hysteria2_active_path() -> PathBuf { crate::programs::hysteria2::active_path() }
+fn hysteria2_profiles_root() -> PathBuf { crate::programs::hysteria2::profiles_root() }
+fn hysteria2_deleted_root() -> PathBuf { program_root("hysteria2").join(".deleted") }
+fn hysteria2_deleted_profiles_root() -> PathBuf { hysteria2_deleted_root().join("profiles") }
+fn hysteria2_deleted_servers_root(profile: &str) -> PathBuf { hysteria2_deleted_root().join("servers").join(profile) }
+fn hysteria2_profile_root(profile: &str) -> PathBuf { crate::programs::hysteria2::profile_root(profile) }
+fn hysteria2_server_root(profile: &str, server: &str) -> PathBuf { crate::programs::hysteria2::server_root(profile, server) }
+
+fn default_hysteria2_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> serde_json::Value {
+    json!({"mode":"t2s","t2s_port":t2s_port,"t2s_web_port":t2s_web_port,"tun":"hytun0","dns":["8.8.8.8"],"tun2socks_loglevel":"info","proto_mode":"tcp_udp"})
+}
+fn default_hysteria2_server_setting_value(port: u16) -> serde_json::Value {
+    json!({"enabled": false, "socks5_port": port, "log_level": "info"})
+}
+fn normalize_hysteria2_log_level(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "trace" => "trace",
+        "debug" => "debug",
+        "info" => "info",
+        "warn" => "warn",
+        "error" => "error",
+        "silent" => "silent",
+        _ => "info",
+    }
+}
+fn ensure_hysteria2_profile_layout(profile: &str) -> Result<()> { crate::programs::hysteria2::ensure_profile_layout(profile) }
+fn hysteria2_profile_mode_is_vpn(profile: &str) -> bool {
+    let p = hysteria2_profile_root(profile).join("setting.json");
+    let v: serde_json::Value = read_json(&p).unwrap_or_else(|_| default_hysteria2_profile_setting_value(12590, 8059));
+    crate::programs::hysteria2::normalize_setting_value(v).map(|s| s.mode.is_vpn()).unwrap_or(false)
+}
+fn collect_existing_hysteria2_ports() -> BTreeSet<u16> {
+    ProfilePortScan {
+        profiles_root: hysteria2_profiles_root(),
+        mode_is_vpn: Some(hysteria2_raw_mode_is_vpn),
+        // Kept as before: this variant did not filter '.'-prefixed directories.
+        skip_hidden: false,
+        server_port: ServerPortSource::SettingKey("socks5_port"),
+        exclude_profile: None,
+        exclude_server: None,
+    }
+    .collect()
+}
+
+fn collect_existing_hysteria2_ports_excluding(current_profile: Option<&str>, current_server: Option<&str>) -> BTreeSet<u16> {
+    ProfilePortScan {
+        profiles_root: hysteria2_profiles_root(),
+        mode_is_vpn: Some(hysteria2_raw_mode_is_vpn),
+        skip_hidden: true,
+        server_port: ServerPortSource::SettingKey("socks5_port"),
+        exclude_profile: current_profile.map(|s| s.to_string()),
+        exclude_server: current_server.map(|s| s.to_string()),
+    }
+    .collect()
+}
+
+fn ensure_hysteria2_port_free(port: u16, current_profile: Option<&str>, current_server: Option<&str>, label: &str) -> Result<()> {
+    if port == 0 { anyhow::bail!("invalid port"); }
+    let mut used = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    used.extend(collect_existing_hysteria2_ports_excluding(current_profile, current_server));
+    if used.contains(&port) {
+        anyhow::bail!("hysteria2_port_conflict: {label} port {port} уже занят");
+    }
+    Ok(())
+}
+
+fn hysteria2_enabled_server_count(profile: &str) -> Result<usize> {
+    let mut count = 0usize;
+    for name in hysteria2_server_names(profile)? {
+        let v: serde_json::Value = read_json(&hysteria2_server_root(profile, &name).join("setting.json")).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
+        if crate::jsonfs::json_enabled(v.get("enabled")) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn suggest_hysteria2_profile_ports() -> Result<(u16, u16)> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    used.extend(collect_existing_hysteria2_ports());
+    let t2s = next_free_port_simple(12590, &used); used.insert(t2s);
+    let web = next_free_port_simple(8059, &used);
+    Ok((t2s, web))
+}
+fn suggest_hysteria2_server_port() -> Result<u16> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    used.extend(collect_existing_hysteria2_ports());
+    Ok(next_free_port_simple(11590, &used))
+}
+fn create_hysteria2_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim(); crate::programs::hysteria2::ensure_valid_profile_name(name)?; crate::programs::hysteria2::ensure_root_layout()?;
+    let p = hysteria2_active_path(); let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false }); write_json_pretty(&p, &active)?; ensure_hysteria2_profile_layout(name)?;
+    let (a,b)=suggest_hysteria2_profile_ports()?; write_json_pretty(&hysteria2_profile_root(name).join("setting.json"), &default_hysteria2_profile_setting_value(a,b))?;
+    Ok(name.to_string())
+}
+fn create_hysteria2_profile_next() -> Result<String> { let active: ProfilesActive = read_json(&hysteria2_active_path()).unwrap_or_default(); for i in 1..1000 { let n=i.to_string(); if !active.profiles.contains_key(&n) { return create_hysteria2_profile_named(&n); } } anyhow::bail!("no free hysteria2 profile name") }
+fn hysteria2_server_names(profile: &str) -> Result<Vec<String>> {
+    let mut out=Vec::new(); let root=hysteria2_profile_root(profile).join("server");
+    if let Ok(rd)=fs::read_dir(root) { for ent in rd.flatten() { let p=ent.path(); if p.is_dir() { if let Some(n)=p.file_name().and_then(|s| s.to_str()) { if !n.starts_with('.') { crate::programs::hysteria2::ensure_valid_profile_name(n)?; out.push(n.to_string()); } } } } }
+    out.sort(); Ok(out)
+}
+fn create_hysteria2_server_named(profile: &str, requested: &str) -> Result<String> {
+    crate::programs::hysteria2::ensure_valid_profile_name(profile)?; let name=requested.trim(); crate::programs::hysteria2::ensure_valid_profile_name(name)?; ensure_hysteria2_profile_layout(profile)?;
+    if hysteria2_profile_mode_is_vpn(profile) && !hysteria2_server_names(profile)?.is_empty() { anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает только один сервер."); }
+    let root=hysteria2_server_root(profile,name); if root.exists() { anyhow::bail!("server already exists"); }
+    fs::create_dir_all(root.join("log"))?; write_text_atomic(&root.join("config.json"), "")?; let port=suggest_hysteria2_server_port()?; write_json_pretty(&root.join("setting.json"), &default_hysteria2_server_setting_value(port))?; Ok(name.to_string())
+}
+fn create_hysteria2_server_next(profile: &str) -> Result<String> { let names=hysteria2_server_names(profile)?; for i in 1..1000 { let n=i.to_string(); if !names.contains(&n) { return create_hysteria2_server_named(profile,&n); } } anyhow::bail!("no free hysteria2 server name") }
+fn normalize_and_write_hysteria2_profile_setting(profile: &str, v: serde_json::Value) -> Result<serde_json::Value> {
+    let setting = crate::programs::hysteria2::normalize_setting_value(v)?;
+    if setting.mode.is_vpn() {
+        if hysteria2_server_names(profile)?.len() != 1 || hysteria2_enabled_server_count(profile)? != 1 {
+            anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает ровно один включённый сервер.");
+        }
+    } else {
+        ensure_hysteria2_port_free(setting.t2s_port, Some(profile), None, "t2s")?;
+        ensure_hysteria2_port_free(setting.t2s_web_port, Some(profile), None, "t2s web")?;
+        if setting.t2s_port == setting.t2s_web_port { anyhow::bail!("hysteria2_port_conflict: t2s и t2s web должны отличаться"); }
+    }
+    let normalized=serde_json::to_value(&setting)?; write_json_pretty(&hysteria2_profile_root(profile).join("setting.json"), &normalized)?; Ok(normalized)
+}
 
 fn wireproxy_active_path() -> PathBuf {
     program_root("wireproxy").join("active.json")
@@ -1442,52 +1702,15 @@ fn ensure_wireproxy_profile_layout(profile: &str) -> Result<()> {
 }
 
 fn collect_existing_wireproxy_ports() -> BTreeSet<u16> {
-    let mut used = BTreeSet::new();
-    let root = wireproxy_profiles_root();
-    if let Ok(rd) = fs::read_dir(&root) {
-        for ent in rd.flatten() {
-            let profile_dir = ent.path();
-            if !profile_dir.is_dir() {
-                continue;
-            }
-            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
-                continue;
-            }
-            let setting_path = profile_dir.join("setting.json");
-            if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
-                if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                    if port > 0 {
-                        used.insert(port);
-                    }
-                }
-                if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                    if port > 0 {
-                        used.insert(port);
-                    }
-                }
-            }
-
-            let server_root = profile_dir.join("server");
-            if let Ok(server_rd) = fs::read_dir(&server_root) {
-                for server_ent in server_rd.flatten() {
-                    let server_dir = server_ent.path();
-                    if !server_dir.is_dir() {
-                        continue;
-                    }
-                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
-                        continue;
-                    }
-                    let config_path = server_dir.join("config.conf");
-                    let Ok(raw) = fs::read_to_string(&config_path) else { continue; };
-                    let Ok(bind) = crate::programs::wireproxy::parse_socks5_bind_address_str(&raw) else { continue; };
-                    if bind.port > 0 {
-                        used.insert(bind.port);
-                    }
-                }
-            }
-        }
+    ProfilePortScan {
+        profiles_root: wireproxy_profiles_root(),
+        mode_is_vpn: None,
+        skip_hidden: true,
+        server_port: ServerPortSource::WireproxyConf,
+        exclude_profile: None,
+        exclude_server: None,
     }
-    used
+    .collect()
 }
 
 fn suggest_wireproxy_profile_ports() -> Result<(u16, u16)> {
@@ -1500,47 +1723,11 @@ fn suggest_wireproxy_profile_ports() -> Result<(u16, u16)> {
 }
 
 fn create_wireproxy_profile_named(requested: &str) -> Result<String> {
-    let name = requested.trim();
-    ensure_valid_singbox_profile_name(name)?;
-
-    let active_path = wireproxy_active_path();
-    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
-    if active.profiles.contains_key(name) {
-        anyhow::bail!("profile already exists");
-    }
-    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
-    write_json_pretty(&active_path, &active)?;
-
-    ensure_wireproxy_profile_layout(name)?;
-    let profile_setting = wireproxy_profile_root(name).join("setting.json");
-    if !profile_setting.exists() {
-        let (t2s_port, t2s_web_port) = suggest_wireproxy_profile_ports()?;
-        write_json_pretty(
-            &profile_setting,
-            &default_wireproxy_profile_setting_value(t2s_port, t2s_web_port),
-        )?;
-    }
-
-    Ok(name.to_string())
+    create_profile_named_generic(requested, &wireproxy_profile_create_spec())
 }
 
 fn create_wireproxy_profile_next() -> Result<String> {
-    let active: ProfilesActive = read_json(&wireproxy_active_path()).unwrap_or_default();
-    let mut max_n = 0u32;
-    for k in active.profiles.keys() {
-        if let Ok(n) = k.parse::<u32>() {
-            max_n = max_n.max(n);
-            continue;
-        }
-        if let Some(rest) = k.strip_prefix("profile") {
-            if let Ok(n) = rest.parse::<u32>() {
-                max_n = max_n.max(n);
-            }
-        }
-    }
-    let next = format!("profile{}", max_n + 1);
-    create_wireproxy_profile_named(&next)?;
-    Ok(next)
+    create_profile_next_generic(&wireproxy_profile_create_spec())
 }
 
 fn create_wireproxy_server_named(profile: &str, requested: &str) -> Result<String> {
@@ -1615,7 +1802,8 @@ fn default_myproxy_proxy_value() -> serde_json::Value {
         "priority_speed_aware": false,
         "user": "",
         "pass": "",
-        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" }
+        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" },
+        "proto_mode": "tcp_udp"
     })
 }
 
@@ -1636,21 +1824,15 @@ fn ensure_myproxy_profile_layout(profile: &str) -> Result<()> {
 }
 
 fn collect_existing_myproxy_ports() -> BTreeSet<u16> {
-    let mut used = BTreeSet::new();
-    let root = myproxy_profiles_root();
-    if let Ok(rd) = fs::read_dir(&root) {
-        for ent in rd.flatten() {
-            let profile_dir = ent.path();
-            if !profile_dir.is_dir() { continue; }
-            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
-            let setting_path = profile_dir.join("setting.json");
-            if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
-                if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) { if port > 0 { used.insert(port); } }
-                if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) { if port > 0 { used.insert(port); } }
-            }
-        }
+    ProfilePortScan {
+        profiles_root: myproxy_profiles_root(),
+        mode_is_vpn: None,
+        skip_hidden: true,
+        server_port: ServerPortSource::None,
+        exclude_profile: None,
+        exclude_server: None,
     }
-    used
+    .collect()
 }
 
 fn suggest_myproxy_profile_ports() -> Result<(u16, u16)> {
@@ -1663,34 +1845,11 @@ fn suggest_myproxy_profile_ports() -> Result<(u16, u16)> {
 }
 
 fn create_myproxy_profile_named(requested: &str) -> Result<String> {
-    let name = requested.trim();
-    ensure_valid_singbox_profile_name(name)?;
-    let active_path = myproxy_active_path();
-    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
-    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
-    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
-    write_json_pretty(&active_path, &active)?;
-    ensure_myproxy_profile_layout(name)?;
-    let profile_setting = myproxy_profile_root(name).join("setting.json");
-    if !profile_setting.exists() {
-        let (t2s_port, t2s_web_port) = suggest_myproxy_profile_ports()?;
-        write_json_pretty(&profile_setting, &default_myproxy_profile_setting_value(t2s_port, t2s_web_port))?;
-    }
-    Ok(name.to_string())
+    create_profile_named_generic(requested, &myproxy_profile_create_spec())
 }
 
 fn create_myproxy_profile_next() -> Result<String> {
-    let active: ProfilesActive = read_json(&myproxy_active_path()).unwrap_or_default();
-    let mut max_n = 0u32;
-    for k in active.profiles.keys() {
-        if let Ok(n) = k.parse::<u32>() { max_n = max_n.max(n); continue; }
-        if let Some(rest) = k.strip_prefix("profile") {
-            if let Ok(n) = rest.parse::<u32>() { max_n = max_n.max(n); }
-        }
-    }
-    let next = format!("profile{}", max_n + 1);
-    create_myproxy_profile_named(&next)?;
-    Ok(next)
+    create_profile_next_generic(&myproxy_profile_create_spec())
 }
 
 
@@ -1986,6 +2145,7 @@ fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> R
         .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
         .chain(crate::programs::mieru::enabled_tun_claims().into_iter())
         .chain(crate::programs::singbox::enabled_tun_claims().into_iter())
+        .chain(crate::programs::hysteria2::enabled_tun_claims().into_iter())
     {
         if other_label != this_label && other_tun == tun {
             anyhow::bail!("VPN tun conflict: tun {tun} is already used by {other_label}");
@@ -2173,7 +2333,7 @@ fn app_domain(program_id: &str) -> Option<&'static str> {
         // marker is ignored by package conflict parsing, and blockedquic has no app
         // routing domain so QUIC blocking may coexist with VPN/netd routing.
         "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
-        "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
+        "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" | "hysteria2" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
         _ => None,
@@ -2289,6 +2449,15 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 path.join("app/uid/user_program"),
                 format!("/api/programs/sing-box/profiles/{profile}/apps/user"),
             );
+        }
+    }
+
+    let hysteria2_root = hysteria2_profiles_root();
+    if let Ok(rd) = fs::read_dir(&hysteria2_root) {
+        for ent in rd.flatten() {
+            let path = ent.path(); if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(&mut out, "hysteria2", Some(profile.clone()), "user", path.join("app/uid/user_program"), format!("/api/programs/hysteria2/profiles/{profile}/apps/user"));
         }
     }
 
@@ -2451,7 +2620,7 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
 fn collect_assignment_files() -> Vec<AppAssignmentFile> {
     if let Ok(guard) = assignment_cache().lock() {
         if let Some(entry) = &*guard {
-            if entry.created.elapsed() < ASSIGNMENT_CACHE_TTL {
+            if entry.created.elapsed() < power_mode::status_cache_ttl(ASSIGNMENT_CACHE_TTL) {
                 return entry.items.clone();
             }
         }
@@ -2512,9 +2681,13 @@ fn find_program_conflicts(
         .unwrap_or_default();
     for item in lists {
         if item.path == current_api_path { continue; }
-        if item.slot != slot { continue; }
         let Some(item_domain) = app_domain(&item.program_id) else { continue; };
-        if !app_domains_conflict(domain, item_domain) { continue; }
+        let hysteria2_pair = program_id == "hysteria2" || item.program_id == "hysteria2";
+        if hysteria2_pair && (domain == "zapret" || item_domain == "zapret") { continue; }
+        let cross_slot_conflict = hysteria2_pair;
+        if !cross_slot_conflict && item.slot != slot { continue; }
+        let domains_conflict = if hysteria2_pair { true } else { app_domains_conflict(domain, item_domain) };
+        if !domains_conflict { continue; }
         for pkg in candidate.intersection(&item.packages) {
             if current_existing.contains(pkg) { continue; }
             out.entry(pkg.clone()).or_default().push(AppConflictView {
@@ -2831,6 +3004,17 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // Optional tg-ws-proxy appears in the main list only after the binary is installed.
+    if crate::programs::tgwsproxy::is_installed() {
+        let enabled = crate::programs::tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false);
+        out.push(json!({
+            "id": "tgwsproxy",
+            "name": program_display_name("tgwsproxy"),
+            "type": "single",
+            "enabled": enabled
+        }));
+    }
+
     {
         let enabled = crate::programs::tor::load_enabled_json().map(|v| v.is_enabled()).unwrap_or(false);
         out.push(json!({
@@ -2855,6 +3039,15 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "type": "singbox_profiles",
             "profiles": profiles
         }));
+    }
+
+    // hysteria2 (profile-based, SOCKS5 backend)
+    {
+        let active: ProfilesActive = read_json(&hysteria2_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles { profiles.push(json!({"name": name, "enabled": st.enabled})); }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({"id": "hysteria2", "name": "hysteria2", "type": "hysteria2_profiles", "profiles": profiles}));
     }
 
     // wireproxy (profile-based, socks5-only)
@@ -3009,6 +3202,59 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
+        // --- tg-ws-proxy optional utility settings
+        ("GET", ["api", "programs", "tgwsproxy", "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::programs::tgwsproxy::load_effective_enabled()?.enabled;
+                Ok(json!({"ok": true, "enabled": enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tgwsproxy", "enabled"]) => {
+            let res = (|| -> Result<()> {
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::tgwsproxy::save_enabled(req.enabled)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tgwsproxy", "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let setting = crate::programs::tgwsproxy::read_setting()?;
+                Ok(json!({"ok": true, "data": setting}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tgwsproxy", "setting"]) => {
+            let res = (|| -> Result<()> {
+                let setting: crate::programs::tgwsproxy::Setting = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::tgwsproxy::write_setting(&setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tgwsproxy", "command"]) => {
+            let res = crate::programs::tgwsproxy::command_preview_json();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         // --- openvpn profile API
         ("GET", ["api", "programs", "openvpn", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -4035,6 +4281,314 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
         }
 
+        // --- hysteria2 profile/server API
+        ("GET", ["api", "programs", "hysteria2", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let active: ProfilesActive = read_json(&hysteria2_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "hysteria2", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_hysteria2_profile_named(name)?,
+                    None => create_hysteria2_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "hysteria2", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = hysteria2_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "hysteria2", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                let p = hysteria2_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = hysteria2_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = hysteria2_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "hysteria2", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let p = hysteria2_profile_root(profile).join("setting.json");
+                if !p.exists() {
+                    let (t2s_port, t2s_web_port) = suggest_hysteria2_profile_ports()?;
+                    write_json_pretty(&p, &default_hysteria2_profile_setting_value(t2s_port, t2s_web_port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                let setting = crate::programs::hysteria2::normalize_setting_value(v)?;
+                let normalized = serde_json::to_value(&setting)?;
+                write_json_pretty(&p, &normalized)?;
+                Ok(json!({"ok": true, "data": normalized}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "hysteria2", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                normalize_and_write_hysteria2_profile_setting(profile, v)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "hysteria2", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let p = hysteria2_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "hysteria2", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/hysteria2/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "hysteria2", "common")?;
+                let p = hysteria2_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "hysteria2", Some(profile), "common")?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "hysteria2", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let root = hysteria2_profile_root(profile).join("server");
+                let mut servers = Vec::new();
+                if let Ok(rd) = fs::read_dir(&root) {
+                    for ent in rd.flatten() {
+                        let path = ent.path();
+                        if !path.is_dir() { continue; }
+                        let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+                        if name.starts_with('.') { continue; }
+                        let setting_path = path.join("setting.json");
+                        let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
+                        servers.push(json!({"name": name, "setting": data}));
+                    }
+                }
+                servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "servers": servers}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "hysteria2", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let server = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_hysteria2_server_named(profile, name)?,
+                    None => create_hysteria2_server_next(profile)?,
+                };
+                Ok(json!({"ok": true, "server": server}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "hysteria2", "profiles", profile, "servers", server]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                crate::programs::hysteria2::ensure_valid_profile_name(server)?;
+                let src = hysteria2_server_root(profile, server);
+                if !src.exists() {
+                    anyhow::bail!("server not found");
+                }
+                let deleted_dir = hysteria2_deleted_servers_root(profile);
+                fs::create_dir_all(&deleted_dir).ok();
+                let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                let dst = deleted_dir.join(format!("{server}.{ts}"));
+                let _ = fs::rename(&src, &dst);
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "hysteria2", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                crate::programs::hysteria2::ensure_valid_profile_name(server)?;
+                ensure_hysteria2_profile_layout(profile)?;
+                let root = hysteria2_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                if !p.exists() {
+                    let port = suggest_hysteria2_server_port()?;
+                    write_json_pretty(&p, &default_hysteria2_server_setting_value(port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "hysteria2", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                crate::programs::hysteria2::ensure_valid_profile_name(server)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let existing_path = hysteria2_server_root(profile, server).join("setting.json");
+                let existing: serde_json::Value = read_json(&existing_path).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
+                let enabled = crate::jsonfs::json_enabled_opt(v.get("enabled"))
+                    .or_else(|| crate::jsonfs::json_enabled_opt(existing.get("enabled")))
+                    .unwrap_or(false);
+                let mode_vpn = hysteria2_profile_mode_is_vpn(profile);
+                if mode_vpn {
+                    let names = hysteria2_server_names(profile)?;
+                    if names.len() != 1 || names[0].as_str() != *server {
+                        anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает только один сервер.");
+                    }
+                    if !enabled {
+                        anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 требует один включённый сервер.");
+                    }
+                }
+                let port = v.get("socks5_port")
+                    .and_then(|x| x.as_u64())
+                    .and_then(|x| u16::try_from(x).ok())
+                    .or_else(|| existing.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()))
+                    .unwrap_or(11590);
+                ensure_hysteria2_port_free(port, Some(profile), Some(server), "SOCKS5")?;
+                let root = hysteria2_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                let log_level = normalize_hysteria2_log_level(v.get("log_level").and_then(|x| x.as_str()).or_else(|| existing.get("log_level").and_then(|x| x.as_str())).unwrap_or("info"));
+                write_json_pretty(&p, &json!({"enabled": enabled, "socks5_port": port, "log_level": log_level}))?;
+                let cfg = root.join("config.json");
+                if read_text_or_empty(&cfg).map(|t| !t.trim().is_empty()).unwrap_or(false) {
+                    crate::programs::hysteria2::normalize_config_for_profile_server(profile, server)?;
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "hysteria2", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                crate::programs::hysteria2::ensure_valid_profile_name(server)?;
+                let root = hysteria2_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("config.json");
+                if !p.exists() {
+                    write_text_atomic(&p, "")?;
+                }
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "hysteria2", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::hysteria2::ensure_valid_profile_name(profile)?;
+                crate::programs::hysteria2::ensure_valid_profile_name(server)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let root = hysteria2_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("config.json");
+                write_text_atomic(&p, &req.content)?;
+                if !req.content.trim().is_empty() {
+                    crate::programs::hysteria2::normalize_config_for_profile_server(profile, server)?;
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+
+
+
         // --- sing-box profile/server API
         ("GET", ["api", "programs", "sing-box", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -4127,6 +4681,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let v: serde_json::Value = read_json(&p)?;
                 let setting = crate::programs::singbox::normalize_setting_value(v)?;
                 let normalized = serde_json::to_value(&setting)?;
+                write_json_pretty(&p, &normalized)?;
                 Ok(json!({"ok": true, "data": normalized}))
             })();
             match res {
@@ -4270,9 +4825,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let existing_path = singbox_server_root(profile, server).join("setting.json");
                 let existing: serde_json::Value = read_json(&existing_path).unwrap_or_else(|_| default_singbox_server_setting_value(1080));
-                let enabled = v.get("enabled")
-                    .and_then(|x| x.as_bool())
-                    .or_else(|| existing.get("enabled").and_then(|x| x.as_bool()))
+                let enabled = crate::jsonfs::json_enabled_opt(v.get("enabled"))
+                    .or_else(|| crate::jsonfs::json_enabled_opt(existing.get("enabled")))
                     .unwrap_or(false);
                 let mode_vpn = singbox_profile_mode_is_vpn(profile);
                 if mode_vpn {
@@ -4589,7 +5143,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_valid_singbox_profile_name(server)?;
                 let v: serde_json::Value = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let enabled = v.get("enabled").and_then(|x| x.as_bool())
+                let enabled = crate::jsonfs::json_enabled_opt(v.get("enabled"))
                     .ok_or_else(|| anyhow::anyhow!("enabled is required"))?;
                 let root = wireproxy_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
@@ -5085,7 +5639,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myproxy_profile_root(profile).join("proxy.json");
                 if !p.exists() { write_json_pretty(&p, &default_myproxy_proxy_value())?; }
                 let v: serde_json::Value = read_json(&p)?;
-                Ok(json!({"ok": true, "data": v}))
+                let normalized = normalize_myproxy_proxy_json(v)?;
+                write_json_pretty(&p, &normalized)?;
+                Ok(json!({"ok": true, "data": normalized}))
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
@@ -5094,6 +5650,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_valid_singbox_profile_name(profile)?;
                 ensure_myproxy_profile_layout(profile)?;
                 let proxy_cfg: crate::programs::myproxy::ProxyConfig = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let proxy_cfg = crate::programs::myproxy::normalize_proxy_config_defaults(proxy_cfg)?;
                 crate::programs::myproxy::validate_proxy_config(&proxy_cfg)?;
                 let setting_path = myproxy_profile_root(profile).join("setting.json");
                 if let Ok(setting_v) = read_json::<serde_json::Value>(&setting_path) {
@@ -5831,6 +6388,7 @@ fn collect_construction_proxy_endpoint_candidates() -> Result<Vec<ConstructionPr
     collect_construction_myproxy_candidates(&root, &mut out);
     collect_construction_profile_setting_candidate(&root, "mihomo", "mixed_port", "mixed", &mihomo_active_path(), &mut out);
     collect_construction_profile_setting_candidate(&root, "mieru", "socks5_port", "socks5", &mieru_active_path(), &mut out);
+    collect_construction_hysteria2_candidates(&root, &mut out);
     collect_construction_myprogram_candidates(&root, &mut out);
     collect_construction_tor_candidate(&root, &mut out);
     collect_construction_operaproxy_candidates(&root, &mut out);
@@ -5932,7 +6490,7 @@ fn collect_construction_singbox_candidates(root: &Path, out: &mut Vec<Constructi
             let Some(server) = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
             let setting: serde_json::Value = read_json(&server_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
             let port = setting.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
-            let server_enabled = setting.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+            let server_enabled = crate::jsonfs::json_enabled(setting.get("enabled"));
             push_construction_candidate(out, "sing-box", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
         }
     }
@@ -5955,7 +6513,7 @@ fn collect_construction_wireproxy_candidates(root: &Path, out: &mut Vec<Construc
             let Some(server) = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
             let port = read_text_or_empty(&server_dir.join("config.conf")).ok().and_then(|raw| parse_wireproxy_bind_port_for_construction(&raw)).unwrap_or(0);
             let setting: serde_json::Value = read_json(&server_dir.join("setting.json")).unwrap_or_else(|_| json!({}));
-            let server_enabled = setting.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+            let server_enabled = crate::jsonfs::json_enabled(setting.get("enabled"));
             push_construction_candidate(out, "wireproxy", Some(profile.clone()), Some(server), port, "socks5", profile_enabled && server_enabled, Some(profile_dir.join("app/uid/user_program")));
         }
     }
@@ -5991,6 +6549,33 @@ fn collect_construction_myproxy_candidates(root: &Path, out: &mut Vec<Constructi
             // myproxy upstreams are local SOCKS candidates, but myproxy cannot start the upstream server itself.
             // If the same port belongs to a real project endpoint, the Android picker prefers that real endpoint.
             push_construction_candidate(out, "myproxy", Some(profile.clone()), Some("upstream".to_string()), port, "socks5", enabled, Some(profile_dir.join("app/uid/user_program")));
+        }
+    }
+}
+
+
+fn collect_construction_hysteria2_candidates(root: &Path, out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let profile_root = root.join("hysteria2/profile");
+    let active_path = hysteria2_active_path();
+    let Ok(entries) = fs::read_dir(profile_root) else { return; };
+    for ent in entries.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+        let profile_enabled = is_profile_enabled(&active_path, &profile);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(server_root) else { continue; };
+        for sent in servers.flatten() {
+            let server_dir = sent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.to_string());
+            let setting_path = server_dir.join("setting.json");
+            let Ok(v) = read_json::<serde_json::Value>(&setting_path) else { continue; };
+            let enabled = crate::jsonfs::json_enabled(v.get("enabled"));
+            let Some(port) = v.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) else { continue; };
+            if port != 0 {
+                push_construction_candidate(out, "hysteria2", Some(profile.clone()), server, port, "socks5", profile_enabled && enabled, Some(profile_dir.join("app/uid/user_program")));
+            }
         }
     }
 }
@@ -6226,6 +6811,14 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     }
 
 match (method.as_str(), path.as_str()) {
+        ("GET", "/api/system/capabilities") => {
+            write_json(stream, 200, crate::capabilities::collect())
+        }
+
+        ("GET", "/api/runtime-apply/status") => {
+            write_json(stream, 200, crate::runtime_apply::status_json())
+        }
+
         ("GET", "/api/status") => {
             let (report, cached, degraded) = get_status_snapshot(services_running);
             let mut value = match serde_json::to_value(report) {
@@ -6306,7 +6899,11 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 hotspot_t2s_capture_all: Option<bool>,
                 #[serde(default)]
+                captive_portal_enabled: Option<bool>,
+                #[serde(default)]
                 allow_loopback_redirect: Option<bool>,
+                #[serde(default)]
+                tproxy_enabled: Option<bool>,
                 #[serde(default)]
                 selinux_permissive_enabled: Option<bool>,
                 #[serde(default)]
@@ -6379,8 +6976,14 @@ match (method.as_str(), path.as_str()) {
             if let Some(capture_all) = patch.hotspot_t2s_capture_all {
                 setting.hotspot_t2s_capture_all = capture_all;
             }
+            if let Some(enabled) = patch.captive_portal_enabled {
+                setting.captive_portal_enabled = enabled;
+            }
             if let Some(enabled) = patch.allow_loopback_redirect {
                 setting.allow_loopback_redirect = enabled;
+            }
+            if let Some(enabled) = patch.tproxy_enabled {
+                setting.tproxy_enabled = enabled;
             }
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;
@@ -6398,11 +7001,29 @@ match (method.as_str(), path.as_str()) {
                 crate::android::sysctl::set_ipv4_forward(enabled)?;
             }
             let saved = settings::load_api_settings().unwrap_or(setting);
+            if services_running {
+                crate::captive_portal::sync_from_settings_best_effort();
+            }
             protector::refresh(services_running);
             write_json(stream, 200, json!({"ok": true, "setting": saved}))
         }
 
-        // energy_saver module not included in this fork — endpoints disabled
+        ("GET", "/api/hotspot/captive/status") => {
+            write_json(stream, 200, crate::captive_portal::api_status())
+        }
+        ("GET", "/api/hotspot/captive/devices") => {
+            write_json(stream, 200, crate::captive_portal::api_devices())
+        }
+        ("POST", "/api/hotspot/captive/allow") => {
+            write_json(stream, 200, crate::captive_portal::api_allow(&body, services_running))
+        }
+        ("POST", "/api/hotspot/captive/deny") => {
+            write_json(stream, 200, crate::captive_portal::api_deny(&body, services_running))
+        }
+        ("POST", "/api/hotspot/captive/rename") => {
+            write_json(stream, 200, crate::captive_portal::api_rename(&body))
+        }
+
         ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {
             write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
         }
@@ -6767,6 +7388,11 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
                 // Apply small write timeout so we don't block forever on slow clients.
                 let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                 let _ = stream.set_nodelay(true);
+
+                // Любое обращение к API — признак того, что демоном пользуются:
+                // сбрасываем таймер простоя и мгновенно поднимаем спящие наблюдатели,
+                // чтобы ответ ушёл уже по свежим данным.
+                crate::idle::touch();
 
                 // Concurrency gate
                 let now = inflight.fetch_add(1, Ordering::AcqRel) + 1;

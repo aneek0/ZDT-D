@@ -6,10 +6,14 @@ enum class Tab {
   APPS,
   SUPPORT,
 }
-
 sealed class AppsRoute {
   data object List : AppsRoute()
   data object AnalysisTools : AppsRoute()
+  data object OptionalTools : AppsRoute()
+  data object VpsServers : AppsRoute()
+  data class VpsServer(val serverId: String) : AppsRoute()
+  data class VpsService(val serverId: String, val serviceId: String) : AppsRoute()
+  data class VpsProfile(val serverId: String, val serviceId: String, val profileId: String) : AppsRoute()
   data object ConstructionStudio : AppsRoute()
   data object DpiDetector : AppsRoute()
   data object NfqwsTester : AppsRoute()
@@ -17,6 +21,4 @@ sealed class AppsRoute {
   data class Program(val programId: String) : AppsRoute()
   data class Profile(val programId: String, val profile: String) : AppsRoute()
 }
-
-
-internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "wireproxy_profiles" || type == "myproxy_profiles" || type == "myprogram_profiles" || type == "openvpn_profiles" || type == "tun2socks_profiles" || type == "myvpn_profiles" || type == "mihomo_profiles" || type == "mieru_profiles" || type == "amneziawg_profiles"
+internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "hysteria2_profiles" || type == "wireproxy_profiles" || type == "myproxy_profiles" || type == "myprogram_profiles" || type == "openvpn_profiles" || type == "tun2socks_profiles" || type == "myvpn_profiles" || type == "mihomo_profiles" || type == "mieru_profiles" || type == "amneziawg_profiles"
