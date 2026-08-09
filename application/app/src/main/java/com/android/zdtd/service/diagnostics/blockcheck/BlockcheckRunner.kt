@@ -79,6 +79,7 @@ class BlockcheckRunner(
             process.outputStream.close()
 
             var session: BlockcheckSession? = null
+            var sentError = false
             val reader = BufferedReader(InputStreamReader(process.inputStream))
 
             try {
@@ -167,6 +168,7 @@ class BlockcheckRunner(
                             }
                         } else if (session == null) {
                             trySend(BlockcheckEvent.Error(trimmed))
+                            sentError = true
                             process.destroy()
                             break
                         }
@@ -176,6 +178,14 @@ class BlockcheckRunner(
             } finally {
                 reader.close()
                 process.destroy()
+            }
+
+            // Stub/missing binaries (0-byte APK asset) exit without emitting any JSON.
+            // Surface that as an error instead of leaving the UI stuck on "starting".
+            if (session == null && !sentError && isActive) {
+                trySend(BlockcheckEvent.Error(
+                    "nfqws_tester binary failed to start (no output). The APK ships an empty stub; rebuild the APK with the real binary."
+                ))
             }
         }
 

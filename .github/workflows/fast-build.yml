@@ -115,8 +115,6 @@ jobs:
   build_dpi_detector:
     name: build dpi-detector
     runs-on: ubuntu-latest
-    needs: check_changes
-    if: needs.check_changes.outputs.dpi_detector == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -180,8 +178,6 @@ jobs:
   build_nfqws_tester:
     name: build nfqws-tester
     runs-on: ubuntu-latest
-    needs: check_changes
-    if: needs.check_changes.outputs.nfqws_tester == 'true' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v6
@@ -424,27 +420,29 @@ jobs:
 
       - name: Prepare APK helper assets (arm64-v8a real, armeabi-v7a stubs)
         run: |
-          # dpi-detector APK asset: fresh > prebuilt > stub (allows incremental Kotlin-only builds)
+          # dpi-detector APK asset: fresh > prebuilt > hard error (never ship a broken stub)
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a
           if [ -f out/artifacts/dpi-detector/arm64/dpi-detector ]; then
             cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
           elif [ -f prebuilt/bin/arm64-v8a/dpi-detector ]; then
             cp prebuilt/bin/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
           else
-            touch application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+            echo "::error::dpi-detector binary missing (no fresh artifact, no prebuilt). Run full build or workflow_dispatch." >&2
+            exit 1
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a
           cp application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a/dpi-detector
 
-          # nfqws-tester APK asset: fresh > prebuilt > stub
+          # nfqws-tester APK asset: fresh > prebuilt > hard error (never ship a broken stub)
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a
           if [ -f out/artifacts/nfqws-tester/arm64/nfqws-tester ]; then
             cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           elif [ -f prebuilt/bin/arm64-v8a/nfqws-tester ]; then
             cp prebuilt/bin/arm64-v8a/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           else
-            touch application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+            echo "::error::nfqws-tester binary missing (no fresh artifact, no prebuilt). Run full build or workflow_dispatch." >&2
+            exit 1
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a
