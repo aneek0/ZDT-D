@@ -2180,6 +2180,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="theme_amoled">AmberOLED</string>
 <string name="common_clear">Clear</string>
 <string name="blockcheck_title">Auto Blockcheck</string>
+<string name="blockcheck_target_profile">Target: %1$s / %2$s</string>
 <string name="blockcheck_hosts_title">Hosts</string>
 <string name="blockcheck_from_list">From list</string>
 <string name="blockcheck_custom_domain">Custom domain</string>

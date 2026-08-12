@@ -28,6 +28,7 @@ import java.io.File
 @Composable
 fun BlockcheckScreen(
     program: String,
+    profile: String = "default",
     hostsFile: String,
     onClose: () -> Unit,
     actions: ZdtdActions? = null,
@@ -41,6 +42,7 @@ fun BlockcheckScreen(
     val runner = remember { BlockcheckRunner(context) }
 
     var selectedProgram by remember { mutableStateOf(program) }
+    var selectedProfile by remember { mutableStateOf(profile) }
     var allStrategies by remember { mutableStateOf<List<String>>(emptyList()) }
     var hostFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedHostFile by remember { mutableStateOf(hostsFile) }
@@ -54,6 +56,7 @@ fun BlockcheckScreen(
         runJob = null
         stoppedManually = false
         BlockcheckStore.reset()
+        selectedProfile = "default"
         hostFiles = runner.listHostFiles()
         allStrategies = runner.listStrategies(selectedProgram)
         BlockcheckStore.update { it.copy(allStrategies = allStrategies) }
@@ -107,10 +110,10 @@ fun BlockcheckScreen(
         val a = actions ?: return
         coroutineScope.launch {
             // No hostlists passed: the daemon reuses the hostlists already
-            // selected on the "default" profile config, so applying from
-            // blockcheck keeps them intact.
+            // selected on this profile's config, so applying from blockcheck
+            // keeps them intact.
             val ok = suspendCancellableCoroutine<Boolean> { cont ->
-                a.applyStrategicVariant(selectedProgram, "default", strategy) { ok ->
+                a.applyStrategicVariant(selectedProgram, selectedProfile, strategy) { ok ->
                     if (cont.isActive) cont.resumeWith(Result.success(ok))
                 }
             }
@@ -144,6 +147,11 @@ fun BlockcheckScreen(
                         FilterChip(selected = selectedProgram == "nfqws", onClick = { selectedProgram = "nfqws" }, label = { Text("nfqws") })
                         FilterChip(selected = selectedProgram == "nfqws2", onClick = { selectedProgram = "nfqws2" }, label = { Text("nfqws2") })
                     }
+                    Text(
+                        context.getString(R.string.blockcheck_target_profile, selectedProgram, selectedProfile),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    )
                 }
             }
         }

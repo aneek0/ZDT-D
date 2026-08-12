@@ -96,7 +96,7 @@ fun AppsHost(
     AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
-    AppsRoute.Blockcheck -> 2
+    is AppsRoute.Blockcheck -> 2
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -206,8 +206,9 @@ fun AppsHost(
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
-      AppsRoute.Blockcheck -> BlockcheckScreen(
-        program = "nfqws",
+      is AppsRoute.Blockcheck -> BlockcheckScreen(
+        program = r.program,
+        profile = r.profile,
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
         onClose = onOpenAnalysisTools,
         actions = actions,

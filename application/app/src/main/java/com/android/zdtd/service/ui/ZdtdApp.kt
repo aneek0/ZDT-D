@@ -758,12 +758,23 @@ private fun MainShell(
   var tab by remember { mutableStateOf(Tab.HOME) }
   var appsRoute by remember { mutableStateOf<AppsRoute>(AppsRoute.List) }
   val internalOnOpenNfqwsTester: () -> Unit = { appsRoute = AppsRoute.NfqwsTester }
-  val internalOnOpenBlockcheck: () -> Unit = { appsRoute = AppsRoute.Blockcheck }
   val internalOnOpenAnalysisTools: () -> Unit = { appsRoute = AppsRoute.AnalysisTools }
   val internalOnOpenConstructionStudio: () -> Unit = { appsRoute = AppsRoute.ConstructionStudio }
   val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
   val internalOnOpenProgram: (String) -> Unit = { appsRoute = AppsRoute.Program(it) }
+  // Remember the most recent nfqws/nfqws2 profile so blockcheck applies to the
+  // same profile the user was configuring, instead of a hard-coded default.
+  var lastStrategyProfile by rememberSaveable { mutableStateOf("nfqws" to "default") }
+  LaunchedEffect(appsRoute) {
+    if (appsRoute is AppsRoute.Profile && (appsRoute.programId == "nfqws" || appsRoute.programId == "nfqws2")) {
+      lastStrategyProfile = appsRoute.programId to appsRoute.profile
+    }
+  }
   val internalOnOpenProfile: (String, String) -> Unit = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) }
+  val internalOnOpenBlockcheck: () -> Unit = {
+    val (p, pr) = lastStrategyProfile
+    appsRoute = AppsRoute.Blockcheck(p, pr)
+  }
   val internalOnOpenOptionalTools: () -> Unit = { appsRoute = AppsRoute.OptionalTools }
   val internalOnOpenVpsServers: () -> Unit = { appsRoute = AppsRoute.VpsServers }
   val internalOnOpenVpsServer: (String) -> Unit = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) }
@@ -1314,7 +1325,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
-    tab == Tab.APPS && appsRoute == AppsRoute.Blockcheck -> "Auto Blockcheck"
+    tab == Tab.APPS && appsRoute is AppsRoute.Blockcheck -> "Auto Blockcheck"
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1342,7 +1353,7 @@ private fun MainShell(
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
-        AppsRoute.Blockcheck -> null
+        is AppsRoute.Blockcheck -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
