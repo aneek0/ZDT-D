@@ -211,6 +211,7 @@ fun AppsHost(
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
         onClose = onOpenAnalysisTools,
         actions = actions,
+        snackHost = snackHost,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

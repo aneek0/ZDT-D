@@ -22,6 +22,7 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.diagnostics.blockcheck.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 
 @Composable
@@ -30,6 +31,7 @@ fun BlockcheckScreen(
     hostsFile: String,
     onClose: () -> Unit,
     actions: ZdtdActions? = null,
+    snackHost: SnackbarHostState? = null,
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
 ) {
@@ -98,6 +100,21 @@ fun BlockcheckScreen(
         stoppedManually = true
         BlockcheckStore.update {
             it.copy(isRunning = false, isFinished = true, phase = "stopped")
+        }
+    }
+
+    fun applyStrategy(strategy: String) {
+        val a = actions ?: return
+        coroutineScope.launch {
+            val ok = suspendCancellableCoroutine<Boolean> { cont ->
+                a.applyStrategicVariant(selectedProgram, "default", strategy) { ok ->
+                    if (cont.isActive) cont.resumeWith(Result.success(ok))
+                }
+            }
+            snackHost?.showSnackbar(
+                if (ok) context.getString(R.string.common_applied_with_value, strategy.removeSuffix(".txt"))
+                else context.getString(R.string.common_apply_failed)
+            )
         }
     }
 
@@ -285,7 +302,7 @@ fun BlockcheckScreen(
                                         if (status == "works" && actions != null) {
                                             Spacer(Modifier.width(8.dp))
                                             TextButton(
-                                                onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } },
+                                                onClick = { applyStrategy(s) },
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                             ) { Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelSmall) }
                                         }
@@ -342,7 +359,7 @@ fun BlockcheckScreen(
                                             Text(s, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             if (actions != null) {
                                                 Spacer(Modifier.width(8.dp))
-                                                TextButton(onClick = { actions.applyStrategicVariant(selectedProgram, "default", s) { } }) {
+                                                TextButton(onClick = { applyStrategy(s) }) {
                                                     Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelMedium)
                                                 }
                                             }

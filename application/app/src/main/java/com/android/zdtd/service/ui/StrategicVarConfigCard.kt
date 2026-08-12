@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -209,6 +210,16 @@ fun StrategicVarConfigCard(
   LaunchedEffect(configPath) { reloadConfig() }
   LaunchedEffect(programId) { reloadVariants() }
   LaunchedEffect(programId) { reloadHostlistFiles() }
+
+  // When the user returns to this screen (e.g. after applying a strategy from
+  // blockcheck on the same profile), the config may have changed out-of-band.
+  // Refresh so the "currently applied" indicator reflects reality.
+  LifecycleResumeEffect(Unit) {
+    reloadConfig()
+    reloadVariants()
+    reloadHostlistFiles()
+    onPauseOrDispose { }
+  }
 
   val savedHash = remember(lastLoaded) { sha256HexUtf8(lastLoaded) }
   val matched = remember(savedHash, variants) {
