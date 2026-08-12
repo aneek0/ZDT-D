@@ -791,6 +791,37 @@ fn apply_hostlists_to_config(data: &[u8], hostlists: &[String], exclude: &[Strin
     result.into_bytes()
 }
 
+/// Reads the current profile config and extracts the hostlist file names that
+/// are already selected there (the suffix after the module list prefix). This
+/// lets the daemon reuse a profile's existing hostlist selection without the
+/// client having to mirror that state.
+fn extract_hostlists_from_config(cfg: &Path) -> (Vec<String>, Vec<String>) {
+    let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
+    let mut include = Vec::new();
+    let mut exclude = Vec::new();
+    let Ok(data) = fs::read(cfg) else {
+        return (include, exclude);
+    };
+    let text = String::from_utf8_lossy(&data);
+    for token in text.split_whitespace() {
+        let t = token.trim();
+        if let Some(rest) = t.strip_prefix("--hostlist=") {
+            if let Some(name) = rest.strip_prefix(module_list) {
+                if !name.is_empty() {
+                    include.push(name.to_string());
+                }
+            }
+        } else if let Some(rest) = t.strip_prefix("--hostlist-exclude=") {
+            if let Some(name) = rest.strip_prefix(module_list) {
+                if !name.is_empty() {
+                    exclude.push(name.to_string());
+                }
+            }
+        }
+    }
+    (include, exclude)
+}
+
 fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8]) -> Result<()> {
     // Routes:
     //   GET  /api/strategicvar/{program}
@@ -849,8 +880,18 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                 let data = fs::read(&src)
                     .map_err(|e| anyhow::anyhow!("read failed {}: {e}", src.display()))?;
 
-                let data = if !req.hostlists.is_empty() || !req.exclude_hostlists.is_empty() {
-                    apply_hostlists_to_config(&data, &req.hostlists, &req.exclude_hostlists)
+                // If the client did not supply hostlists (e.g. blockcheck apply
+                // with no selection), reuse the hostlists already chosen for this
+                // profile so the applied config keeps them.
+                let (hostlists, exclude_hostlists): (Vec<String>, Vec<String>) = if !req.hostlists.is_empty() || !req.exclude_hostlists.is_empty() {
+                    (req.hostlists.clone(), req.exclude_hostlists.clone())
+                } else {
+                    let cfg = prof_root.join("config/config.txt");
+                    extract_hostlists_from_config(&cfg)
+                };
+
+                let data = if !hostlists.is_empty() || !exclude_hostlists.is_empty() {
+                    apply_hostlists_to_config(&data, &hostlists, &exclude_hostlists)
                 } else {
                     data
                 };

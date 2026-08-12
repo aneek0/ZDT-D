@@ -106,6 +106,9 @@ fun BlockcheckScreen(
     fun applyStrategy(strategy: String) {
         val a = actions ?: return
         coroutineScope.launch {
+            // No hostlists passed: the daemon reuses the hostlists already
+            // selected on the "default" profile config, so applying from
+            // blockcheck keeps them intact.
             val ok = suspendCancellableCoroutine<Boolean> { cont ->
                 a.applyStrategicVariant(selectedProgram, "default", strategy) { ok ->
                     if (cont.isActive) cont.resumeWith(Result.success(ok))
