@@ -171,28 +171,49 @@ def fetch_remote_index() -> list[dict]:
     return [x for x in data if x["type"] == "file"]
 
 
-def fetch_remote_file(name: str) -> set[str]:
+def fetch_remote_file(name: str) -> tuple[set[str], dict[str, int]]:
+    """Return (unique_entries, internal_dup_counts).
+
+    internal_dup_counts maps a normalized entry to how many times it was
+    repeated WITHIN this single remote file (count of extra occurrences). This
+    lets us apply the same "duplicates appeared" check to the remote lists
+    themselves, not only to local->remote coverage.
+    """
     url = f"{GITEA_RAW}/{name}"
     req = urllib.request.Request(url, headers={"User-Agent": "ZDT-D-dedup"})
     with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:  # noqa: S310
         text = r.read().decode("utf-8", "replace")
-    out = set()
+    out: set[str] = set()
+    counts: Counter[str] = Counter()
     for line in text.splitlines():
         m = ENTRY_RE.match(line)
         if m:
-            out.add(normalize(m.group(1)))
-    return out
+            e = normalize(m.group(1))
+            out.add(e)
+            counts[e] += 1
+    internal_dups = {k: c - 1 for k, c in counts.items() if c > 1}
+    return out, internal_dups
 
 
-def load_baseline() -> dict[str, set[str]]:
+def load_baseline() -> dict[str, dict]:
+    """Baseline maps name -> {"entries": set, "internal_dups": {entry: count}}."""
     if not BASELINE_PATH.exists():
         return {}
     data = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-    return {k: set(v) for k, v in data.items()}
+    out: dict[str, dict] = {}
+    for k, v in data.items():
+        out[k] = {
+            "entries": set(v.get("entries", [])),
+            "internal_dups": dict(v.get("internal_dups", {})),
+        }
+    return out
 
 
-def save_baseline(snap: dict[str, set[str]]) -> None:
-    data = {k: sorted(v) for k, v in snap.items()}
+def save_baseline(snap: dict[str, dict]) -> None:
+    data = {
+        k: {"entries": sorted(v["entries"]), "internal_dups": v["internal_dups"]}
+        for k, v in snap.items()
+    }
     BASELINE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
@@ -202,30 +223,38 @@ def check_remote(local_entries_by_file: dict[str, set[str]]) -> dict:
     For each remote file we report:
       * which local files already contain ALL its entries (redundant),
       * how many entries overlap with the local union (coverage),
-      * which entries are NEW vs the saved baseline (newly appeared).
+      * which entries are NEW vs the saved baseline (newly appeared),
+      * INTERNAL duplicates inside the remote file itself (same check we run
+        locally), and whether NEW internal duplicates appeared vs baseline.
     """
     index = fetch_remote_index()
     local_union = set().union(*local_entries_by_file.values()) if local_entries_by_file else set()
     baseline = load_baseline()
 
     report: dict[str, dict] = {}
-    snapshot: dict[str, set[str]] = {}
+    snapshot: dict[str, dict] = {}
     skipped: list[str] = []
     for item in index:
         name = item["name"]
         if remote_skip(name):
             skipped.append(name)
             continue
-        remote = fetch_remote_file(name)
-        snapshot[name] = remote
+        remote, internal_dups = fetch_remote_file(name)
+        snapshot[name] = {"entries": remote, "internal_dups": internal_dups}
         covering = [f for f, s in local_entries_by_file.items() if remote and remote <= s]
         overlap = len(remote & local_union) if local_union else 0
-        new_vs_baseline = sorted(remote - baseline.get(name, set())) if baseline else []
+        base = baseline.get(name, {})
+        new_vs_baseline = sorted(remote - base.get("entries", set())) if baseline else []
+        # internal dups that are new vs baseline (entry newly duplicated)
+        base_dups = base.get("internal_dups", {})
+        new_internal = sorted(set(internal_dups) - set(base_dups))
         report[name] = {
             "remote_entries": len(remote),
+            "internal_duplicates": internal_dups,
             "overlap_with_local_union": overlap,
             "fully_covered_by_local": covering,
             "new_vs_baseline": new_vs_baseline,
+            "new_internal_duplicates": new_internal,
         }
     return {"report": report, "snapshot": snapshot, "skipped": skipped}
 
@@ -277,6 +306,22 @@ def print_remote(res: dict) -> None:
             print(f"          + {e}")
     if len(newish) > 20:
         print(f"      ... and {len(newish) - 20} more files with new entries")
+
+    print()
+    files_with_internal = {n: i for n, i in report.items() if i["internal_duplicates"]}
+    print(f"  remote files with INTERNAL duplicates: {len(files_with_internal)}")
+    for n, i in sorted(files_with_internal.items(), key=lambda x: -len(x[1]["internal_duplicates"]))[:20]:
+        d = i["internal_duplicates"]
+        extra = sum(d.values())
+        new_d = i["new_internal_duplicates"]
+        tag = f" (+{len(new_d)} NEW since baseline)" if new_d else ""
+        print(f"      {n}: {len(d)} duplicated entries ({extra} extra lines){tag}")
+        for k, c in sorted(d.items(), key=lambda x: -x[1])[:5]:
+            mark = " [NEW]" if k in new_d else ""
+            print(f"          {k} x{c}{mark}")
+    if len(files_with_internal) > 20:
+        print(f"      ... and {len(files_with_internal) - 20} more files with internal dups")
+
     if res.get("skipped"):
         print()
         print(f"  skipped {len(res['skipped'])} IP/CIDR feed(s): "
