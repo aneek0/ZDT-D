@@ -111,6 +111,11 @@ fun StrategicVarConfigCard(
   var chooserOpen by remember(programId) { mutableStateOf(false) }
   var applying by remember(programId, profile) { mutableStateOf(false) }
 
+  // Last applied built-in strategy variant name. Tracked separately from the
+  // file hash so that visual feedback survives hostlist appends (which change
+  // the file hash) and survives config edits that keep the variant intact.
+  var currentVariantName by remember(programId, profile) { mutableStateOf<String?>(null) }
+
   // hostlist selection
   var hostlistFiles by remember(programId) { mutableStateOf<List<String>>(emptyList()) }
   var hostlistFilesLoading by remember(programId) { mutableStateOf(true) }
@@ -131,10 +136,18 @@ fun StrategicVarConfigCard(
       text = t
       lastLoaded = t
       val (h, e) = parseHostlistText(t)
-      selectedHostlists = h
-      selectedExcludeHostlists = e
-      lastLoadedHostlists = h
-      lastLoadedExcludeHostlists = e
+      // Deduplicate: a corrupted/duplicated file should never propagate bloat.
+      val hl = h.distinct()
+      val ex = e.distinct()
+      // If the freshly-loaded file already matches a prebuilt variant, lift
+      // that into currentVariantName so visual feedback survives hostlist edits.
+      val hash = sha256HexUtf8(t)
+      val match = variants.firstOrNull { it.sha256 != null && it.sha256.equals(hash, ignoreCase = true) }
+      selectedHostlists = hl
+      selectedExcludeHostlists = ex
+      lastLoadedHostlists = hl
+      lastLoadedExcludeHostlists = ex
+      if (match != null) currentVariantName = match.name
       loading = false
     }
   }
@@ -158,9 +171,16 @@ fun StrategicVarConfigCard(
   fun applyVariant(variant: ApiModels.StrategyVariant) {
     chooserOpen = false
     applying = true
-    actions.applyStrategicVariant(programId, profile, variant.name, selectedHostlists, selectedExcludeHostlists) { ok ->
+    // De-duplicate before sending so the daemon never receives bloat, even
+    // if upstream state accidentally accumulated duplicates.
+    val hl = selectedHostlists.distinct()
+    val ex = selectedExcludeHostlists.distinct()
+    actions.applyStrategicVariant(programId, profile, variant.name, hl, ex) { ok ->
       applying = false
-      if (ok) reloadConfig()
+      if (ok) {
+        currentVariantName = variant.name
+        reloadConfig()
+      }
       scope.launch {
         snackHost.showSnackbar(
           if (ok) ctx.getString(R.string.common_applied_with_value, variant.displayName())
@@ -172,7 +192,9 @@ fun StrategicVarConfigCard(
 
   fun applyHostlistsOnly() {
     applyingHostlists = true
-    actions.applyProfileHostlists(programId, profile, selectedHostlists, selectedExcludeHostlists) { ok ->
+    val hl = selectedHostlists.distinct()
+    val ex = selectedExcludeHostlists.distinct()
+    actions.applyProfileHostlists(programId, profile, hl, ex) { ok ->
       applyingHostlists = false
       if (ok) reloadConfig()
       scope.launch {
@@ -192,23 +214,33 @@ fun StrategicVarConfigCard(
   val matched = remember(savedHash, variants) {
     variants.firstOrNull { it.sha256 != null && it.sha256.equals(savedHash, ignoreCase = true) }
   }
+  // Prefer the explicit tracking variable; fall back to the hash match.
+  // This keeps the chip green/stable when hostlists are appended (which change
+  // the file hash) without losing the prior behaviour.
+  val activeVariantName = currentVariantName ?: matched?.name
+  val activeVariant = remember(activeVariantName, variants) {
+    activeVariantName?.let { name -> variants.firstOrNull { it.name == name } }
+  }
 
   val strategyLabel = when {
     variantsLoading -> stringResource(R.string.strategic_strategies_loading)
     variants.isEmpty() -> stringResource(R.string.strategic_strategies_none)
-    matched != null -> stringResource(R.string.strategic_strategy_selected, matched.displayName())
+    activeVariant != null -> stringResource(R.string.strategic_strategy_selected, activeVariant.displayName())
     else -> stringResource(R.string.strategic_user_config)
   }
-  val isUserConfig = !variantsLoading && variants.isNotEmpty() && matched == null
+  val isUserConfig = !variantsLoading && variants.isNotEmpty() && activeVariant == null
   val canChooseVariant = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty()
   val hostlistsChanged = selectedHostlists != lastLoadedHostlists || selectedExcludeHostlists != lastLoadedExcludeHostlists
   val canSave = !loading && !saving && !applying && (text != lastLoaded || hostlistsChanged)
 
   fun saveConfig() {
     saving = true
+    // Dedupe before writing so we never commit accumulated duplicates.
+    val wantedInclude = selectedHostlists.distinct()
+    val wantedExclude = selectedExcludeHostlists.distinct()
     val hostlistArgs = buildList {
-      for (hl in selectedHostlists) add("--hostlist=$HOSTLIST_PREFIX$hl")
-      for (ex in selectedExcludeHostlists) add("--hostlist-exclude=$HOSTLIST_PREFIX$ex")
+      for (hl in wantedInclude) add("--hostlist=$HOSTLIST_PREFIX$hl")
+      for (ex in wantedExclude) add("--hostlist-exclude=$HOSTLIST_PREFIX$ex")
     }
     val cleaned = text
       .replace(Regex("""--hostlist=[^\s]+"""), "")
@@ -222,8 +254,14 @@ fun StrategicVarConfigCard(
       saving = false
       if (ok) {
         lastLoaded = newText
-        lastLoadedHostlists = selectedHostlists
-        lastLoadedExcludeHostlists = selectedExcludeHostlists
+        lastLoadedHostlists = wantedInclude
+        lastLoadedExcludeHostlists = wantedExclude
+        // If the saved text is no longer exactly a prebuilt variant (the user
+        // edited it), drop the pinned variant name so the chip reverts to
+        // "user config" instead of falsely claiming the variant is active.
+        val hash = sha256HexUtf8(newText)
+        val stillMatches = variants.any { it.sha256 != null && it.sha256.equals(hash, ignoreCase = true) }
+        if (!stillMatches) currentVariantName = null
       }
       scope.launch {
         snackHost.showSnackbar(
@@ -237,7 +275,7 @@ fun StrategicVarConfigCard(
   if (chooserOpen) {
     StrategicVariantsBottomSheet(
       variants = variants,
-      currentVariantName = matched?.name,
+      currentVariantName = activeVariantName,
       onDismiss = { chooserOpen = false },
       onChoose = ::applyVariant,
     )
@@ -382,8 +420,8 @@ fun StrategicVarConfigCard(
             selectedHostlists = h
             selectedExcludeHostlists = e
             hostlistChooserOpen = false
-            if (matched != null) {
-              applyVariant(matched)
+            if (activeVariant != null) {
+              applyVariant(activeVariant)
             } else {
               applyHostlistsOnly()
             }
@@ -402,7 +440,7 @@ fun StrategicVarConfigCard(
           fontWeight = FontWeight.SemiBold,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          if (matched == null && (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty())) {
+          if (activeVariant == null && (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty())) {
             Button(
               onClick = { applyHostlistsOnly() },
               enabled = !loading && !saving && !applying && !applyingHostlists && !hostlistFilesLoading,
@@ -606,6 +644,9 @@ private fun HostlistChooserBottomSheet(
   var selectedExcl by remember(selectedHostlists, selectedExclude) {
     mutableStateOf(selectedExclude.toSet())
   }
+  // Guard against double-tap: recomposition lags behind state changes, so a
+  // user mashing Apply could fire onSave twice before the sheet closes.
+  var applyRequested by remember { mutableStateOf(false) }
 
   val hasChanges = selected != selectedHostlists.toSet() || selectedExcl != selectedExclude.toSet()
 
@@ -713,8 +754,12 @@ private fun HostlistChooserBottomSheet(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Button(
-          onClick = { onSave(selected.toList(), selectedExcl.toList()) },
-          enabled = hasChanges,
+          onClick = {
+            if (applyRequested) return@Button
+            applyRequested = true
+            onSave(selected.toList(), selectedExcl.toList())
+          },
+          enabled = hasChanges && !applyRequested,
           modifier = Modifier.weight(1f),
         ) {
           Text(stringResource(R.string.strategic_hostlists_apply))
