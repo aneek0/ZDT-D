@@ -6080,7 +6080,7 @@ fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVar
   }
 }
 
-fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String> = emptyList(), excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
+fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String> = emptyList(), excludeHostlists: List<String> = emptyList(), ipsets: List<String> = emptyList(), excludeIpsets: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
@@ -6088,6 +6088,8 @@ fun applyStrategicVariant(programId: String, profile: String, file: String, host
       .put("file", file)
     payload.put("hostlists", JSONArray(hostlists))
     payload.put("exclude_hostlists", JSONArray(excludeHostlists))
+    payload.put("ipsets", JSONArray(ipsets))
+    payload.put("exclude_ipsets", JSONArray(excludeIpsets))
     Log.d("ZDT-hostlist", "applyStrategicVariant: $payload")
     val ok = runCatching { api.postJsonData("/api/strategicvar/apply", payload) }.getOrDefault(false)
     Log.d("ZDT-hostlist", "applyStrategicVariant ok=$ok")
@@ -6095,13 +6097,15 @@ fun applyStrategicVariant(programId: String, profile: String, file: String, host
   }
 }
 
-fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
+fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String> = emptyList(), ipsets: List<String> = emptyList(), excludeIpsets: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()
       .put("program", programId)
       .put("profile", profile)
     payload.put("hostlists", JSONArray(hostlists))
     payload.put("exclude_hostlists", JSONArray(excludeHostlists))
+    payload.put("ipsets", JSONArray(ipsets))
+    payload.put("exclude_ipsets", JSONArray(excludeIpsets))
     Log.d("ZDT-hostlist", "applyProfileHostlists: $payload")
     val ok = runCatching { api.postJsonData("/api/strategicvar/hostlists", payload) }.getOrDefault(false)
     Log.d("ZDT-hostlist", "applyProfileHostlists ok=$ok")

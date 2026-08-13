@@ -2211,6 +2211,15 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="strategic_hostlists_apply">Apply</string>
 <string name="strategic_hostlists_applied">Hostlists applied</string>
 <string name="strategic_hostlists_include">Hostlists to include:</string>
+<string name="strategic_ipsets_title">IP sets</string>
+<string name="strategic_ipsets_sheet_title">Select IP sets</string>
+<string name="strategic_ipsets_sheet_hint">Choose which IP set files to use (applied when selecting a strategy).</string>
+<string name="strategic_ipsets_none">No IP sets selected</string>
+<string name="strategic_ipsets_count">%1$d IP set(s)</string>
+<string name="strategic_exclude_ipsets_count">%1$d exclude(s)</string>
+<string name="strategic_ipsets_edit">Edit</string>
+<string name="strategic_ipsets_applied">IP sets applied</string>
+<string name="strategic_ipsets_include">IP sets to include:</string>
 <string name="start_blocked_profile_overlap">Start blocked: disable overlapping profiles</string>
 <string name="enable_blocked_profile_overlap">Enable blocked: disable overlapping profiles</string>
 <string name="enable_blocked_profile_overlap_detail">Cannot enable profile \"%1$s\" from program \"%2$s\" — it shares apps with enabled profile \"%3$s\" in program \"%4$s\" (%5$s). Disable the conflicting profile first.</string>

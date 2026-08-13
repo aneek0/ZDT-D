@@ -60,10 +60,31 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 private const val HOSTLIST_PREFIX = "/data/adb/modules/ZDT-D/strategic/list/"
+// IP-set selection files live in the same strategic/list/ directory as the
+// hostlists; the daemon injects them as --ipset=/.../list/<name>.
+private val IPSET_KNOWN_FILES = setOf(
+  "cloudfare-list.txt",
+  "custom.txt",
+  "ipset-discord.txt",
+  "ipset.txt",
+  "ipset-v4.txt",
+  "ipset-v6.txt",
+  "ip-telegram.txt",
+  "exclude.txt",
+)
 
-private fun parseHostlistText(text: String): Pair<List<String>, List<String>> {
+private data class StrategySelection(
+  val hostlists: List<String>,
+  val excludeHostlists: List<String>,
+  val ipsets: List<String>,
+  val excludeIpsets: List<String>,
+)
+
+private fun parseStrategySelection(text: String): StrategySelection {
   val include = mutableListOf<String>()
   val exclude = mutableListOf<String>()
+  val ipsets = mutableListOf<String>()
+  val excludeIpsets = mutableListOf<String>()
   for (token in text.split(Regex("\\s+"))) {
     val t = token.trim()
     when {
@@ -75,9 +96,17 @@ private fun parseHostlistText(text: String): Pair<List<String>, List<String>> {
         val path = t.removePrefix("--hostlist-exclude=")
         if (path.startsWith(HOSTLIST_PREFIX)) exclude.add(path.removePrefix(HOSTLIST_PREFIX))
       }
+      t.startsWith("--ipset=") -> {
+        val path = t.removePrefix("--ipset=")
+        if (path.startsWith(HOSTLIST_PREFIX)) ipsets.add(path.removePrefix(HOSTLIST_PREFIX))
+      }
+      t.startsWith("--ipset-exclude=") -> {
+        val path = t.removePrefix("--ipset-exclude=")
+        if (path.startsWith(HOSTLIST_PREFIX)) excludeIpsets.add(path.removePrefix(HOSTLIST_PREFIX))
+      }
     }
   }
-  return Pair(include, exclude)
+  return StrategySelection(include, exclude, ipsets, excludeIpsets)
 }
 
 private fun sha256HexUtf8(s: String): String {
@@ -127,6 +156,13 @@ fun StrategicVarConfigCard(
   var lastLoadedHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
   var lastLoadedExcludeHostlists by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
 
+  // ipset selection (same strategic/list/ directory, filtered to known ipset files)
+  var selectedIpsets by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var selectedExcludeIpsets by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var ipsetChooserOpen by remember(programId, profile) { mutableStateOf(false) }
+  var lastLoadedIpsets by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+  var lastLoadedExcludeIpsets by remember(programId, profile) { mutableStateOf<List<String>>(emptyList()) }
+
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
 
@@ -136,18 +172,24 @@ fun StrategicVarConfigCard(
       val t = content ?: ""
       text = t
       lastLoaded = t
-      val (h, e) = parseHostlistText(t)
+      val sel = parseStrategySelection(t)
       // Deduplicate: a corrupted/duplicated file should never propagate bloat.
-      val hl = h.distinct()
-      val ex = e.distinct()
+      val hl = sel.hostlists.distinct()
+      val ex = sel.excludeHostlists.distinct()
+      val ips = sel.ipsets.distinct()
+      val exi = sel.excludeIpsets.distinct()
       // If the freshly-loaded file already matches a prebuilt variant, lift
       // that into currentVariantName so visual feedback survives hostlist edits.
       val hash = sha256HexUtf8(t)
       val match = variants.firstOrNull { it.sha256 != null && it.sha256.equals(hash, ignoreCase = true) }
       selectedHostlists = hl
       selectedExcludeHostlists = ex
+      selectedIpsets = ips
+      selectedExcludeIpsets = exi
       lastLoadedHostlists = hl
       lastLoadedExcludeHostlists = ex
+      lastLoadedIpsets = ips
+      lastLoadedExcludeIpsets = exi
       if (match != null) currentVariantName = match.name
       loading = false
     }
@@ -176,7 +218,9 @@ fun StrategicVarConfigCard(
     // if upstream state accidentally accumulated duplicates.
     val hl = selectedHostlists.distinct()
     val ex = selectedExcludeHostlists.distinct()
-    actions.applyStrategicVariant(programId, profile, variant.name, hl, ex) { ok ->
+    val ips = selectedIpsets.distinct()
+    val exi = selectedExcludeIpsets.distinct()
+    actions.applyStrategicVariant(programId, profile, variant.name, hl, ex, ips, exi) { ok ->
       applying = false
       if (ok) {
         currentVariantName = variant.name
@@ -195,7 +239,9 @@ fun StrategicVarConfigCard(
     applyingHostlists = true
     val hl = selectedHostlists.distinct()
     val ex = selectedExcludeHostlists.distinct()
-    actions.applyProfileHostlists(programId, profile, hl, ex) { ok ->
+    val ips = selectedIpsets.distinct()
+    val exi = selectedExcludeIpsets.distinct()
+    actions.applyProfileHostlists(programId, profile, hl, ex, ips, exi) { ok ->
       applyingHostlists = false
       if (ok) reloadConfig()
       scope.launch {
@@ -242,20 +288,27 @@ fun StrategicVarConfigCard(
   val isUserConfig = !variantsLoading && variants.isNotEmpty() && activeVariant == null
   val canChooseVariant = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty()
   val hostlistsChanged = selectedHostlists != lastLoadedHostlists || selectedExcludeHostlists != lastLoadedExcludeHostlists
-  val canSave = !loading && !saving && !applying && (text != lastLoaded || hostlistsChanged)
+  val ipsetsChanged = selectedIpsets != lastLoadedIpsets || selectedExcludeIpsets != lastLoadedExcludeIpsets
+  val canSave = !loading && !saving && !applying && (text != lastLoaded || hostlistsChanged || ipsetsChanged)
 
   fun saveConfig() {
     saving = true
     // Dedupe before writing so we never commit accumulated duplicates.
     val wantedInclude = selectedHostlists.distinct()
     val wantedExclude = selectedExcludeHostlists.distinct()
+    val wantedIpsets = selectedIpsets.distinct()
+    val wantedExcludeIpsets = selectedExcludeIpsets.distinct()
     val hostlistArgs = buildList {
       for (hl in wantedInclude) add("--hostlist=$HOSTLIST_PREFIX$hl")
       for (ex in wantedExclude) add("--hostlist-exclude=$HOSTLIST_PREFIX$ex")
+      for (ips in wantedIpsets) add("--ipset=$HOSTLIST_PREFIX$ips")
+      for (exi in wantedExcludeIpsets) add("--ipset-exclude=$HOSTLIST_PREFIX$exi")
     }
     val cleaned = text
       .replace(Regex("""--hostlist=[^\s]+"""), "")
       .replace(Regex("""--hostlist-exclude=[^\s]+"""), "")
+      .replace(Regex("""--ipset=[^\s]+"""), "")
+      .replace(Regex("""--ipset-exclude=[^\s]+"""), "")
       .replace(Regex("""[ \t]{2,}"""), " ")
       .trimEnd()
     val newText = if (hostlistArgs.isEmpty()) cleaned else {
@@ -267,6 +320,8 @@ fun StrategicVarConfigCard(
         lastLoaded = newText
         lastLoadedHostlists = wantedInclude
         lastLoadedExcludeHostlists = wantedExclude
+        lastLoadedIpsets = wantedIpsets
+        lastLoadedExcludeIpsets = wantedExcludeIpsets
         // If the saved text is no longer exactly a prebuilt variant (the user
         // edited it), drop the pinned variant name so the chip reverts to
         // "user config" instead of falsely claiming the variant is active.
@@ -439,6 +494,75 @@ fun StrategicVarConfigCard(
           },
         )
       }
+
+      // ---- ipset selection ----
+      if (ipsetChooserOpen) {
+        IpSetChooserBottomSheet(
+          allFiles = hostlistFiles,
+          selectedIpsets = selectedIpsets,
+          selectedExclude = selectedExcludeIpsets,
+          onDismiss = { ipsetChooserOpen = false },
+          onSave = { h, e ->
+            selectedIpsets = h
+            selectedExcludeIpsets = e
+            ipsetChooserOpen = false
+            if (activeVariant != null) {
+              applyVariant(activeVariant)
+            } else {
+              applyHostlistsOnly()
+            }
+          },
+        )
+      }
+
+      Spacer(Modifier.height(10.dp))
+
+      Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          stringResource(R.string.strategic_ipsets_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Button(
+            onClick = { ipsetChooserOpen = true },
+            enabled = !loading && !saving && !applying && !hostlistFilesLoading,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+          ) {
+            Text(
+              if (selectedIpsets.isNotEmpty() || selectedExcludeIpsets.isNotEmpty()) {
+                stringResource(R.string.strategic_ipsets_edit)
+              } else {
+                stringResource(R.string.common_choose)
+              },
+              style = MaterialTheme.typography.labelSmall,
+            )
+          }
+        }
+      }
+
+      Spacer(Modifier.height(6.dp))
+
+      val ipsetSummary = buildList {
+        if (selectedIpsets.isNotEmpty()) {
+          add(stringResource(R.string.strategic_ipsets_count, selectedIpsets.size))
+        }
+        if (selectedExcludeIpsets.isNotEmpty()) {
+          add(stringResource(R.string.strategic_exclude_ipsets_count, selectedExcludeIpsets.size))
+        }
+      }.joinToString(", ")
+
+      Text(
+        text = if (ipsetSummary.isNotEmpty()) ipsetSummary else stringResource(R.string.strategic_ipsets_none),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+      )
+
+      Spacer(Modifier.height(10.dp))
 
       Row(
         Modifier.fillMaxWidth(),
@@ -774,6 +898,165 @@ private fun HostlistChooserBottomSheet(
           modifier = Modifier.weight(1f),
         ) {
           Text(stringResource(R.string.strategic_hostlists_apply))
+        }
+        Button(
+          onClick = {
+            selected = emptySet()
+            selectedExcl = emptySet()
+          },
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(stringResource(R.string.common_clear))
+        }
+      }
+
+      Spacer(Modifier.height(16.dp))
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IpSetChooserBottomSheet(
+  allFiles: List<String>,
+  selectedIpsets: List<String>,
+  selectedExclude: List<String>,
+  onDismiss: () -> Unit,
+  onSave: (ipsets: List<String>, exclude: List<String>) -> Unit,
+) {
+  val shortHeight = rememberIsShortHeight()
+
+  // Only the known ipset files are selectable here (the same strategic/list/
+  // directory also contains hostlists which are chosen in the other sheet).
+  val knownFiles = allFiles.filter { it in IPSET_KNOWN_FILES }
+  val regularFiles = knownFiles.filter { it != "exclude.txt" }
+  val excludeFile = if (knownFiles.contains("exclude.txt")) "exclude.txt" else null
+
+  var selected by remember(selectedIpsets, selectedExclude) {
+    mutableStateOf(selectedIpsets.toSet())
+  }
+  var selectedExcl by remember(selectedIpsets, selectedExclude) {
+    mutableStateOf(selectedExclude.toSet())
+  }
+  // Guard against double-tap: recomposition lags behind state changes, so a
+  // user mashing Apply could fire onSave twice before the sheet closes.
+  var applyRequested by remember { mutableStateOf(false) }
+
+  val hasChanges = selected != selectedIpsets.toSet() || selectedExcl != selectedExclude.toSet()
+
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            stringResource(R.string.strategic_ipsets_sheet_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Spacer(Modifier.height(2.dp))
+          Text(
+            stringResource(R.string.strategic_ipsets_sheet_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+        }
+        Spacer(Modifier.width(12.dp))
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+          }
+        }
+      }
+
+      Spacer(Modifier.height(8.dp))
+
+      if (excludeFile != null) {
+        Row(
+          modifier = Modifier.fillMaxWidth().clickable {
+            selectedExcl = if (excludeFile in selectedExcl) selectedExcl - excludeFile else selectedExcl + excludeFile
+          }.padding(vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Checkbox(
+            checked = excludeFile in selectedExcl,
+            onCheckedChange = { c ->
+              selectedExcl = if (c) selectedExcl + excludeFile else selectedExcl - excludeFile
+            },
+            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.error),
+          )
+          Spacer(Modifier.width(8.dp))
+          Text(
+            excludeFile.removeSuffix(".txt"),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+          )
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Text(
+          stringResource(R.string.strategic_ipsets_include),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+        Spacer(Modifier.height(4.dp))
+      }
+
+      LazyColumn(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = if (shortHeight) 180.dp else 220.dp, max = if (shortHeight) 300.dp else 400.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = PaddingValues(bottom = 8.dp),
+      ) {
+        items(regularFiles, key = { it }) { file ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable {
+              selected = if (file in selected) selected - file else selected + file
+            }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Checkbox(
+              checked = file in selected,
+              onCheckedChange = { c ->
+                selected = if (c) selected + file else selected - file
+              },
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+              file.removeSuffix(".txt"),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+            )
+          }
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Button(
+          onClick = {
+            if (applyRequested) return@Button
+            applyRequested = true
+            onSave(selected.toList(), selectedExcl.toList())
+          },
+          enabled = hasChanges && !applyRequested,
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(stringResource(R.string.strategic_ipsets_apply))
         }
         Button(
           onClick = {
