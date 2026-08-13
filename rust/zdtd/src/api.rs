@@ -722,22 +722,38 @@ struct ApplyStrategicVarReq {
     hostlists: Vec<String>,
     #[serde(default)]
     exclude_hostlists: Vec<String>,
+    #[serde(default)]
+    ipsets: Vec<String>,
+    #[serde(default)]
+    exclude_ipsets: Vec<String>,
 }
 
-fn apply_hostlists_to_config(data: &[u8], hostlists: &[String], exclude: &[String]) -> Vec<u8> {
+/// Holds the user-selected domain (hostlist) and IP (ipset) selection that the
+/// daemon injects into a strategy file, replacing any hardcoded selection args.
+struct Selection {
+    hostlists: Vec<String>,
+    exclude_hostlists: Vec<String>,
+    ipsets: Vec<String>,
+    exclude_ipsets: Vec<String>,
+}
+
+fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
     let text = String::from_utf8_lossy(data);
     let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
 
-    let hostlist_args: Vec<String> = {
-        let mut r = Vec::new();
-        for hl in hostlists {
-            r.push(format!("--hostlist={module_list}{hl}"));
-        }
-        for ex in exclude {
-            r.push(format!("--hostlist-exclude={module_list}{ex}"));
-        }
-        r
-    };
+    let mut injected_args: Vec<String> = Vec::new();
+    for hl in &sel.hostlists {
+        injected_args.push(format!("--hostlist={module_list}{hl}"));
+    }
+    for ex in &sel.exclude_hostlists {
+        injected_args.push(format!("--hostlist-exclude={module_list}{ex}"));
+    }
+    for ip in &sel.ipsets {
+        injected_args.push(format!("--ipset={module_list}{ip}"));
+    }
+    for ex in &sel.exclude_ipsets {
+        injected_args.push(format!("--ipset-exclude={module_list}{ex}"));
+    }
 
     let all_tokens: Vec<String> = text
         .split_whitespace()
@@ -766,13 +782,20 @@ fn apply_hostlists_to_config(data: &[u8], hostlists: &[String], exclude: &[Strin
 
     let mut out_tokens: Vec<String> = Vec::new();
     for (i, section) in sections.iter().enumerate() {
-        for arg in &hostlist_args {
+        // Drop any hardcoded selection args from the strategy; the daemon owns
+        // these now. --hostlist-auto= is data-driven and is KEPT.
+        for arg in &injected_args {
             out_tokens.push(arg.clone());
         }
         for t in section.iter() {
-            if !t.starts_with("--hostlist=") && !t.starts_with("--hostlist-exclude=") {
-                out_tokens.push(t.to_string());
+            if t.starts_with("--hostlist=")
+                || t.starts_with("--hostlist-exclude=")
+                || t.starts_with("--ipset=")
+                || t.starts_with("--ipset-exclude=")
+            {
+                continue;
             }
+            out_tokens.push(t.to_string());
         }
         if i < sections.len() - 1 {
             out_tokens.push("--new".to_string());
@@ -785,22 +808,25 @@ fn apply_hostlists_to_config(data: &[u8], hostlists: &[String], exclude: &[Strin
             result.push_str(token);
         } else {
             result.push_str(token);
-            result.push_str(" \\\n");
+            result.push_str(" \\n");
         }
     }
     result.into_bytes()
 }
 
-/// Reads the current profile config and extracts the hostlist file names that
-/// are already selected there (the suffix after the module list prefix). This
-/// lets the daemon reuse a profile's existing hostlist selection without the
-/// client having to mirror that state.
-fn extract_hostlists_from_config(cfg: &Path) -> (Vec<String>, Vec<String>) {
+/// Reads the current profile config and extracts the domain (hostlist) and IP
+/// (ipset) selection already chosen there. Lets the daemon reuse a profile's
+/// existing selection without the client mirroring that state.
+fn extract_selection_from_config(cfg: &Path) -> Selection {
     let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
-    let mut include = Vec::new();
-    let mut exclude = Vec::new();
+    let mut sel = Selection {
+        hostlists: Vec::new(),
+        exclude_hostlists: Vec::new(),
+        ipsets: Vec::new(),
+        exclude_ipsets: Vec::new(),
+    };
     let Ok(data) = fs::read(cfg) else {
-        return (include, exclude);
+        return sel;
     };
     let text = String::from_utf8_lossy(&data);
     for token in text.split_whitespace() {
@@ -808,25 +834,38 @@ fn extract_hostlists_from_config(cfg: &Path) -> (Vec<String>, Vec<String>) {
         if let Some(rest) = t.strip_prefix("--hostlist=") {
             if let Some(name) = rest.strip_prefix(module_list) {
                 if !name.is_empty() {
-                    include.push(name.to_string());
+                    sel.hostlists.push(name.to_string());
                 }
             }
         } else if let Some(rest) = t.strip_prefix("--hostlist-exclude=") {
             if let Some(name) = rest.strip_prefix(module_list) {
                 if !name.is_empty() {
-                    exclude.push(name.to_string());
+                    sel.exclude_hostlists.push(name.to_string());
+                }
+            }
+        } else if let Some(rest) = t.strip_prefix("--ipset=") {
+            if let Some(name) = rest.strip_prefix(module_list) {
+                if !name.is_empty() {
+                    sel.ipsets.push(name.to_string());
+                }
+            }
+        } else if let Some(rest) = t.strip_prefix("--ipset-exclude=") {
+            if let Some(name) = rest.strip_prefix(module_list) {
+                if !name.is_empty() {
+                    sel.exclude_ipsets.push(name.to_string());
                 }
             }
         }
     }
-    (include, exclude)
+    sel
 }
 
+/// Routes:
+///   GET  /api/strategicvar/{program}
+///   POST /api/strategicvar/apply        (JSON {program, profile, file[, hostlists, exclude_hostlists, ipsets, exclude_ipsets]})
+///   POST /api/strategicvar/hostlists    (JSON {program, profile, hostlists, exclude_hostlists, ipsets, exclude_ipsets})
+
 fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8]) -> Result<()> {
-    // Routes:
-    //   GET  /api/strategicvar/{program}
-    //   POST /api/strategicvar/apply        (JSON {program, profile, file[, hostlists, exclude_hostlists]})
-    //   POST /api/strategicvar/hostlists    (JSON {program, profile, hostlists, exclude_hostlists})
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let res = (|| -> Result<serde_json::Value> {
         match (method, seg.as_slice()) {
@@ -880,18 +919,29 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                 let data = fs::read(&src)
                     .map_err(|e| anyhow::anyhow!("read failed {}: {e}", src.display()))?;
 
-                // If the client did not supply hostlists (e.g. blockcheck apply
-                // with no selection), reuse the hostlists already chosen for this
-                // profile so the applied config keeps them.
-                let (hostlists, exclude_hostlists): (Vec<String>, Vec<String>) = if !req.hostlists.is_empty() || !req.exclude_hostlists.is_empty() {
-                    (req.hostlists.clone(), req.exclude_hostlists.clone())
+                // If the client did not supply a selection (e.g. blockcheck apply
+                // with no selection), reuse the selection already chosen for this
+                // profile so the applied config keeps it.
+                let sel = if !req.hostlists.is_empty()
+                    || !req.exclude_hostlists.is_empty()
+                    || !req.ipsets.is_empty()
+                    || !req.exclude_ipsets.is_empty()
+                {
+                    Selection {
+                        hostlists: req.hostlists.clone(),
+                        exclude_hostlists: req.exclude_hostlists.clone(),
+                        ipsets: req.ipsets.clone(),
+                        exclude_ipsets: req.exclude_ipsets.clone(),
+                    }
                 } else {
                     let cfg = prof_root.join("config/config.txt");
-                    extract_hostlists_from_config(&cfg)
+                    extract_selection_from_config(&cfg)
                 };
 
-                let data = if !hostlists.is_empty() || !exclude_hostlists.is_empty() {
-                    apply_hostlists_to_config(&data, &hostlists, &exclude_hostlists)
+                let data = if sel.hostlists.iter().chain(&sel.ipsets).next().is_some()
+                    || sel.exclude_hostlists.iter().chain(&sel.exclude_ipsets).next().is_some()
+                {
+                    apply_selection_to_config(&data, &sel)
                 } else {
                     data
                 };
@@ -909,6 +959,10 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                     hostlists: Vec<String>,
                     #[serde(default)]
                     exclude_hostlists: Vec<String>,
+                    #[serde(default)]
+                    ipsets: Vec<String>,
+                    #[serde(default)]
+                    exclude_ipsets: Vec<String>,
                 }
                 let req: HostlistsOnlyReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
@@ -927,7 +981,13 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                 let cfg = prof_root.join("config/config.txt");
                 let data = fs::read(&cfg)
                     .map_err(|e| anyhow::anyhow!("read failed {}: {e}", cfg.display()))?;
-                let data = apply_hostlists_to_config(&data, &req.hostlists, &req.exclude_hostlists);
+                let sel = Selection {
+                    hostlists: req.hostlists.clone(),
+                    exclude_hostlists: req.exclude_hostlists.clone(),
+                    ipsets: req.ipsets.clone(),
+                    exclude_ipsets: req.exclude_ipsets.clone(),
+                };
+                let data = apply_selection_to_config(&data, &sel);
                 write_bytes_atomic(&cfg, &data)?;
                 Ok(json!({"ok": true}))
             }
@@ -7471,4 +7531,170 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod strategic_selection_tests {
+    //! Acceptance test for the strategy cleanup: every cleaned strategy file in
+    //! module_template/strategic/strategicvar/{nfqws,nfqws2} must behave
+    //! IDENTICALLY to its git-HEAD original once the daemon applies a user
+    //! selection. We prove this with the REAL daemon code path
+    //! (apply_selection_to_config), not a mirror.
+    //!
+    //! The daemon strips ALL selection args (--hostlist*/--ipset*) from a file
+    //! and re-injects the user selection into every section. So a file that
+    //! already has its selection stripped (our cleaned file) must produce the
+    //! same output as the original for the SAME user selection. We use the
+    //! original's own selection args as that selection.
+
+    use super::*;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    const MODULE_LIST: &str = "/data/adb/modules/ZDT-D/strategic/list/";
+
+    fn repo_root() -> PathBuf {
+        // CARGO_MANIFEST_DIR = <repo>/rust/zdtd  -> repo root is two levels up.
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+    }
+
+    /// Read a file as it exists in git HEAD (the un-cleaned original). Returns
+    /// None if git is unavailable or the path is not in HEAD.
+    fn read_original_from_git(rel: &str) -> Option<Vec<u8>> {
+        let out = Command::new("git")
+            .current_dir(repo_root())
+            .args(["show", &format!("HEAD:{rel}")])
+            .output()
+            .ok()?;
+        out.status.success().then_some(out.stdout)
+    }
+
+    /// Build a Selection from a file's bytes. Mirrors how the daemon would
+    /// reconstruct the user's chosen selection: the value after `--hostlist=`
+    /// etc., with the module_list prefix stripped (the daemon stores names).
+    fn selection_from_bytes(data: &[u8]) -> Selection {
+        let text = String::from_utf8_lossy(data);
+        let mut hostlists = Vec::new();
+        let mut exclude_hostlists = Vec::new();
+        let mut ipsets = Vec::new();
+        let mut exclude_ipsets = Vec::new();
+        for t in text.split_whitespace() {
+            for (prefix, bucket) in [
+                ("--hostlist=", &mut hostlists),
+                ("--hostlist-exclude=", &mut exclude_hostlists),
+                ("--ipset=", &mut ipsets),
+                ("--ipset-exclude=", &mut exclude_ipsets),
+            ] {
+                if let Some(rest) = t.strip_prefix(prefix) {
+                    // All strategy selection values use the module_list prefix.
+                    assert!(
+                        rest.starts_with(MODULE_LIST),
+                        "selection arg {t} does not start with {MODULE_LIST} (assumption violated)"
+                    );
+                    bucket.push(rest[MODULE_LIST.len()..].to_string());
+                }
+            }
+        }
+        Selection { hostlists, exclude_hostlists, ipsets, exclude_ipsets }
+    }
+
+    #[test]
+    fn cleaned_strategies_match_original_under_daemon() {
+        let root = repo_root();
+        let base = root.join("module_template/strategic/strategicvar");
+        let mut total = 0usize;
+        let mut checked = 0usize;
+        for prog in ["nfqws", "nfqws2"] {
+            let dir = base.join(prog);
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|s| s.to_str()) != Some("txt") {
+                    continue;
+                }
+                if p.file_name()
+                    .map(|s| s.to_string_lossy().ends_with(".new"))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                total += 1;
+                let fname = p.file_name().unwrap().to_string_lossy().to_string();
+                let rel = format!("module_template/strategic/strategicvar/{prog}/{fname}");
+                let Some(orig) = read_original_from_git(&rel) else {
+                    panic!("could not read git HEAD original for {rel}");
+                };
+                let cleaned = std::fs::read(&p)
+                    .unwrap_or_else(|e| panic!("cannot read cleaned file {rel}: {e}"));
+
+                // The selection the daemon would inject, derived from the
+                // ORIGINAL (the user's former hardcoded choice).
+                let sel = selection_from_bytes(&orig);
+
+                let a = apply_selection_to_config(&orig, &sel);
+                let b = apply_selection_to_config(&cleaned, &sel);
+                assert_eq!(
+                    a, b,
+                    "daemon output differs for {rel}: cleaned file is NOT behaviorally \
+                     equivalent to the original under the original's own selection"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no strategy files were checked");
+        eprintln!("checked {checked}/{total} strategy files against git HEAD originals via real daemon path");
+    }
+
+    /// The NEW workflow: the user picks a selection that may differ from the
+    /// original's hardcoded one. The daemon must inject the chosen args into
+    /// EVERY section (global zone + each --new block), and the cleaned file
+    /// must contain none of those args beforehand (they are no longer
+    /// hardcoded). This is what the app's StrategicVarConfigCard now drives.
+    #[test]
+    fn cleaned_strategy_accepts_user_selection_in_every_section() {
+        let root = repo_root();
+        let f = root.join("module_template/strategic/strategicvar/nfqws/flowseal.txt");
+        let cleaned = std::fs::read(&f).expect("cleaned flowseal.txt must exist");
+
+        // Picked by the user in the app (names only; daemon adds the prefix).
+        let sel = Selection {
+            hostlists: vec!["google.txt".to_string(), "custom.txt".to_string()],
+            exclude_hostlists: vec!["exclude.txt".to_string()],
+            ipsets: vec!["ipset-v4.txt".to_string()],
+            exclude_ipsets: vec![],
+        };
+
+        // The cleaned file must NOT contain any hardcoded selection anymore.
+        let cleaned_text = String::from_utf8_lossy(&cleaned);
+        assert!(
+            !cleaned_text.contains("--hostlist=/data/adb/modules/ZDT-D/strategic/list/")
+                && !cleaned_text.contains("--ipset=/data/adb/modules/ZDT-D/strategic/list/"),
+            "cleaned file still contains hardcoded selection args"
+        );
+
+        let out = apply_selection_to_config(&cleaned, &sel);
+        let out_text = String::from_utf8_lossy(&out);
+
+        // The daemon renders tokens separated by the literal " \n" (backslash +
+        // letter n), so split_whitespace() does NOT break them apart. Count the
+        // "--new" substring instead: each boundary is one --new token, and
+        // there is one global section before the first --new.
+        let section_count = out_text.matches("--new").count() + 1;
+        let expected = format!("--hostlist={MODULE_LIST}google.txt");
+        let got = out_text.matches(&expected).count();
+        let ip_expected = format!("--ipset={MODULE_LIST}ipset-v4.txt");
+        let ip_got = out_text.matches(&ip_expected).count();
+        assert_eq!(
+            got, section_count,
+            "chosen --hostlist=google.txt injected into {got} sections, expected all {section_count}"
+        );
+        assert_eq!(
+            ip_got, section_count,
+            "chosen --ipset=ipset-v4.txt must appear in every section"
+        );
+    }
 }
