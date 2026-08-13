@@ -2219,6 +2219,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="strategic_exclude_ipsets_count">%1$d exclude(s)</string>
 <string name="strategic_ipsets_edit">Edit</string>
 <string name="strategic_ipsets_applied">IP sets applied</string>
+<string name="strategic_ipsets_apply">Apply</string>
 <string name="strategic_ipsets_include">IP sets to include:</string>
 <string name="start_blocked_profile_overlap">Start blocked: disable overlapping profiles</string>
 <string name="enable_blocked_profile_overlap">Enable blocked: disable overlapping profiles</string>

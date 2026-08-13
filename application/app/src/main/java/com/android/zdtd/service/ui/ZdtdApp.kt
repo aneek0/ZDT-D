@@ -738,7 +738,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
-  AppsRoute.Blockcheck -> AppsRoute.AnalysisTools
+  is AppsRoute.Blockcheck -> AppsRoute.AnalysisTools
   is AppsRoute.Program -> AppsRoute.List
   is AppsRoute.Profile -> AppsRoute.Program(route.programId)
 }
@@ -766,8 +766,9 @@ private fun MainShell(
   // same profile the user was configuring, instead of a hard-coded default.
   var lastStrategyProfile by rememberSaveable { mutableStateOf("nfqws" to "default") }
   LaunchedEffect(appsRoute) {
-    if (appsRoute is AppsRoute.Profile && (appsRoute.programId == "nfqws" || appsRoute.programId == "nfqws2")) {
-      lastStrategyProfile = appsRoute.programId to appsRoute.profile
+    val r = appsRoute
+    if (r is AppsRoute.Profile && (r.programId == "nfqws" || r.programId == "nfqws2")) {
+      lastStrategyProfile = r.programId to r.profile
     }
   }
   val internalOnOpenProfile: (String, String) -> Unit = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) }
