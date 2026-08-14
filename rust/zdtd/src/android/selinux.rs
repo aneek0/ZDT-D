@@ -122,11 +122,6 @@ impl SelinuxGuard {
         }
     }
 
-    /// Disable auto-restore on Drop (keeps current state).
-    pub fn disarm(&mut self) {
-        self.changed = false;
-    }
-
     /// Restore previous state. Safe to call multiple times.
     pub fn restore(&mut self) -> Result<()> {
         if !self.changed {

@@ -2321,10 +2321,6 @@ private fun formatPackets(value: Long): String {
   }
 }
 
-private fun backendAddrMatches(addr: String, host: String, port: Int): Boolean {
-  return addr == "$host:$port" || addr.endsWith(":$port")
-}
-
 private fun formatBytes(bytes: Long): String {
   val safe = max(0L, bytes).toDouble()
   val kb = 1024.0

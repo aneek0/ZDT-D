@@ -319,10 +319,6 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         if (nameForUidContainsHiddenPackage(param.result as? String)) param.result = null
     }
 
-    private fun filterStringResult(param: XC_MethodHook.MethodHookParam) {
-        if (param.result == ZDTD_PACKAGE) param.result = null
-    }
-
     private fun nameForUidContainsHiddenPackage(value: String?): Boolean {
         if (value == null) return false
         return value == ZDTD_PACKAGE || value.endsWith(":$ZDTD_PACKAGE") || value.split(":").contains(ZDTD_PACKAGE)
