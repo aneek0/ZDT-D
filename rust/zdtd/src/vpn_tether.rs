@@ -393,8 +393,3 @@ fn looks_like_tether_iface(iface: &str) -> bool {
         "ap0" | "ap1" | "hotspot" | "rndis0" | "usb0" | "bt-pan" | "bnep0" | "ncm0" | "eth0" | "tether0"
     ) || lower.starts_with("wlan") || lower.starts_with("swlan") || lower.starts_with("rndis") || lower.starts_with("usb") || lower.starts_with("bnep")
 }
-
-pub fn selected_profile_from_settings() -> Result<Option<(String, String)>> {
-    let st = settings::load_api_settings()?;
-    Ok(st.hotspot_vpn_selection().map(|(p, prof)| (p.to_string(), prof.to_string())))
-}

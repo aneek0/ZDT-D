@@ -788,10 +788,6 @@ fn operaproxy_sni_entries(root: &Path) -> Vec<OperaproxySniView> {
     }).collect()
 }
 
-fn operaproxy_server_count(root: &Path) -> usize {
-    operaproxy_sni_entries(root).len().max(1)
-}
-
 fn collect_tor_socks_port(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
     let path = root.join("tor/torrc");
     let Ok(raw) = fs::read_to_string(path) else { return; };

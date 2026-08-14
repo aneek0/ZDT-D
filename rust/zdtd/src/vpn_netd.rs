@@ -1093,10 +1093,6 @@ fn ipv4_to_u32(s: &str) -> Option<u32> {
     if count == 4 { Some(out) } else { None }
 }
 
-pub fn start_from_registered_programs() -> Result<()> {
-    start_profiles(Vec::<VpnNetdProfile>::new())
-}
-
 pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
     ensure_working_dir()?;
     let requested_count = profiles.len();
