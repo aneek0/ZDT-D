@@ -250,36 +250,46 @@ ZDT-D is intended for advanced users, network compatibility research, routing co
 
 ## Differences from upstream (GAME-OVER-op/ZDT-D)
 
-This is an independent personal fork. The core routing model, programs and
-Magisk/KernelSU/APatch packaging are inherited from the original project, but
-this fork adds personal tooling and strategy data on top of it. The main
-differences versus the upstream `main` branch:
+This is an independent personal fork. It merges from upstream `main` regularly
+(branches like `merge-upstream-390`, `upstream/ai-polish`), so most programs,
+the routing model, the UI shell, the world map / web panel / captive-portal /
+app-hiding / backup / tablet-TV features, arm32 support and the `nfqws2`
+strategy set are inherited from the original project — not added here.
 
-- **In-app blockcheck (strategy autotest).** Added a `diagnostics/blockcheck/`
-  UI and a native `nfqws-tester auto` sweep that probes a host list with no
-  strategy (baseline) and then tests every `nfqws`/`nfqws2` strategy file,
-  showing a per-strategy opened percentage and a `Works` / `Partial` / `Failed`
-  / `No baseline block` verdict.
-- **User IP-set / hostlist selection.** The app exposes a strategy-config card
-  where the user picks domain host lists and IP sets (`--hostlist`,
-  `--hostlist-exclude`, `--ipset`, `--ipset-exclude`). The daemon strips those
-  args from every strategy `--new` block and re-injects the user's selection, so
-  the choice is owned by the daemon, not hardcoded in each strategy file.
-- **Imported magisk-zapret2 data for `nfqws2`.** Added the zapret2-style
-  "second ban" strategy set and the associated host lists / IP sets (large
-  `ipset-*` files, per-service host lists, and fake TLS/QUIC/`syn` packet bins
-  under `module_template/strategic/bin/`).
-- **Custom Lua scripts.** Added custom nfqws Lua primitives under
-  `module_template/strategic/lua/` (e.g. `fakemultisplit.lua`,
-  `fakemultidisorder.lua`, `zapret-multishake.lua`, `zapret-sni.lua`,
-  `zapret-wgobfs.lua`, `custom_funcs.lua`).
-- **Host-list maintenance tooling.** Added `scripts/lists/` with
-  `dedup_check.py` (local + upstream-zapret2 duplicate/baseline checks) and
-  `strategy_dedup.py` (mirrors the daemon's selection stripping for local
-  strategy-file edits).
+The changes that are **actually introduced in this fork** (199 fork-only commits
+on top of the merge base) are a smaller, focused set:
 
-These changes are local conveniences and may diverge from upstream over time.
-This fork is **not** supported by the original author.
+- **In-app blockcheck (strategy autotest).** A `diagnostics/blockcheck/` UI plus
+  a native `nfqws-tester auto` sweep that probes a host list with no strategy
+  (baseline) and then tests every `nfqws`/`nfqws2` strategy file, showing a
+  per-strategy opened percentage and a `Works` / `Partial` / `Failed` /
+  `No baseline block` verdict (with a share/test-results function). This does
+  not exist upstream.
+- **User IP-set / hostlist selection.** A strategy-config card lets the user pick
+  domain host lists and IP sets (`--hostlist`, `--hostlist-exclude`, `--ipset`,
+  `--ipset-exclude`); the daemon strips those args from each `--new` block and
+  re-injects the selection, and blockcheck reuses the configured profile's
+  hostlists.
+- **Custom nfqws Lua primitives.** Added `fakemultisplit.lua`,
+  `fakemultidisorder.lua`, `zapret-multishake.lua` and `custom_funcs.lua` under
+  `module_template/strategic/lua/` (upstream ships only `zapret-sni.lua` and
+  `zapret-wgobfs.lua` there).
+- **Imported magisk-zapret2 data for `nfqws2` "second ban".** Added the
+  per-service host lists / `ipset-*` files and fake TLS/QUIC/`syn` packet bins
+  under `module_template/strategic/bin/` and `strategic/list/` that are not in
+  upstream.
+- **Host-list maintenance tooling** in `scripts/lists/`: `dedup_check.py` (local
+  + upstream-zapret2 duplicate/baseline checks), `strategy_dedup.py` (mirrors
+  the daemon's selection stripping for local edits) and a validation harness.
+  None of this exists upstream.
+- **Fork-specific build/CI tweaks** (fast-build workflow, prebuilt auto-sync,
+  module update checks pointed at the `aneek0/ZDT-D` fork) and small fixes such
+  as restoring fork-specific strings/host lists lost during upstream merges and
+  hardening `zdtd` stop/cleanup logic.
+
+If you are looking for the official project, go to
+[github.com/GAME-OVER-op/ZDT-D](https://github.com/GAME-OVER-op/ZDT-D). This fork
+is **not** supported by, endorsed by, or affiliated with the original author.
 
 ## License
 
