@@ -248,6 +248,39 @@ Some antivirus products may flag DPI-related tools because they work with low-le
 
 ZDT-D is intended for advanced users, network compatibility research, routing control, and enthusiast use.
 
+## Differences from upstream (GAME-OVER-op/ZDT-D)
+
+This is an independent personal fork. The core routing model, programs and
+Magisk/KernelSU/APatch packaging are inherited from the original project, but
+this fork adds personal tooling and strategy data on top of it. The main
+differences versus the upstream `main` branch:
+
+- **In-app blockcheck (strategy autotest).** Added a `diagnostics/blockcheck/`
+  UI and a native `nfqws-tester auto` sweep that probes a host list with no
+  strategy (baseline) and then tests every `nfqws`/`nfqws2` strategy file,
+  showing a per-strategy opened percentage and a `Works` / `Partial` / `Failed`
+  / `No baseline block` verdict.
+- **User IP-set / hostlist selection.** The app exposes a strategy-config card
+  where the user picks domain host lists and IP sets (`--hostlist`,
+  `--hostlist-exclude`, `--ipset`, `--ipset-exclude`). The daemon strips those
+  args from every strategy `--new` block and re-injects the user's selection, so
+  the choice is owned by the daemon, not hardcoded in each strategy file.
+- **Imported magisk-zapret2 data for `nfqws2`.** Added the zapret2-style
+  "second ban" strategy set and the associated host lists / IP sets (large
+  `ipset-*` files, per-service host lists, and fake TLS/QUIC/`syn` packet bins
+  under `module_template/strategic/bin/`).
+- **Custom Lua scripts.** Added custom nfqws Lua primitives under
+  `module_template/strategic/lua/` (e.g. `fakemultisplit.lua`,
+  `fakemultidisorder.lua`, `zapret-multishake.lua`, `zapret-sni.lua`,
+  `zapret-wgobfs.lua`, `custom_funcs.lua`).
+- **Host-list maintenance tooling.** Added `scripts/lists/` with
+  `dedup_check.py` (local + upstream-zapret2 duplicate/baseline checks) and
+  `strategy_dedup.py` (mirrors the daemon's selection stripping for local
+  strategy-file edits).
+
+These changes are local conveniences and may diverge from upstream over time.
+This fork is **not** supported by the original author.
+
 ## License
 
 GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE).
