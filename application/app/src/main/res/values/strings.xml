@@ -2197,6 +2197,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_no_strategies">No strategies found.</string>
 <string name="blockcheck_apply">Apply</string>
 <string name="blockcheck_works">Works</string>
+<string name="blockcheck_partial">Partial</string>
 <string name="blockcheck_skipped">Skipped</string>
 <string name="blockcheck_queued">Queued</string>
 <string name="blockcheck_working_count_fmt">Working (%1$d)</string>

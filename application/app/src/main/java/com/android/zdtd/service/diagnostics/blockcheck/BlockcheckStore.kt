@@ -16,6 +16,8 @@ data class BlockcheckSession(
     val failedStrategies: List<String> = emptyList(),
     val skippedStrategies: List<String> = emptyList(),
     val allStrategies: List<String> = emptyList(),
+    // Per-strategy gradient results (in arrival order).
+    val results: List<BlockcheckStrategyResult> = emptyList(),
     val isRunning: Boolean = false,
     val isFinished: Boolean = false,
     val isError: Boolean = false,
@@ -42,8 +44,20 @@ data class BlockcheckStrategyResult(
     val verdict: String,
     val allMatch: Boolean,
     val anyMatch: Boolean,
+    val hostsTotal: Int = 0,
+    val baselineBlocked: Int = 0,
+    val hostsOpened: Int = 0,
+    val hostsStillBlocked: Int = 0,
+    // Share (0..100) of baseline-blocked hosts this strategy opened. null when
+    // nothing was blocked at baseline (no measurable bypass).
+    val openedPct: Double? = null,
+    val score: Double? = null,
 ) {
-    val isWorking: Boolean get() = verdict == "works"
+    val isWorking: Boolean get() = verdict == "works" || verdict == "partial"
+    val isPartial: Boolean get() = verdict == "partial"
+    // "no_baseline_block" means every host already worked without a strategy,
+    // so the strategy cannot be judged against a blocked baseline.
+    val noBaselineBlock: Boolean get() = verdict == "no_baseline_block"
 }
 
 sealed class BlockcheckEvent {

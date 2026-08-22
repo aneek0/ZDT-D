@@ -82,9 +82,10 @@ fun BlockcheckScreen(
                     is BlockcheckEvent.StrategyStarted -> BlockcheckStore.update { it.copy(currentStrategy = event.strategy, currentStrategyIndex = event.index) }
                     is BlockcheckEvent.StrategyResult -> {
                         BlockcheckStore.update {
-                            val w = if (event.result.isWorking) it.workingStrategies + event.result.strategy else it.workingStrategies
-                            val f = if (!event.result.isWorking) it.failedStrategies + event.result.strategy else it.failedStrategies
-                            it.copy(workingStrategies = w, failedStrategies = f)
+                            val r = event.result
+                            val w = if (r.isWorking) it.workingStrategies + r.strategy else it.workingStrategies
+                            val f = if (!r.isWorking) it.failedStrategies + r.strategy else it.failedStrategies
+                            it.copy(workingStrategies = w, failedStrategies = f, results = it.results + r)
                         }
                     }
                     is BlockcheckEvent.StrategySkipped -> BlockcheckStore.update { it.copy(skippedStrategies = it.skippedStrategies + event.strategy) }
@@ -280,9 +281,10 @@ fun BlockcheckScreen(
                         Text(context.getString(R.string.blockcheck_no_strategies), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                     } else {
                         allStrategies.forEach { s ->
+                            val res = state.results.firstOrNull { it.strategy == s }
                             val status = when {
                                 state.isRunning && state.currentStrategy == s -> if (state.phase == "strategies") "testing" else "queued"
-                                state.workingStrategies.contains(s) -> "works"
+                                state.workingStrategies.contains(s) -> if (res?.isPartial == true) "partial" else "works"
                                 state.failedStrategies.contains(s) -> "failed"
                                 state.skippedStrategies.contains(s) -> "skipped"
                                 else -> if (state.isRunning || state.isFinished) "queued" else ""
@@ -291,6 +293,7 @@ fun BlockcheckScreen(
                             val bgColor = when (status) {
                                 "testing" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                 "works" -> Color(0xFF22C55E).copy(alpha = 0.08f)
+                                "partial" -> Color(0xFFF59E0B).copy(alpha = 0.10f)
                                 "failed" -> MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
                                 "skipped" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                                 else -> Color.Transparent
@@ -301,11 +304,22 @@ fun BlockcheckScreen(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(
-                                            s, modifier = Modifier.weight(1f),
-                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                            fontWeight = if (status == "testing") FontWeight.SemiBold else FontWeight.Normal,
-                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                s,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                fontWeight = if (status == "testing") FontWeight.SemiBold else FontWeight.Normal,
+                                            )
+                                            // Gradient breakdown: how many baseline-blocked hosts
+                                            // this strategy opened vs failed to open.
+                                            if (res != null && res.baselineBlocked > 0 && status != "testing") {
+                                                Spacer(Modifier.height(3.dp))
+                                                LinearProgressIndicator(
+                                                    progress = (res.openedPct ?: 0.0).toFloat() / 100f,
+                                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                                )
+                                            }
+                                        }
                                         if (status == "testing") {
                                             Spacer(Modifier.width(8.dp))
                                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -321,7 +335,8 @@ fun BlockcheckScreen(
                                             Spacer(Modifier.width(8.dp))
                                             Text(
                                                 when (status) {
-                                                    "works" -> context.getString(R.string.blockcheck_works)
+                                                    "works" -> res?.let { "%.0f%%".format(it.openedPct ?: 100.0) } ?: context.getString(R.string.blockcheck_works)
+                                                    "partial" -> res?.let { "%.0f%%".format(it.openedPct ?: 0.0) } ?: context.getString(R.string.blockcheck_partial)
                                                     "failed" -> context.getString(R.string.blockcheck_failed)
                                                     "skipped" -> context.getString(R.string.blockcheck_skipped)
                                                     else -> ""
@@ -329,6 +344,7 @@ fun BlockcheckScreen(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = when (status) {
                                                     "works" -> Color(0xFF22C55E)
+                                                    "partial" -> Color(0xFFF59E0B)
                                                     "failed" -> MaterialTheme.colorScheme.error
                                                     "skipped" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                                                     else -> MaterialTheme.colorScheme.onSurface

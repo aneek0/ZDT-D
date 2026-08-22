@@ -49,7 +49,9 @@ class BlockcheckRunner(
     suspend fun listHostFiles(): List<String> = withContext(Dispatchers.IO) {
         val dir = "/data/adb/modules/ZDT-D/strategic/list"
         val result = runRoot("ls -1 '$dir' 2>/dev/null || true")
-        result.lines().filter { it.isNotBlank() && it.endsWith(".txt") }.sorted()
+        // Exclude ipset-* files: they are IP sets consumed by --ipset=, not
+        // domain hostlists the curl probe can test against.
+        result.lines().filter { it.isNotBlank() && it.endsWith(".txt") && !it.startsWith("ipset-") }.sorted()
     }
 
     fun run(
@@ -138,6 +140,15 @@ class BlockcheckRunner(
                                         verdict = json.optString("verdict", "unknown"),
                                         allMatch = json.optBoolean("all_match", false),
                                         anyMatch = json.optBoolean("any_match", false),
+                                        hostsTotal = json.optInt("hosts_total", 0),
+                                        baselineBlocked = json.optInt("baseline_blocked", 0),
+                                        hostsOpened = json.optInt("hosts_opened", 0),
+                                        hostsStillBlocked = json.optInt("hosts_still_blocked", 0),
+                                        openedPct = json.optDouble("opened_pct", Double.NaN).let { if (it.isNaN()) null else it },
+                                        score = run {
+                                            val raw = json.opt("score")
+                                            if (raw is Number) raw.toDouble() else null
+                                        },
                                     ), session = session!!))
                                 }
                                 "auto_finished" -> {
