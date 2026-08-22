@@ -1,4 +1,2 @@
-rutracker.org
-nnmclub.to
-анимевост.рф
-Instagram.com
+# Excluded domains (netrogat)
+# Domains in this list will be excluded from bypass

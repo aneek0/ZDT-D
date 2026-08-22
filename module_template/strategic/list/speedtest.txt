@@ -1,0 +1,15 @@
+speedtest.net
+ooklaserver.net
+ziffstatic.com
+cdnst.net
+ookla.com
+speedtest.org
+fast.com
+speedof.me
+testmy.net
+dslreports.com
+speedcheck.org
+speedsmart.net
+meter.net
+openspeedtest.com
+librespeed.org
