@@ -9,6 +9,7 @@ application/          — Android app (Kotlin, Jetpack Compose)
   app/src/main/java/com/android/zdtd/service/
     ui/               — Compose screens (safe to edit)
     diagnostics/      — DPI detection tools (safe to edit)
+      blockcheck/     — blockcheck runner/store + UI state (safe to edit)
     api/              — API client models
     widgets/          — Home screen widgets
     ZdtdActions.kt    — Action dispatcher
@@ -18,6 +19,8 @@ rust/
   zdtd/               — Rust daemon (DO NOT touch without explicit request)
   dpi-detector/       — Rust DPI detector (safe to edit)
   nfqws-tester/       — NFQWS tester binary (safe to edit)
+scripts/
+  lists/              — host-list / strategy maintenance scripts (safe to edit)
 module_template/      — Magisk module template (shipped to device)
   strategic/
     list/             — Host lists (one host per line, # comments)
@@ -45,6 +48,7 @@ zygisk/               — Zygisk native library (DO NOT touch)
 
 - `application/app/src/main/java/com/android/zdtd/service/ui/` — UI screens
 - `application/app/src/main/java/com/android/zdtd/service/diagnostics/` — diagnostics
+- `scripts/lists/**` — host-list / strategy maintenance scripts
 - `rust/dpi-detector/**`, `rust/nfqws-tester/**` — standalone Rust tools
 - `module_template/strategic/list/**` — host lists
 - `module_template/strategic/lua/**` — Lua scripts
@@ -58,6 +62,16 @@ zygisk/               — Zygisk native library (DO NOT touch)
 - Host lists: one entry per line, lowercase, no duplicates, `#` comments
 - Commits: conventional style (`feat:`, `fix:`, `perf:`, `refactor:`)
 - Package name: `com.android.zdtd.service` — DO NOT change
+
+### nfqws / nfqws2 strategy selection
+
+The daemon owns hostlist/IP-set binding for `nfqws`/`nfqws2`. At apply time it
+strips every `--hostlist*` / `--ipset*` token from each `--new` block and
+re-injects the user selection into every section (`rust/zdtd/src/api.rs
+apply_selection_to_config`). So do not rely on hardcoded `--hostlist*` /
+`--ipset*` inside `strategicvar/*.txt`; the user's choice wins. `--hostlist-auto=`
+blocks are data-driven and kept as-is. When editing those strategy files by hand,
+use `scripts/lists/strategy_dedup.py` to strip/re-dedup consistently.
 
 ## Build
 

@@ -5,6 +5,39 @@ This folder holds tooling for the ZDT-D host lists under
 module, so editing them never touches the protected `module_template/`
 scripts (`customize.sh`, `service.sh`, `uninstall.sh`).
 
+## strategy_dedup.py
+
+Strips the daemon-owned selection args (`--hostlist=`, `--hostlist-exclude=`,
+`--ipset=`, `--ipset-exclude=`) from `nfqws` / `nfqws2` strategy files and
+optionally collapses redundant `--new` blocks. It mirrors the daemon
+(`rust/zdtd/src/api.rs apply_selection_to_config`): the file is a GLOBAL zone
+(tokens before the first `--new`) followed by one `--new` section per block, and
+the daemon strips then re-injects selection into every section anyway, so a
+stripped file behaves identically for any user selection.
+
+What it does:
+1. Strips selection args from every section (`--hostlist-auto=` is kept —
+   data-driven, not user-selected).
+2. Preserves the GLOBAL zone and every `--new` block, in order.
+3. With `--dedup`, collapses only completely-identical `--new` blocks (by full
+   post-strip content). The global zone is never removed.
+
+Modes:
+- default — DRY-RUN. Reports block / duplicate / selection-arg counts.
+- `--apply` — write `<file>.new` (or `--inplace`) with selection stripped.
+- `--dedup` — also collapse identical `--new` blocks.
+
+Usage:
+```bash
+python3 strategy_dedup.py --program nfqws            # dry-run one program dir
+python3 strategy_dedup.py --program nfqws --apply     # write .new files
+python3 strategy_dedup.py --program nfqws --apply --inplace
+python3 strategy_dedup.py --program nfqws2 --dedup --apply
+```
+
+This is a maintenance aid for the protected `strategicvar/*.txt` files; run it
+from outside the module and review the diff before any edit is committed.
+
 ## dedup_check.py
 
 Checks the host lists for duplicate entries and tracks drift against the

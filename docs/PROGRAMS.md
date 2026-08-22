@@ -221,6 +221,16 @@ Detailed documentation: `rust/nfqws-tester/README.md`.
 
 ## DPI and NFQUEUE engines
 
+> **User strategy selection.** For `nfqws` / `nfqws2`, the app exposes a
+> strategy-configuration card (`ui/StrategicVarConfigCard.kt`) where the user
+> picks domain host lists (`--hostlist` / `--hostlist-exclude`) and IP sets
+> (`--ipset` / `--ipset-exclude`). The daemon strips every `--hostlist*` /
+> `--ipset*` token from each `--new` block and re-injects the user selection into
+> every section at apply time (`rust/zdtd/src/api.rs apply_selection_to_config`).
+> `--hostlist-auto=` blocks are data-driven and kept as-is. This means the
+> hostlist/IP-set binding is owned by the daemon, not by individual strategy
+> files.
+
 ### `nfqws`
 
 `nfqws` is a userspace packet processor from the zapret project.
@@ -658,6 +668,25 @@ Native diagnostic binary for DNS/DPI/network symptom checks. See
 Native diagnostic binary for temporary NFQUEUE strategy testing. See
 `rust/nfqws-tester/README.md`.
 
+Its `auto` subcommand drives the in-app **blockcheck** flow: it probes a host
+list with no strategy (baseline), then tests every strategy file for the chosen
+program and emits a gradient verdict per strategy. The Android UI
+(`diagnostics/blockcheck/`) consumes these JSON events and shows a per-strategy
+**opened percentage** with a progress bar plus `Works` / `Partial` / `Failed` /
+`No baseline block` chips. `ipset-*` files are excluded from the testable
+host list because they are IP sets, not curl-testable domains.
+
+### blockcheck (Android diagnostics UI)
+
+`diagnostics/blockcheck/` is the Kotlin/Compose driver for the blockcheck
+screen. It reuses the `nfqws-tester` binary to run the `auto` sweep and renders
+live results. The user picks a program, profile and host file (or a custom
+domain); the runner applies the chosen strategy set against the selected profile
+and reports per-strategy `opened_pct`, `score`, `hosts_opened`,
+`hosts_still_blocked` and `baseline_blocked` counters. State lives in
+`BlockcheckStore` (a `StateFlow<BlockcheckSession>`), with results surfaced as
+`BlockcheckEvent` values streamed from the binary.
+
 ## Runtime files and logs
 
 Common files:
@@ -771,3 +800,4 @@ Be especially careful with:
 - DPI diagnostics: `rust/dpi-detector/README.md`
 - NFQWS strategy tester: `rust/nfqws-tester/README.md`
 - Zygisk layer: `docs/ZYGISK.md` and `zygisk/README.md`
+- host-list maintenance scripts: `scripts/lists/README.md`

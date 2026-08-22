@@ -50,6 +50,7 @@ strategy files, process control and `iptables`/`ip6tables` commands.
 ```bash
 nfqws-tester --version
 nfqws-tester list --program nfqws|nfqws2
+nfqws-tester auto --program nfqws|nfqws2 --hosts <hosts.txt> [--qnum 200] [--timeout 2]
 nfqws-tester start --program nfqws|nfqws2 --config /path/to/file.txt [--qnum 200]
 nfqws-tester stop
 nfqws-tester cleanup
@@ -58,6 +59,29 @@ nfqws-tester usage --pid 1234
 ```
 
 `stop` and `cleanup` are aliases for the same cleanup operation.
+
+## auto
+
+Runs a full sweep used by the in-app blockcheck UI. It first probes every host
+in `<hosts.txt>` with **no** strategy (baseline), then loads every strategy file
+for the program and re-tests, emitting streamed JSON events:
+
+- `auto_started` — strategy/host totals;
+- `auto_phase` — `baseline` then `strategy`;
+- `auto_baseline_probe` — per-host baseline HTTP code/size;
+- `auto_strategy_start` / `auto_strategy_skip` / `auto_strategy_error`;
+- `auto_strategy_probe` — per-host result vs baseline;
+- `auto_strategy_result` — gradient verdict:
+  - `verdict`: `works` (all baseline-blocked hosts opened), `partial` (some
+    opened), `failed` (none opened), or `no_baseline_block` (nothing was blocked
+    at baseline, so the strategy cannot be judged);
+  - `opened_pct` / `score`: share (0..100) of baseline-blocked hosts this
+    strategy opened; `score` is `null` when there was no baseline block;
+  - `hosts_total`, `baseline_blocked`, `hosts_opened`, `hosts_still_blocked`.
+
+Hosts are DNS-resolved once and reused for both the baseline and every
+per-strategy probe (single resolve + dedupe). `ipset-*` files are not valid host
+lists for this sweep.
 
 ## list
 

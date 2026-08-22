@@ -3,6 +3,11 @@
 > Status: RESEARCH COMPLETE. No protected files modified. This document is a
 > decision aid; every remediation option below touches `strategicvar/*.txt`
 > (protected) and needs explicit user approval before any change.
+>
+> Tooling built since research: the dedup CI gate (`dedup_check.py`, option A)
+> is committed and the `strategy_dedup.py` maintenance script now mirrors the
+> daemon's selection stripping for local edits. Host-list internal/cross-subset
+> dup checks and a remote baseline are in place (`remote_baseline.json`).
 
 ## 1. What is already clean (verified)
 
