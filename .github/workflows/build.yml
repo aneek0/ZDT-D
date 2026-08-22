@@ -3828,7 +3828,7 @@ jobs:
           CUSTOM_LUA_DIR="$RUNNER_TEMP/zdt-custom-lua"
           rm -rf "$CUSTOM_LUA_DIR"
           mkdir -p "$CUSTOM_LUA_DIR"
-          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua custom_funcs.lua fakemultisplit.lua fakemultidisorder.lua zapret-multishake.lua; do
             if [[ -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" ]]; then
               cp -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" "$CUSTOM_LUA_DIR/$custom_lua"
             fi
@@ -3836,7 +3836,7 @@ jobs:
           rm -rf "$MODULE_BUILD_DIR/strategic/lua"
           mkdir -p "$MODULE_BUILD_DIR/strategic/lua"
           cp -a out/artifacts/nfqws2/arm64/lua/. "$MODULE_BUILD_DIR/strategic/lua/"
-          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua custom_funcs.lua fakemultisplit.lua fakemultidisorder.lua zapret-multishake.lua; do
             require_file "$CUSTOM_LUA_DIR/$custom_lua"
             cp -f "$CUSTOM_LUA_DIR/$custom_lua" "$MODULE_BUILD_DIR/strategic/lua/$custom_lua"
           done
