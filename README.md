@@ -179,6 +179,11 @@ on top of the merge base) are a smaller, focused set:
   per-strategy opened percentage and a `Works` / `Partial` / `Failed` /
   `No baseline block` verdict (with a share/test-results function). This does
   not exist upstream.
+- **Blockcheck UI / appearance.** The fork adds the `BlockcheckScreen` Compose
+  screen (start/stop, host-file picker, live strategy list with progress bars
+  and `Works` / `Partial` / `Failed` chips), matching the app-wide card/button
+  style. The home screen, stats, power-wave button, construction studio and apps
+  host already exist upstream — only the blockcheck screen is new here.
 - **User IP-set / hostlist selection.** A strategy-config card lets the user pick
   domain host lists and IP sets (`--hostlist`, `--hostlist-exclude`, `--ipset`,
   `--ipset-exclude`); the daemon strips those args from each `--new` block and
