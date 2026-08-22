@@ -184,6 +184,12 @@ on top of the merge base) are a smaller, focused set:
   and `Works` / `Partial` / `Failed` chips), matching the app-wide card/button
   style. The home screen, stats, power-wave button, construction studio and apps
   host already exist upstream — only the blockcheck screen is new here.
+- **AMOLED theme (`AmberOLED`).** The fork adds a dedicated `AMOLED` theme mode
+  (`ui/theme/Theme.kt`, `ZdtdThemeMode.AMOLED`) selectable in Settings
+  (`SettingsContent`). It uses a true-black `#000000` background to save power on
+  AMOLED panels and an amber accent (`#FFB300`) to avoid blue light in low light.
+  The `system` / `light` / `dark` modes already exist upstream — only the AMOLED
+  mode is new here.
 - **User IP-set / hostlist selection.** A strategy-config card lets the user pick
   domain host lists and IP sets (`--hostlist`, `--hostlist-exclude`, `--ipset`,
   `--ipset-exclude`); the daemon strips those args from each `--new` block and
