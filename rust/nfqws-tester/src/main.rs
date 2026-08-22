@@ -739,6 +739,7 @@ fn load_hosts(path: &str) -> Result<Vec<String>> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("read hosts file: {path}"))?;
     let mut hosts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for line in raw.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -751,7 +752,9 @@ fn load_hosts(path: &str) -> Result<Vec<String>> {
         let host = host.split('/').next().unwrap_or(host);
         let host = host.split(':').next().unwrap_or(host);
         let host = host.trim();
-        if !host.is_empty() {
+        // Deduplicate hosts while preserving order so repeated entries in the
+        // hostlist do not inflate the per-strategy probe count.
+        if !host.is_empty() && seen.insert(host.to_string()) {
             hosts.push(host.to_string());
         }
     }
@@ -904,8 +907,12 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
     }));
 
     let mut baseline_results: std::collections::HashMap<String, (u32, String, String)> = std::collections::HashMap::new();
+    // Resolve each host exactly once and reuse the result for both the baseline
+    // probe and every per-strategy probe. Avoids duplicate getent/DNS lookups.
+    let mut resolved_ips: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
     for host in &hosts {
         let ip = resolve_ip(host);
+        resolved_ips.insert(host.clone(), ip.clone());
         let result = match ip {
             Some(ref ip) => curl_probe(host, ip, timeout_secs),
             None => curl_probe_baseline(host, timeout_secs),
@@ -1015,12 +1022,22 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
         // Wait for nfqws to stabilize
         thread::sleep(Duration::from_millis(500));
 
-        // Probe all hosts through the strategy
+        // Per-strategy gradient counters (relative to baseline-blocked hosts).
         let mut all_match = true;
         let mut any_match = false;
+        let mut opened_count: u32 = 0;
+        let mut still_blocked_count: u32 = 0;
+        let baseline_blocked_total: u32 = hosts
+            .iter()
+            .filter(|h| {
+                let b = baseline_results.get(*h).cloned().unwrap_or((0, String::new(), String::new()));
+                !(b.0 >= 200 && b.0 < 400)
+            })
+            .count() as u32;
 
         for host in &hosts {
-            let ip = resolve_ip(host);
+            // Reuse the IP resolved once in the baseline phase (no second resolve).
+            let ip = resolved_ips.get(host).cloned().unwrap_or_else(|| resolve_ip(host));
             let result = match ip {
                 Some(ref ip) => curl_probe(host, ip, timeout_secs),
                 None => curl_probe_baseline(host, timeout_secs),
@@ -1033,7 +1050,18 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
 
             let baseline = baseline_results.get(host).cloned().unwrap_or((0, String::new(), String::new()));
 
+            // A host is "blocked at baseline" if it did not return a successful
+            // HTTP response when probed without any strategy. Only those hosts
+            // can be considered "opened" by a strategy; hosts that already
+            // worked at baseline are irrelevant to the bypass verdict.
+            let baseline_blocked = !(baseline.0 >= 200 && baseline.0 < 400);
             let works = code >= 200 && code < 400;
+
+            if baseline_blocked && works {
+                opened_count += 1;
+            } else if baseline_blocked && !works {
+                still_blocked_count += 1;
+            }
 
             if works { any_match = true; }
             if !works { all_match = false; }
@@ -1054,18 +1082,46 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
         // Stop strategy
         cleanup_all()?;
 
-        let verdict = if all_match { "works" } else if any_match { "partial" } else { "failed" };
+        // Gradient verdict: opened_pct is the share of baseline-blocked hosts
+        // that this strategy successfully opened. Denominator is baseline_blocked
+        // (hosts that were actually blocked without a strategy); if none were
+        // blocked we cannot measure a bypass, so score is reported as null.
+        let opened_pct: f64 = if baseline_blocked_total > 0 {
+            (opened_count as f64) / (baseline_blocked_total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let score: Option<f64> = if baseline_blocked_total > 0 {
+            Some((opened_count as f64) / (baseline_blocked_total as f64) * 100.0)
+        } else {
+            None
+        };
+        let verdict = if baseline_blocked_total == 0 {
+            "no_baseline_block"
+        } else if opened_count == baseline_blocked_total {
+            "works"
+        } else if opened_count > 0 {
+            "partial"
+        } else {
+            "failed"
+        };
         emit_event(&json!({
             "type": "auto_strategy_result",
             "strategy": strategy,
             "verdict": verdict,
             "all_match": all_match,
             "any_match": any_match,
+            "hosts_total": hosts.len() as u32,
+            "baseline_blocked": baseline_blocked_total,
+            "hosts_opened": opened_count,
+            "hosts_still_blocked": still_blocked_count,
+            "opened_pct": opened_pct,
+            "score": score,
             "ts": now_unix_ms(),
         }));
 
         match verdict {
-            "works" => working.push(strategy.clone()),
+            "works" | "partial" => working.push(strategy.clone()),
             _ => failed.push(strategy.clone()),
         }
     }
