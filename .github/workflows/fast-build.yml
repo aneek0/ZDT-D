@@ -554,6 +554,7 @@ jobs:
           gradle \
             --no-daemon \
             --build-cache \
+            --configuration-cache \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=$ZDT_COMPILE_SDK" \
             "assemble$BUILD_TYPE"
@@ -572,4 +573,4 @@ jobs:
         with:
           name: zdt-apk
           path: out/dist/*.apk
-          retention-days: 1
+          retention-days: 7
