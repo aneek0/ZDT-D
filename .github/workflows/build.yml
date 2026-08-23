@@ -27,6 +27,7 @@ env:
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
   NO_DASHBOARD: "1"
+  NDK_VERSION: "27.2.12479018"
   OPENVPN_VERSION: "2.7.4"
   MBEDTLS_VERSION: "3.6.6"
   MBEDTLS_SHA256: "8fb65fae8dcae5840f793c0a334860a411f884cc537ea290ce1c52bb64ca007a"
@@ -301,13 +302,20 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -439,13 +447,20 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -586,6 +601,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -602,9 +622,11 @@ jobs:
             xz-utils
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -844,13 +866,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -871,6 +900,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -881,9 +915,11 @@ jobs:
             make
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1061,13 +1097,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1171,13 +1214,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1294,13 +1344,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1420,13 +1477,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1666,6 +1730,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -1676,9 +1745,11 @@ jobs:
             make
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1805,13 +1876,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -1947,13 +2025,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -2084,13 +2169,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -2201,6 +2293,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -2217,9 +2314,11 @@ jobs:
             perl
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -2398,6 +2497,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -2418,9 +2522,11 @@ jobs:
             g++-multilib
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -2613,6 +2719,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -2637,9 +2748,11 @@ jobs:
             g++-multilib
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -2881,6 +2994,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK and build tools
         run: |
           set -euo pipefail
@@ -2901,9 +3019,11 @@ jobs:
             python3
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -3123,13 +3243,20 @@ jobs:
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -3288,13 +3415,20 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -3614,13 +3748,20 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -3752,13 +3893,20 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -3885,13 +4033,20 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
       - name: Install Android NDK
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
