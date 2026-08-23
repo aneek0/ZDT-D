@@ -553,6 +553,7 @@ jobs:
         run: |
           gradle \
             --no-daemon \
+            --build-cache \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=$ZDT_COMPILE_SDK" \
             "assemble$BUILD_TYPE"
