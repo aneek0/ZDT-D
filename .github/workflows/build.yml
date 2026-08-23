@@ -3679,7 +3679,7 @@ jobs:
           test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::arm64 zygisk verify sum missing"; exit 1; }
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
-          zip -qr "../../../$MODULE_ZIP" .
+          zip -1qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }

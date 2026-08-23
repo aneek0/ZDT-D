@@ -491,7 +491,7 @@ jobs:
           done < <(find "$MODULE_DIR/prebuilt/bin" -type f | sort)
           test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
           pushd "$MODULE_DIR" > /dev/null
-          zip -qr "../../../$MODULE_ZIP" .
+          zip -1qr "../../../$MODULE_ZIP" .
           popd > /dev/null
           ls -lh "$MODULE_ZIP"
 
