@@ -42,7 +42,7 @@ zygisk/               — Zygisk native library (DO NOT touch)
 - `prebuilt/**`, `keystores/**`
 - `zygisk/**`, `rust/zdtd/**`
 - `build.sh`
-- `.github/workflows/build.yml`, `.github/workflows/fast-build.yml`
+- `.github/workflows/build.yml`
 
 ## Safe to Edit
 
@@ -77,8 +77,8 @@ use `scripts/lists/strategy_dedup.py` to strip/re-dedup consistently.
 
 Local dev machine has no Android/NDK build env; **all builds run on GitHub Actions** (push artifacts: APK `zdt-apk`, module zip `zdt-module-final`).
 
-- Push to `main` triggers `.github/workflows/fast-build.yml` (quick: zdtd arm64 + APK only, change-gated per crate).
-- Full build is `.github/workflows/build.yml` via `workflow_dispatch` (all ABIs, third-party binaries, module zip, prebuilt sync, service publish). It compiles only when tracked build paths changed (`application/`, `rust/`, `module_template/`, `prebuilt/`, `zygisk/`, ...), unless the commit message contains `auto run compile` or it is a manual run.
+- Push to `main` triggers `.github/workflows/fast-build.yml` (quick: zdtd arm64 + APK only, change-gated per crate, arm64-v8a binaries only).
+- Full build is `.github/workflows/build.yml` via `workflow_dispatch` (arm64-v8a only, third-party binaries, module zip, prebuilt sync, service publish). It compiles only when tracked build paths changed (`application/`, `rust/`, `module_template/`, `prebuilt/`, `zygisk/`, ...), unless the commit message contains `auto run compile` or it is a manual run.
 - After a build, `sync_prebuilt` auto-commits rebuilt binaries to `prebuilt/` (`sync prebuilt binaries [skip ci]` commits).
 - Legacy Termux path `build.sh` still exists but is not the primary flow.
 - Rust check locally: `cargo check` in `rust/zdtd/` must pass before pushing.

@@ -339,9 +339,6 @@ jobs:
         run: |
           test -s prebuilt/bin/arm64-v8a/busybox
           chmod 755 prebuilt/bin/arm64-v8a/busybox
-          # Stub for arm32 — avoids ensurePrebuiltBusyBox building from source
-          mkdir -p prebuilt/bin/arm-v7a
-          cp prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox
 
 
 
@@ -354,7 +351,7 @@ jobs:
           cp -a module_template/. "$MODULE_DIR/"
           cp -f module.prop "$MODULE_DIR/module.prop"
           rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt" "$MODULE_DIR/verify_sum"
-          mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a" "$MODULE_DIR/prebuilt/bin/arm-v7a"
+          mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a"
           # Fresh zdtd (or fallback to prebuilt)
           if [ -f out/artifacts/zdtd/zdtd ]; then
             cp out/artifacts/zdtd/zdtd "$MODULE_DIR/prebuilt/bin/arm64-v8a/zdtd"
@@ -371,12 +368,6 @@ jobs:
             chmod 755 "$MODULE_DIR/prebuilt/bin/arm64-v8a/$name"
             echo "  prebuilt arm64: $name"
           done
-          # arm-v7a: just copy arm64 binaries as stubs
-          for f in "$MODULE_DIR/prebuilt/bin/arm64-v8a"/*; do
-            [ -f "$f" ] || continue
-            name="$(basename "$f")"
-            cp "$f" "$MODULE_DIR/prebuilt/bin/arm-v7a/$name"
-          done
           # verify_sum — required by verify.sh at install time
           mkdir -p "$MODULE_DIR/verify_sum/prebuilt/bin"
           while IFS= read -r file; do
@@ -385,7 +376,6 @@ jobs:
             (cd "$MODULE_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
           done < <(find "$MODULE_DIR/prebuilt/bin" -type f | sort)
           test -s "$MODULE_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
-          [ -f "$MODULE_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" ] || test -f "$MODULE_DIR/prebuilt/bin/arm-v7a/zdtd" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
           pushd "$MODULE_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
@@ -418,7 +408,7 @@ jobs:
             } > "$GRADLE_PROJECT_DIR/keystore.properties"
           fi
 
-      - name: Prepare APK helper assets (arm64-v8a real, armeabi-v7a stubs)
+      - name: Prepare APK helper assets (arm64-v8a)
         run: |
           # dpi-detector APK asset: fresh > prebuilt > hard error (never ship a broken stub)
           mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a
@@ -431,8 +421,6 @@ jobs:
             exit 1
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
-          mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a
-          cp application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/armeabi-v7a/dpi-detector
 
           # nfqws-tester APK asset: fresh > prebuilt > hard error (never ship a broken stub)
           mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a
@@ -445,8 +433,6 @@ jobs:
             exit 1
           fi
           chmod 755 application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
-          mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a
-          cp application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester application/app/build/generated/zdt-assets/main/nfqws-tester/armeabi-v7a/nfqws_tester
 
       - name: Build APK
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
