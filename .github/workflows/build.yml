@@ -286,18 +286,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -436,18 +424,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -600,18 +576,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -864,18 +828,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1093,18 +1045,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1215,18 +1155,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1350,18 +1278,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1488,18 +1404,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1636,10 +1540,6 @@ jobs:
             artifact_suffix: arm64
             hy_platform: android/arm64
             hy_output: hysteria-android-arm64
-          - abi: armeabi-v7a
-            artifact_suffix: arm32
-            hy_platform: android/armv7
-            hy_output: hysteria-android-armv7
 
     steps:
       - name: Checkout repository
@@ -1756,18 +1656,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1901,18 +1789,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2055,18 +1931,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2204,18 +2068,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2339,18 +2191,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2548,18 +2388,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2775,18 +2603,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -3055,18 +2871,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -3303,18 +3107,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -3486,18 +3278,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -3673,101 +3453,6 @@ jobs:
         with:
           name: nfqws2-arm64
           path: out/artifacts/nfqws2/arm64
-      - name: Download zdtd arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: zdtd-arm32
-          path: out/artifacts/zdtd/arm32
-      - name: Download t2s arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: t2s-arm32
-          path: out/artifacts/t2s/arm32
-      - name: Download zygisk arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: zygisk-arm32
-          path: out/artifacts/zygisk/arm32
-      - name: Download openvpn arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: openvpn-arm32
-          path: out/artifacts/openvpn/arm32
-      - name: Download amneziawg arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: amneziawg-arm32
-          path: out/artifacts/amneziawg/arm32
-      - name: Download wireproxy arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: wireproxy-arm32
-          path: out/artifacts/wireproxy/arm32
-      - name: Download tun2socks arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: tun2socks-arm32
-          path: out/artifacts/tun2socks/arm32
-      - name: Download mihomo arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: mihomo-arm32
-          path: out/artifacts/mihomo/arm32
-      - name: Download sing-box arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: sing-box-arm32
-          path: out/artifacts/sing-box/arm32
-      - name: Download hysteria2 arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: hysteria2-arm32
-          path: out/artifacts/hysteria2/arm32
-      - name: Download byedpi arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: byedpi-arm32
-          path: out/artifacts/byedpi/arm32
-      - name: Download dnscrypt arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: dnscrypt-arm32
-          path: out/artifacts/dnscrypt/arm32
-      - name: Download mieru arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: mieru-arm32
-          path: out/artifacts/mieru/arm32
-      - name: Download opera-proxy arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: opera-proxy-arm32
-          path: out/artifacts/opera-proxy/arm32
-      - name: Download dpitunnel arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: dpitunnel-arm32
-          path: out/artifacts/dpitunnel/arm32
-      - name: Download torproxy arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: torproxy-arm32
-          path: out/artifacts/torproxy/arm32
-      - name: Download lyrebird arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: lyrebird-arm32
-          path: out/artifacts/lyrebird/arm32
-      - name: Download nfqws arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: nfqws-arm32
-          path: out/artifacts/nfqws/arm32
-      - name: Download nfqws2 arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: nfqws2-arm32
-          path: out/artifacts/nfqws2/arm32
       - name: Pack Magisk module archive
         run: |
           set -euo pipefail
@@ -3817,11 +3502,10 @@ jobs:
           find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
           rm -f "$MODULE_BUILD_DIR/zygisk/unloaded" 2>/dev/null || true
           rm -rf "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt"
-          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a" "$MODULE_BUILD_DIR/prebuilt/bin/arm-v7a" "$MODULE_BUILD_DIR/zygisk"
+          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a" "$MODULE_BUILD_DIR/zygisk"
 
           cp -f out/artifacts/zygisk/arm64/arm64-v8a.so "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
-          cp -f out/artifacts/zygisk/arm32/armeabi-v7a.so "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
-          chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
+          chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
 
           echo "=== Install zapret2 Lua scripts matching the packaged nfqws2 binary ==="
           require_file "out/artifacts/nfqws2/arm64/lua/zapret-lib.lua"
@@ -3843,17 +3527,11 @@ jobs:
           chmod 644 "$MODULE_BUILD_DIR/strategic/lua"/*.lua
           grep -n 'NFQWS2_COMPAT_VER_REQUIRED' "$MODULE_BUILD_DIR/strategic/lua/zapret-lib.lua" || true
 
-          for arch in arm64 arm32; do
-            case "$arch" in
-              arm64) module_arch="arm64-v8a" ;;
-              arm32) module_arch="arm-v7a" ;;
-            esac
-            for bin in $BINARIES; do
-              src="$(artifact_path "$arch" "$bin")"
-              require_file "$src"
-              cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
-              chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
-            done
+          for bin in $BINARIES; do
+            src="$(artifact_path arm64 "$bin")"
+            require_file "$src"
+            cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
+            chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
           done
 
           rm -rf "$MODULE_BUILD_DIR/verify_sum"
@@ -3864,9 +3542,7 @@ jobs:
             (cd "$MODULE_BUILD_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
           done < <(find "$MODULE_BUILD_DIR/prebuilt/bin" "$MODULE_BUILD_DIR/zygisk" -type f | sort)
           test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
-          test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
           test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::arm64 zygisk verify sum missing"; exit 1; }
-          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/armeabi-v7a.so.sha256" || { echo "::error::arm32 zygisk verify sum missing"; exit 1; }
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
@@ -3874,9 +3550,7 @@ jobs:
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm64-v8a/zdtd' >/dev/null || { echo "::error::arm64 module binaries missing"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/zdtd' >/dev/null || { echo "::error::arm32 module binaries missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::arm64 Zygisk binary missing"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/armeabi-v7a.so' >/dev/null || { echo "::error::arm32 Zygisk binary missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-lib.lua' >/dev/null || { echo "::error::zapret2 Lua library missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-sni.lua' >/dev/null || { echo "::error::custom zapret-sni.lua missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-wgobfs.lua' >/dev/null || { echo "::error::custom zapret-wgobfs.lua missing"; exit 1; }
@@ -3925,18 +3599,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -4075,18 +3737,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -4225,18 +3875,6 @@ jobs:
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -4354,23 +3992,11 @@ jobs:
           name: dpi-detector-arm64
           path: out/artifacts/dpi-detector/arm64
 
-      - name: Download dpi-detector arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: dpi-detector-arm32
-          path: out/artifacts/dpi-detector/arm32
-
       - name: Download nfqws-tester arm64
         uses: actions/download-artifact@v7
         with:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
-
-      - name: Download nfqws-tester arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: nfqws-tester-arm32
-          path: out/artifacts/nfqws-tester/arm32
 
       - name: Download BusyBox arm64
         uses: actions/download-artifact@v7
@@ -4378,16 +4004,10 @@ jobs:
           name: busybox-arm64
           path: prebuilt/bin/arm64-v8a
 
-      - name: Download BusyBox arm32
-        uses: actions/download-artifact@v7
-        with:
-          name: busybox-arm32
-          path: prebuilt/bin/arm-v7a
-
       - name: Verify BusyBox artifacts
         run: |
           set -euo pipefail
-          for path in prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox; do
+          for path in prebuilt/bin/arm64-v8a/busybox; do
             test -s "$path"
             chmod 755 "$path"
             ls -lh "$path"
@@ -4449,9 +4069,8 @@ jobs:
           set -euo pipefail
           declare -A SRC_BY_ABI=(
             [arm64-v8a]="out/artifacts/dpi-detector/arm64/dpi-detector"
-            [armeabi-v7a]="out/artifacts/dpi-detector/arm32/dpi-detector"
           )
-          for abi in arm64-v8a armeabi-v7a; do
+          for abi in arm64-v8a; do
             SRC="${SRC_BY_ABI[$abi]}"
             DST="application/app/build/generated/zdt-assets/main/dpi-detector/$abi/dpi-detector"
             test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
@@ -4466,9 +4085,8 @@ jobs:
           set -euo pipefail
           declare -A SRC_BY_ABI=(
             [arm64-v8a]="out/artifacts/nfqws-tester/arm64/nfqws-tester"
-            [armeabi-v7a]="out/artifacts/nfqws-tester/arm32/nfqws-tester"
           )
-          for abi in arm64-v8a armeabi-v7a; do
+          for abi in arm64-v8a; do
             SRC="${SRC_BY_ABI[$abi]}"
             DST="application/app/build/generated/zdt-assets/main/nfqws-tester/$abi/nfqws_tester"
             test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
@@ -4506,15 +4124,10 @@ jobs:
           fi
           for entry in \
             assets/dpi-detector/arm64-v8a/dpi-detector \
-            assets/dpi-detector/armeabi-v7a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
-            assets/nfqws-tester/armeabi-v7a/nfqws_tester \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
-            assets/busybox/busybox-arm64.source \
-            assets/busybox/busybox-arm32 \
-            assets/busybox/busybox-arm32.sha256 \
-            assets/busybox/busybox-arm32.source; do
+            assets/busybox/busybox-arm64.source; do
             printf '%s\n' "$APK_ENTRIES" | grep -Fx "$entry" >/dev/null || { echo "::error::APK asset missing: $entry"; exit 1; }
           done
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
@@ -4562,24 +4175,17 @@ jobs:
           pattern: "*-arm64"
           path: out/sync
 
-      - name: Download all arm32 artifacts
-        uses: actions/download-artifact@v7
-        with:
-          pattern: "*-arm32"
-          path: out/sync
-
       - name: Copy prebuilt binaries (skip our own code)
         run: |
           set -euo pipefail
           OUR_CODE="zdtd dpi-detector nfqws-tester busybox zygisk"
-          mkdir -p prebuilt/bin/arm64-v8a prebuilt/bin/arm-v7a
+          mkdir -p prebuilt/bin/arm64-v8a
 
           for arch_dir in out/sync/*/; do
             artifact_name="$(basename "$arch_dir")"
             # determine target arch dir
             case "$artifact_name" in
               *-arm64) target="arm64-v8a" ;;
-              *-arm32) target="arm-v7a" ;;
               *) continue ;;
             esac
             for f in "$arch_dir"/*; do
@@ -4609,7 +4215,6 @@ jobs:
             [ -d "$arch_dir/lua" ] || continue
             case "$(basename "$arch_dir")" in
               nfqws2-arm64) target="arm64-v8a" ;;
-              nfqws2-arm32) target="arm-v7a" ;;
               *) continue ;;
             esac
             mkdir -p "prebuilt/bin/$target"

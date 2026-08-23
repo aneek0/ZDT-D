@@ -31,28 +31,22 @@ def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
 def bundledDpiDetectorAssets = [
     file("$generatedAssetsDir/dpi-detector/arm64-v8a/dpi-detector"),
-    file("$generatedAssetsDir/dpi-detector/armeabi-v7a/dpi-detector")
 ]
 def bundledNfqwsTesterAssets = [
     file("$generatedAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester"),
-    file("$generatedAssetsDir/nfqws-tester/armeabi-v7a/nfqws_tester")
 ]
 def prebuiltBusyBoxes = [
     arm64: file('../../prebuilt/bin/arm64-v8a/busybox'),
-    arm32: file('../../prebuilt/bin/arm-v7a/busybox')
 ]
 def busyBoxBuildScript = file('../../scripts/module/build-busybox-arm64.sh')
 def bundledBusyBoxAssets = [
     arm64: file("$generatedAssetsDir/busybox/busybox-arm64"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32")
 ]
 def bundledBusyBoxShas = [
     arm64: file("$generatedAssetsDir/busybox/busybox-arm64.sha256"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32.sha256")
 ]
 def bundledBusyBoxSources = [
     arm64: file("$generatedAssetsDir/busybox/busybox-arm64.source"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32.source")
 ]
 def bundledModuleSha = file("$generatedAssetsDir/busybox/zdt_module.sha256")
 def bundledModuleCache = file("$generatedAssetsDir/busybox/zdt_module.cache")
@@ -269,9 +263,6 @@ protection=fake-central-directory-encrypt
 busyboxArm64Asset=${busyBoxMeta.arm64.asset}
 busyboxArm64Sha256=${busyBoxMeta.arm64.sha}
 busyboxArm64Source=${busyBoxMeta.arm64.source}
-busyboxArm32Asset=${busyBoxMeta.arm32.asset}
-busyboxArm32Sha256=${busyBoxMeta.arm32.sha}
-busyboxArm32Source=${busyBoxMeta.arm32.source}
 """
     println("[ZDT-D] wrote module cache metadata: ${bundledModuleCache}")
   }
