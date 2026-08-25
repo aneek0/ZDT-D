@@ -1090,31 +1090,13 @@ private fun CooldownRebootButton(
   activeKey: Any?,
   onReboot: () -> Unit,
   modifier: Modifier = Modifier,
-  seconds: Int = 10,
 ) {
-  var remaining by remember(activeKey) { mutableStateOf(seconds) }
-  LaunchedEffect(activeKey) {
-    remaining = seconds
-    while (remaining > 0) {
-      delay(1000)
-      remaining -= 1
-    }
-  }
-  val enabled = remaining <= 0
-  val alpha by animateFloatAsState(
-    targetValue = if (enabled) 1f else 0.58f,
-    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-    label = "reboot_button_cooldown_alpha",
-  )
   Button(
     onClick = onReboot,
-    enabled = enabled,
-    modifier = modifier.graphicsLayer { this.alpha = alpha },
+    enabled = true,
+    modifier = modifier,
   ) {
-    Text(
-      if (enabled) stringResource(R.string.common_reboot)
-      else stringResource(R.string.common_reboot_wait_fmt, remaining),
-    )
+    Text(stringResource(R.string.common_reboot))
   }
 }
 
