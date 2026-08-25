@@ -392,16 +392,20 @@ fn ensure_safe_segment(s: &str, what: &str) -> Result<()> {
 }
 
 fn is_safe_filename(s: &str) -> bool {
-    if s.is_empty() || s.len() > 128 {
+    if s.is_empty() || s.len() > 255 {
         return false;
     }
-    // Disallow dot segments and any path separators.
+    // Disallow dot segments and any path separators (absolute or traversal).
     if s == "." || s == ".." || s.contains('/') || s.contains('\\') {
         return false;
     }
-    // Conservative ASCII allowlist.
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '+')
+    // Reject NUL and control characters, but allow the human-readable strategy
+    // names shipped with ZDT-D: spaces, "&", parentheses, accents, Cyrillic,
+    // etc. are all valid filename characters on the target filesystems.
+    s.chars().all(|c| {
+        let code = c as u32;
+        code >= 0x20 && code != 0x7f
+    })
 }
 
 fn ensure_safe_filename(s: &str) -> Result<()> {
@@ -802,15 +806,18 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         }
     }
 
+    // Emit one token per line. A real newline is used as the separator (not the
+    // literal "\n" string) so the re-normalizer and nfqws2 itself parse each
+    // token as a distinct argument. `--new` starts a new section on its own
+    // line, matching the human-readable nfqws2 preset layout.
     let mut result = String::new();
     for (i, token) in out_tokens.iter().enumerate() {
-        if i == out_tokens.len() - 1 {
-            result.push_str(token);
-        } else {
-            result.push_str(token);
-            result.push_str(" \\n");
+        if i != 0 {
+            result.push('\n');
         }
+        result.push_str(token);
     }
+    result.push('\n');
     result.into_bytes()
 }
 
@@ -862,6 +869,7 @@ fn extract_selection_from_config(cfg: &Path) -> Selection {
 
 /// Routes:
 ///   GET  /api/strategicvar/{program}
+///   GET  /api/strategicvar/human/{program}/{file}   (human-readable preset form)
 ///   POST /api/strategicvar/apply        (JSON {program, profile, file[, hostlists, exclude_hostlists, ipsets, exclude_ipsets]})
 ///   POST /api/strategicvar/hostlists    (JSON {program, profile, hostlists, exclude_hostlists, ipsets, exclude_ipsets})
 
@@ -891,6 +899,24 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                 }
 
                 Ok(json!({"ok": true, "files": files, "meta": meta}))
+            }
+            ("GET", ["api", "strategicvar", "human", program, file]) => {
+                ensure_safe_segment(program, "program")?;
+                ensure_safe_filename(file)?;
+                if !is_allowed_strategicvar_program(program) {
+                    anyhow::bail!("unknown program");
+                }
+                if !file.ends_with(".txt") {
+                    anyhow::bail!("strategy file must be .txt");
+                }
+                let src = strategicvar_root().join(program).join(file);
+                if !src.is_file() {
+                    anyhow::bail!("strategy not found");
+                }
+                let raw = fs::read(&src)
+                    .map_err(|e| anyhow::anyhow!("read failed {}: {e}", src.display()))?;
+                let human = crate::strategic_translator::nfqws2_to_human(&String::from_utf8_lossy(&raw));
+                Ok(json!({"ok": true, "file": file, "human": human}))
             }
             ("POST", ["api", "strategicvar", "apply"]) => {
                 let req: ApplyStrategicVarReq = serde_json::from_slice(body)
@@ -946,8 +972,16 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                     data
                 };
 
+                // Compile the (possibly human-readable) preset into the absolute
+                // nfqws2 config the core consumes. Guarantees a clean,
+                // newline-separated file even when the source uses relative
+                // `@lua/`/`@bin/` references or inline line continuations.
+                let compiled = crate::strategic_translator::human_to_nfqws2(
+                    &String::from_utf8_lossy(&data),
+                );
+
                 let dst = prof_root.join("config/config.txt");
-                write_bytes_atomic(&dst, &data)?;
+                write_bytes_atomic(&dst, compiled.as_bytes())?;
                 Ok(json!({"ok": true}))
             }
             ("POST", ["api", "strategicvar", "hostlists"]) => {

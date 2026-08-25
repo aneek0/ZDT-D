@@ -29,6 +29,7 @@ mod settings;
 mod shell;
 mod stats;
 mod stop;
+mod strategic_translator;
 mod traffic_total;
 mod vpn_netd;
 mod vpn_tether;
