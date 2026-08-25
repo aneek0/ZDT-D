@@ -61,17 +61,11 @@ import kotlinx.coroutines.launch
 
 private const val HOSTLIST_PREFIX = "/data/adb/modules/ZDT-D/strategic/list/"
 // IP-set selection files live in the same strategic/list/ directory as the
-// hostlists; the daemon injects them as --ipset=/.../list/<name>.
-private val IPSET_KNOWN_FILES = setOf(
-  "cloudfare-list.txt",
-  "custom.txt",
-  "ipset-discord.txt",
-  "ipset.txt",
-  "ipset-v4.txt",
-  "ipset-v6.txt",
-  "ip-telegram.txt",
-  "exclude.txt",
-)
+// hostlists; the daemon injects them as --ipset=/.../list/<name>. Every ipset
+// file is named with the "ipset" substring, so classify by name rather than a
+// hard-coded allowlist (which drifted out of sync with the actual files shipped
+// in strategic/list/ and caused ipsets to show up in the hostlist chooser).
+private fun isIpSetFile(name: String): Boolean = name.lowercase(Locale.ROOT).contains("ipset")
 
 private data class StrategySelection(
   val hostlists: List<String>,
@@ -770,7 +764,8 @@ private fun HostlistChooserBottomSheet(
 ) {
   val shortHeight = rememberIsShortHeight()
 
-  val regularFiles = allFiles.filter { it != "exclude.txt" }
+  // Hostlists only: ipset files belong in the other sheet.
+  val regularFiles = allFiles.filter { it != "exclude.txt" && !isIpSetFile(it) }
   val excludeFile = if (allFiles.contains("exclude.txt")) "exclude.txt" else null
 
   var selected by remember(selectedHostlists, selectedExclude) {
@@ -926,9 +921,9 @@ private fun IpSetChooserBottomSheet(
 ) {
   val shortHeight = rememberIsShortHeight()
 
-  // Only the known ipset files are selectable here (the same strategic/list/
+  // Only the ipset files are selectable here (the same strategic/list/
   // directory also contains hostlists which are chosen in the other sheet).
-  val knownFiles = allFiles.filter { it in IPSET_KNOWN_FILES }
+  val knownFiles = allFiles.filter { isIpSetFile(it) }
   val regularFiles = knownFiles.filter { it != "exclude.txt" }
   val excludeFile = if (knownFiles.contains("exclude.txt")) "exclude.txt" else null
 
