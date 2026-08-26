@@ -1,0 +1,1260 @@
+#!/system/bin/sh
+# Strict preset compiler for Android nfqws2.
+#
+# The public machine protocol is intentionally line based. A compiled artifact
+# stores one complete argument per line; neither this file nor zapret-start.sh
+# evaluates or word-splits preset text.
+
+COMMAND_BUILDER_CLI_MODE=0
+COMMAND_BUILDER_ERROR_PREFIX=Z2_PRESET_ERROR
+PRESET_MAX_BYTES=1048576
+STRATEGY_CATALOG_MAX_BYTES=1048576
+COMPILED_ARGV_MAX_BYTES=2097152
+
+# --- ZDT-D integration defaults (fork) -------------------------------------
+# Upstream attaches these via common.sh / zapret layout. ZDT-D ships the same
+# preset files but under a different tree, so provide sane defaults that the
+# wrapper may override via the environment. Keep this block minimal so an
+# upstream file refresh stays a clean diff.
+: "${ZDT_MODULE_DIR:=/data/adb/modules/ZDT-D}"
+: "${ZAPRET_DIR:=$ZDT_MODULE_DIR/strategic}"
+: "${PRESETS_DIR:=$ZAPRET_DIR/strategicvar/nfqws2}"
+: "${LISTS_DIR:=$ZAPRET_DIR/list}"
+# nfqws2 core reads @lua/@bin relative to these (mirrors upstream lua_prefix/bin_prefix).
+: "${Z2_LUA_DIR:=$ZAPRET_DIR/lua}"
+: "${Z2_BIN_DIR:=$ZAPRET_DIR/bin}"
+# Launch params consumed by compile_preset_artifact (--qnum/--fwmark/--uid/--debug).
+: "${QNUM:=200}"
+: "${DESYNC_MARK:=0x40000000}"
+: "${NFQWS_UID:=0:0}"
+: "${LOG_MODE:=none}"
+: "${DEBUG_LOG:=/data/adb/modules/ZDT-D/working_folder/nfqws2/debug.log}"
+# ---------------------------------------------------------------------------
+
+command_builder_safe_file_name_byte_length() {
+    local value="$1" byte_length LC_ALL=C
+
+    # BusyBox ash on Android counts characters rather than bytes in ${#value},
+    # even with LC_ALL=C. Keep the common printable-ASCII path shell-native.
+    case "$value" in
+        *[!\ -~]*)
+            byte_length="$(printf '%s' "$value" | LC_ALL=C wc -c)" || return 1
+            ;;
+        *) byte_length="${#value}" ;;
+    esac
+    case "$byte_length" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$byte_length" -le 255 ] 2>/dev/null
+}
+
+is_safe_preset_file_name() {
+    local name="$1"
+    [ -n "$name" ] && command_builder_safe_file_name_byte_length "$name" || return 1
+    [ "${name# }" = "$name" ] && [ "${name% }" = "$name" ] || return 1
+    case "$name" in
+        _*|.|..|*/*|*\\*|*"'"*|*'"'*|*.TXT|*.Txt|*.tXt|*.txT|*.TXt|*.TxT|*.tXT) return 1 ;;
+        *.txt) ;;
+        *) return 1 ;;
+    esac
+    case "$name" in *[[:cntrl:]]*) return 1 ;; esac
+    return 0
+}
+
+# Runtime catalog discovery projects only direct, trusted directory entries.
+# Keep it ahead of common.sh and the compiler body: loading several thousand
+# lines of lifecycle helpers to list already-qualified package files made this
+# bounded read take seconds on Android.
+if [ "${1:-}" = --list-presets-machine ]; then
+    [ "$#" -eq 2 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+    ZAPRET_DIR="${2:-}"
+    case "$ZAPRET_DIR" in
+        /*) ;;
+        *) printf 'Z2_PRESET_ERROR\tUNSAFE_ROOT\n' >&2; exit 2 ;;
+    esac
+    case "$ZAPRET_DIR" in
+        *'/../'*|*'/./'*|*/..|*/.)
+            printf 'Z2_PRESET_ERROR\tUNSAFE_ROOT\n' >&2
+            exit 2
+            ;;
+    esac
+    PRESETS_DIR="$ZAPRET_DIR/presets"
+    [ -d "$PRESETS_DIR" ] && [ ! -L "$PRESETS_DIR" ] || {
+        printf 'Z2_PRESET_ERROR\tPRESET_CATALOG_MISSING\n'
+        exit 2
+    }
+    ready=0
+    quarantined=0
+    total=0
+    # One buffered write instead of one printf per preset: on Android mksh
+    # printf is an external binary, and a fork per catalog row made this
+    # bounded listing cost seconds on a real catalog.
+    listing=""
+    row_tab='	'
+    row_nl='
+'
+    for preset_file in "$PRESETS_DIR"/*.txt; do
+        [ -e "$preset_file" ] || [ -L "$preset_file" ] || continue
+        preset_name="${preset_file##*/}"
+        case "$preset_name" in _*) continue ;; esac
+        is_safe_preset_file_name "$preset_name" || continue
+        total=$((total + 1))
+        reason=
+        if [ -L "$preset_file" ]; then
+            reason=PRESET_SYMLINK
+        elif [ ! -f "$preset_file" ]; then
+            reason=PRESET_MISSING
+        elif [ ! -s "$preset_file" ]; then
+            reason=PRESET_EMPTY
+        elif [ ! -r "$preset_file" ]; then
+            reason=PRESET_UNREADABLE
+        fi
+        if [ -z "$reason" ]; then
+            ready=$((ready + 1))
+            listing="${listing}Z2_PRESET${row_tab}READY${row_tab}OK${row_tab}${preset_name}${row_nl}"
+        else
+            quarantined=$((quarantined + 1))
+            listing="${listing}Z2_PRESET${row_tab}QUARANTINED${row_tab}${reason}${row_tab}${preset_name}${row_nl}"
+        fi
+    done
+    printf '%sZ2_PRESET_SUMMARY\t2\tready=%s\tquarantined=%s\ttotal=%s\n' \
+        "$listing" "$ready" "$quarantined" "$total"
+    exit 0
+fi
+
+case "${1:-}" in
+    --list-presets-machine|--scan-presets-machine|--validate-preset-machine|--preflight-preset-machine|--preview-preset-machine|--validate-strategies-machine)
+        COMMAND_BUILDER_CLI_MODE=1
+        [ "$1" != --validate-strategies-machine ] || COMMAND_BUILDER_ERROR_PREFIX=Z2_STRATEGIES_ERROR
+        ZAPRET_DIR="${2:-}"
+        case "$ZAPRET_DIR" in
+            /*) ;;
+            *) printf '%s\tUNSAFE_ROOT\n' "$COMMAND_BUILDER_ERROR_PREFIX" >&2; exit 2 ;;
+        esac
+        case "$ZAPRET_DIR" in
+            *'/../'*|*'/./'*|*/..|*/.)
+                printf '%s\tUNSAFE_ROOT\n' "$COMMAND_BUILDER_ERROR_PREFIX" >&2
+                exit 2
+                ;;
+        esac
+        PRESETS_DIR="$ZAPRET_DIR/presets"
+        LISTS_DIR="$ZAPRET_DIR/lists"
+        SCRIPT_DIR="$ZAPRET_DIR/scripts"
+        MODDIR="$(dirname "$ZAPRET_DIR")"
+        if [ -f "$SCRIPT_DIR/common.sh" ] && [ ! -L "$SCRIPT_DIR/common.sh" ]; then
+            . "$SCRIPT_DIR/common.sh" || exit 2
+        fi
+        log_msg() { :; }
+        log_error() { :; }
+        log_debug() { :; }
+        ;;
+    *)
+        # ZDT-D fork: common.sh is intentionally absent. Provide no-op loggers
+        # and continue instead of exiting; compile_preset_artifact only needs
+        # current_config_signature (defined locally) and tolerates a missing
+        # install-generation metadata read.
+        log_msg() { :; }
+        log_error() { :; }
+        log_debug() { :; }
+        ;;
+esac
+
+# common.sh publishes the shared CR byte; the CLI mode above only sources it
+# when the packaged file is present, so keep a fallback rather than silently
+# stripping nothing from CRLF input.
+: "${Z2_CR:=$(printf '\r')}"
+
+# ZDT-D fork: is_lower_sha256 lives in upstream common.sh, which we do not ship.
+# Provide the same lowercase-hex gate so compile_preset_artifact can verify the
+# source hash.
+is_lower_sha256() {
+    case "$1" in
+        ''|*[!0-9a-f]*) return 1 ;;
+        ????????????????????????????????????????????????????????????????)
+            [ "${#1}" -eq 64 ] 2>/dev/null || return 1 ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+PRESET_VALIDATION_CODE=OK
+PRESET_VALIDATION_DETAIL=
+PRESET_DEPENDENCY_PATH=
+PRESET_DEPENDENCY_RELATIVE=
+
+preset_validation_fail() {
+    PRESET_VALIDATION_CODE="$1"
+    PRESET_VALIDATION_DETAIL="${2:-}"
+    return 1
+}
+
+is_safe_dependency_name() {
+    local name="$1"
+    [ -n "$name" ] && command_builder_safe_file_name_byte_length "$name" || return 1
+    [ "${name# }" = "$name" ] && [ "${name% }" = "$name" ] || return 1
+    case "$name" in .|..|*/*|*\\*|*"'"*|*'"'*) return 1 ;; esac
+    case "$name" in *[[:cntrl:]]*) return 1 ;; esac
+    return 0
+}
+
+validate_preset_dependency() {
+    local dependency_class="$1" raw="$2" relative= base=
+    case "$dependency_class:$raw" in
+        lua:@lua/*) relative="${raw#@lua/}"; base="$ZAPRET_DIR/lua" ;;
+        blob:@bin/*) relative="${raw#@bin/}"; base="$ZAPRET_DIR/bin" ;;
+        list:lists/*) relative="${raw#lists/}"; base="$LISTS_DIR" ;;
+        # ZDT-D fork: presets ship absolute @/data/adb/.../strategic/{lua,bin}/ paths.
+        lua:@/*) relative="${raw#@}"; base="" ;;
+        blob:@/*) relative="${raw#@}"; base="" ;;
+        # ZDT-D fork: hostlist/ipset entries use absolute /data/adb/.../strategic/list/ paths.
+        list:/*) relative="$raw"; base="" ;;
+        *) preset_validation_fail UNSAFE_DEPENDENCY_PATH "$raw"; return 1 ;;
+    esac
+    if [ -z "$base" ]; then
+        # Absolute path already carries its full location.
+        PRESET_DEPENDENCY_PATH="$relative"
+        PRESET_DEPENDENCY_RELATIVE="$relative"
+    else
+        is_safe_dependency_name "$relative" || {
+            preset_validation_fail UNSAFE_DEPENDENCY_PATH "$raw"; return 1;
+        }
+        PRESET_DEPENDENCY_PATH="$base/$relative"
+        PRESET_DEPENDENCY_RELATIVE="zapret2/${base##*/}/$relative"
+    fi
+    if [ -n "${PRESET_ALLOWED_DEPENDENCIES_FILE:-}" ]; then
+        [ -f "$PRESET_ALLOWED_DEPENDENCIES_FILE" ] &&
+            grep -Fqx "$PRESET_DEPENDENCY_RELATIVE" "$PRESET_ALLOWED_DEPENDENCIES_FILE" || {
+                preset_validation_fail DEPENDENCY_NOT_DECLARED "$raw"; return 1;
+            }
+    fi
+    [ ! -L "$PRESET_DEPENDENCY_PATH" ] || {
+        preset_validation_fail DEPENDENCY_SYMLINK "$raw"; return 1;
+    }
+    [ -f "$PRESET_DEPENDENCY_PATH" ] || {
+        preset_validation_fail DEPENDENCY_MISSING "$raw"; return 1;
+    }
+    [ -s "$PRESET_DEPENDENCY_PATH" ] || {
+        preset_validation_fail DEPENDENCY_EMPTY "$raw"; return 1;
+    }
+    [ -r "$PRESET_DEPENDENCY_PATH" ] || {
+        preset_validation_fail DEPENDENCY_UNREADABLE "$raw"; return 1;
+    }
+}
+
+validate_filter_ports() {
+    local list="$1" old_ifs item range first last restore_glob=0
+    [ -n "$list" ] || return 1
+    [ "$list" != '*' ] || return 0
+    case "$list" in *[!0-9,*~-]*|,*|*,|*,,*) return 1 ;; esac
+    case "$-" in *f*) ;; *) set -f; restore_glob=1 ;; esac
+    old_ifs="$IFS"; IFS=,; set -- $list; IFS="$old_ifs"
+    [ "$restore_glob" -eq 0 ] || set +f
+    [ "$#" -gt 0 ] || return 1
+    for item in "$@"; do
+        [ "$item" != '*' ] || continue
+        range="${item#\~}"
+        [ -n "$range" ] || return 1
+        case "$range" in *'*'*) return 1 ;; esac
+        case "$range" in
+            *-*) first="${range%%-*}"; last="${range#*-}"; case "$last" in *-*) return 1 ;; esac ;;
+            *) first="$range"; last="$range" ;;
+        esac
+        case "$first:$last" in *[!0-9:]*) return 1 ;; esac
+        [ "$first" -ge 0 ] 2>/dev/null && [ "$last" -le 65535 ] 2>/dev/null &&
+            [ "$first" -le "$last" ] 2>/dev/null || return 1
+    done
+}
+
+# Compiler output uses the firewall's canonical inclusive-range separator.
+# Keep this parser distinct from nfqws2 source syntax so accepting an internal
+# `80:443` record can never make that non-upstream spelling valid in a TXT.
+validate_capture_ports() {
+    local list="$1" old_ifs item first last
+    [ -n "$list" ] || return 1
+    case "$list" in *[!0-9,:]*|,*|*,|*,,*) return 1 ;; esac
+    old_ifs="$IFS"; IFS=,; set -- $list; IFS="$old_ifs"
+    [ "$#" -gt 0 ] || return 1
+    for item in "$@"; do
+        case "$item" in
+            *:*) first="${item%%:*}"; last="${item#*:}"; case "$last" in *:*) return 1 ;; esac ;;
+            *) first="$item"; last="$item" ;;
+        esac
+        case "$first:$last" in *[!0-9:]*) return 1 ;; esac
+        [ "$first" -ge 1 ] 2>/dev/null && [ "$last" -le 65535 ] 2>/dev/null &&
+            [ "$first" -le "$last" ] 2>/dev/null || return 1
+    done
+}
+
+validate_l7_filter() {
+    local value="$1" old_ifs token
+    case "$value" in ''|,*|*,|*,,*|*[!A-Za-z0-9_,]*) return 1 ;; esac
+    old_ifs="$IFS"; IFS=,; set -- $value; IFS="$old_ifs"
+    [ "$#" -gt 0 ] || return 1
+    for token in "$@"; do
+        # Reviewed against bol-van/zapret2 v1.0.4 protocol_name[].  Keeping the
+        # complete upstream set here prevents the Android wrapper from
+        # inventing a smaller language than the nfqws2 binary it launches.
+        case "$token" in
+            all|unknown|known|http|tls|dtls|quic|wireguard|dht|discord|stun|xmpp|dns|mtproto|bt|utp_bt) ;;
+            *) return 1 ;;
+        esac
+    done
+    return 0
+}
+
+validate_strategy_blob_references() {
+    local remaining="$1" token reference
+    while [ -n "$remaining" ]; do
+        token="${remaining%%:*}"
+        case "$remaining" in *:*) remaining="${remaining#*:}" ;; *) remaining= ;; esac
+        case "$token" in
+            blob=*|fake_blob=*|pattern=*|seqovl_pattern=*) reference="${token#*=}" ;;
+            *) continue ;;
+        esac
+        case "$reference" in
+            0x*) continue ;;
+            ''|*[!A-Za-z0-9_.-]*) preset_validation_fail INVALID_BLOB_REFERENCE "$reference"; return 1 ;;
+        esac
+        case "$declared_blobs" in
+            *"|$reference|"*) ;;
+            *) preset_validation_fail BLOB_REFERENCE_MISSING "$reference"; return 1 ;;
+        esac
+    done
+}
+
+validate_capture_packet_count() {
+    case "$1" in ''|0|0*|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 9 ] 2>/dev/null
+}
+
+validate_preset_file() {
+    local preset_file="$1" logical_name="$2" candidate_name line cr size
+    local in_profiles=0 profile_open=0 profile_name=0 profile_filter=0 profile_strategy=0 profile_skip=0
+    local profiles=0 lua_count=0 blob_count=0 raw option blob_name
+    local capture_tcp_out= capture_tcp_in= capture_udp_out= capture_udp_in=
+    local seen_capture_tcp_out=0 seen_capture_tcp_in=0 seen_capture_udp_out=0 seen_capture_udp_in=0
+    local declared_blobs='|fake_default_http|fake_default_quic|fake_default_tls|'
+
+    PRESET_VALIDATION_CODE=OK
+    PRESET_VALIDATION_DETAIL=
+    is_safe_preset_file_name "$logical_name" || {
+        preset_validation_fail UNSAFE_PRESET_NAME "$logical_name"; return 1;
+    }
+    # ZDT-D fork: the daemon passes an absolute path to the chosen preset
+    # (which may live outside PRESETS_DIR, e.g. inside a profile dir). Accept
+    # any non-symlink regular file whose name is a safe .txt basename; keep a
+    # minimal path-traversal guard instead of the upstream PRESETS_DIR child check.
+    case "$preset_file" in
+        *'/../'*|*'/./'*|*/..|*/.) preset_validation_fail PRESET_NOT_DIRECT_CHILD "$preset_file"; return 1 ;;
+    esac
+    candidate_name="${preset_file##*/}"
+    [ ! -L "$preset_file" ] || { preset_validation_fail PRESET_SYMLINK "$logical_name"; return 1; }
+    [ -f "$preset_file" ] || { preset_validation_fail PRESET_MISSING "$logical_name"; return 1; }
+    [ -s "$preset_file" ] || { preset_validation_fail PRESET_EMPTY "$logical_name"; return 1; }
+    [ -r "$preset_file" ] || { preset_validation_fail PRESET_UNREADABLE "$logical_name"; return 1; }
+    size="$(wc -c < "$preset_file" 2>/dev/null)" || {
+        preset_validation_fail PRESET_UNREADABLE "$logical_name"; return 1;
+    }
+    case "$size" in ''|*[!0-9]*) preset_validation_fail PRESET_UNREADABLE "$logical_name"; return 1 ;; esac
+    [ "$size" -le "$PRESET_MAX_BYTES" ] 2>/dev/null || {
+        preset_validation_fail PRESET_TOO_LARGE "$logical_name"; return 1;
+    }
+
+    cr="$Z2_CR"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%"$cr"}"
+        case "$line" in
+            '# NFQWS2_TCP_PKT_OUT='*)
+                [ "$in_profiles" -eq 0 ] && [ "$seen_capture_tcp_out" -eq 0 ] || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                capture_tcp_out="${line#*=}"
+                validate_capture_packet_count "$capture_tcp_out" || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                seen_capture_tcp_out=1
+                continue
+                ;;
+            '# NFQWS2_TCP_PKT_IN='*)
+                [ "$in_profiles" -eq 0 ] && [ "$seen_capture_tcp_in" -eq 0 ] || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                capture_tcp_in="${line#*=}"
+                validate_capture_packet_count "$capture_tcp_in" || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                seen_capture_tcp_in=1
+                continue
+                ;;
+            '# NFQWS2_UDP_PKT_OUT='*)
+                [ "$in_profiles" -eq 0 ] && [ "$seen_capture_udp_out" -eq 0 ] || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                capture_udp_out="${line#*=}"
+                validate_capture_packet_count "$capture_udp_out" || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                seen_capture_udp_out=1
+                continue
+                ;;
+            '# NFQWS2_UDP_PKT_IN='*)
+                [ "$in_profiles" -eq 0 ] && [ "$seen_capture_udp_in" -eq 0 ] || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                capture_udp_in="${line#*=}"
+                validate_capture_packet_count "$capture_udp_in" || {
+                    preset_validation_fail INVALID_CAPTURE_POLICY "$logical_name"; return 1;
+                }
+                seen_capture_udp_in=1
+                continue
+                ;;
+            ''|'#'*|';'*) continue ;;
+        esac
+        case "$line" in *[[:cntrl:]]*) preset_validation_fail UNSAFE_OPTION_VALUE "$logical_name"; return 1 ;; esac
+        case "$line" in --ipcache*) preset_validation_fail FORBIDDEN_IPCACHE_OPTION "$logical_name"; return 1 ;; esac
+
+        case "$line" in
+            --lua-init=*)
+                [ "$in_profiles" -eq 0 ] || { preset_validation_fail GLOBAL_OPTION_AFTER_PROFILE "$logical_name"; return 1; }
+                raw="${line#--lua-init=}"
+                validate_preset_dependency lua "$raw" || return 1
+                lua_count=$((lua_count + 1))
+                ;;
+            --blob=*)
+                [ "$in_profiles" -eq 0 ] || { preset_validation_fail GLOBAL_OPTION_AFTER_PROFILE "$logical_name"; return 1; }
+                raw="${line#--blob=}"
+                blob_name="${raw%%:*}"
+                case "$blob_name" in ''|*[!A-Za-z0-9_.-]*) preset_validation_fail INVALID_BLOB "$logical_name"; return 1 ;; esac
+                case "$declared_blobs" in
+                    *"|$blob_name|"*) preset_validation_fail INVALID_BLOB "$logical_name"; return 1 ;;
+                esac
+                case "$raw" in
+                    *:@bin/*) validate_preset_dependency blob "${raw##*:}" || return 1 ;;
+                    *:@/*) validate_preset_dependency blob "${raw##*:}" || return 1 ;;
+                    *:0x*) ;;
+                    *) preset_validation_fail INVALID_BLOB "$logical_name"; return 1 ;;
+                esac
+                declared_blobs="$declared_blobs$blob_name|"
+                blob_count=$((blob_count + 1))
+                ;;
+            --ctrack-disable=*)
+                [ "$in_profiles" -eq 0 ] || { preset_validation_fail GLOBAL_OPTION_AFTER_PROFILE "$logical_name"; return 1; }
+                case "${line#*=}" in 0|1) ;; *) preset_validation_fail INVALID_OPTION_VALUE "$logical_name"; return 1 ;; esac
+                ;;
+            --comment|--comment=*)
+                # Upstream deliberately treats this as a no-op marker.  It is
+                # still preserved as one argv element so imported strategies
+                # round-trip exactly and nfqws2 remains the final authority.
+                ;;
+            --name=*)
+                [ "$profile_name" -eq 0 ] || { preset_validation_fail PROFILE_DUPLICATE_NAME "$logical_name"; return 1; }
+                [ -n "${line#--name=}" ] || { preset_validation_fail PROFILE_NAME_MISSING "$logical_name"; return 1; }
+                in_profiles=1; profile_open=1; profile_name=1
+                ;;
+            --skip)
+                in_profiles=1; profile_open=1
+                [ "$profile_skip" -eq 0 ] || { preset_validation_fail PROFILE_DUPLICATE_SKIP "$logical_name"; return 1; }
+                profile_skip=1
+                ;;
+            --filter-tcp=*|--filter-udp=*)
+                in_profiles=1; profile_open=1
+                validate_filter_ports "${line#*=}" || { preset_validation_fail INVALID_FILTER "$logical_name"; return 1; }
+                profile_filter=$((profile_filter + 1))
+                ;;
+            --filter-l7=*)
+                in_profiles=1; profile_open=1
+                validate_l7_filter "${line#*=}" || { preset_validation_fail INVALID_FILTER "$logical_name"; return 1; }
+                profile_filter=$((profile_filter + 1))
+                ;;
+            --filter-l3=*)
+                in_profiles=1; profile_open=1
+                case "${line#*=}" in ipv4|ipv6|ipv4,ipv6|ipv6,ipv4) ;; *) preset_validation_fail INVALID_FILTER "$logical_name"; return 1 ;; esac
+                ;;
+            --hostlist=*|--hostlist-exclude=*|--ipset=*|--ipset-exclude=*)
+                in_profiles=1; profile_open=1
+                option="${line%%=*}"; raw="${line#*=}"
+                validate_preset_dependency list "$raw" || return 1
+                ;;
+            --hostlist-domains=*|--hostlist-exclude-domains=*|--ipset-ip=*|--ipset-exclude-ip=*|--out-range=*|--in-range=*|--payload=*)
+                in_profiles=1; profile_open=1
+                [ -n "${line#*=}" ] || {
+                    preset_validation_fail INVALID_OPTION_VALUE "$logical_name"; return 1;
+                }
+                ;;
+            --lua-desync=*)
+                in_profiles=1; profile_open=1
+                [ -n "${line#*=}" ] || {
+                    preset_validation_fail PROFILE_STRATEGY_MISSING "$logical_name"; return 1;
+                }
+                validate_strategy_blob_references "$line" || return 1
+                profile_strategy=$((profile_strategy + 1))
+                ;;
+            --new|--new=*)
+                [ "$profile_open" -eq 1 ] || { preset_validation_fail EMPTY_PROFILE "$logical_name"; return 1; }
+                [ "$profile_filter" -gt 0 ] || { preset_validation_fail PROFILE_FILTER_MISSING "$logical_name"; return 1; }
+                [ "$profile_strategy" -gt 0 ] || { preset_validation_fail PROFILE_STRATEGY_MISSING "$logical_name"; return 1; }
+                profiles=$((profiles + 1)); profile_open=0; profile_name=0; profile_filter=0; profile_strategy=0; profile_skip=0
+                case "$line" in
+                    --new=*)
+                        [ -n "${line#--new=}" ] || { preset_validation_fail PROFILE_NAME_MISSING "$logical_name"; return 1; }
+                        in_profiles=1; profile_open=1; profile_name=1
+                        ;;
+                esac
+                ;;
+            --wf-*|*windivert*) preset_validation_fail WINDOWS_OPTION_FORBIDDEN "$logical_name"; return 1 ;;
+            *) preset_validation_fail UNKNOWN_OPTION "$logical_name"; return 1 ;;
+        esac
+    done < "$preset_file"
+
+    [ "$profile_open" -eq 1 ] || { preset_validation_fail TRAILING_NEW "$logical_name"; return 1; }
+    [ "$profile_filter" -gt 0 ] || { preset_validation_fail PROFILE_FILTER_MISSING "$logical_name"; return 1; }
+    [ "$profile_strategy" -gt 0 ] || { preset_validation_fail PROFILE_STRATEGY_MISSING "$logical_name"; return 1; }
+    profiles=$((profiles + 1))
+    # Blobs are optional in upstream: pass-through and strategies with only
+    # inline parameters are valid without one.  Referenced blobs are still
+    # checked individually by validate_strategy_blob_references().
+    [ "$profiles" -gt 0 ] && [ "$lua_count" -gt 0 ] || {
+        preset_validation_fail NO_VALID_OPTIONS "$logical_name"; return 1;
+    }
+    case "$seen_capture_tcp_out$seen_capture_tcp_in$seen_capture_udp_out$seen_capture_udp_in" in
+        0000)
+            # Legacy/native nfqws2 files do not know about the Android NFQUEUE
+            # packet budget.  Keep the compatibility default explicit here;
+            # the app importer persists the same values into newly owned TXT.
+            capture_tcp_out=20; capture_tcp_in=10
+            capture_udp_out=20; capture_udp_in=10
+            ;;
+        1111) ;;
+        *) preset_validation_fail CAPTURE_POLICY_MISSING "$logical_name"; return 1 ;;
+    esac
+    COMPILED_TCP_PKT_OUT="$capture_tcp_out"
+    COMPILED_TCP_PKT_IN="$capture_tcp_in"
+    COMPILED_UDP_PKT_OUT="$capture_udp_out"
+    COMPILED_UDP_PKT_IN="$capture_udp_in"
+}
+
+collect_capture_ports() {
+    # The port union is two short lines, so it is carried in shell variables
+    # instead of a scratch file: a file here would need its own symlink and
+    # existence guards, and the awk output never justified that surface.
+    local preset_file="$1" captured rest newline
+    newline='
+'
+    captured="$(awk '
+        function add_interval(family, first, last) {
+            if (family == "tcp") {
+                tcp_count++; tcp_first[tcp_count]=first+0; tcp_last[tcp_count]=last+0
+            } else {
+                udp_count++; udp_first[udp_count]=first+0; udp_last[udp_count]=last+0
+            }
+        }
+        function add_list(family, list, count, values, i, token, negated, parts, pair, first, last) {
+            count=split(list, values, ",")
+            for (i=1; i<=count; i++) {
+                token=values[i]
+                if (token == "*") { add_interval(family, 1, 65535); continue }
+                negated=(substr(token, 1, 1) == "~")
+                if (negated) token=substr(token, 2)
+                parts=split(token, pair, "-")
+                first=pair[1]+0
+                last=(parts == 1 ? first : pair[2]+0)
+                # pf_parse() turns the exact 0-0 filter into deny-all even
+                # when it was written with `~`; real TCP/UDP ports are never
+                # zero, so it contributes no kernel capture interval.
+                if (first == 0 && last == 0) {
+                    continue
+                } else if (negated) {
+                    if (first > 1) add_interval(family, 1, first-1)
+                    if (last < 65535) add_interval(family, last+1, 65535)
+                } else {
+                    if (first == 0) first=1
+                    add_interval(family, first, last)
+                }
+            }
+        }
+        function flush_profile() {
+            if (!profile_skip) {
+                if (profile_tcp != "") add_list("tcp", profile_tcp)
+                if (profile_udp != "") add_list("udp", profile_udp)
+                if (profile_voice) add_list("udp", "3478,5349,19302")
+            }
+            profile_skip=0; profile_tcp=""; profile_udp=""; profile_voice=0
+        }
+        function normalize(first, last, count, i, j, swap, out, have, lo, hi, token) {
+            for (i=1; i<=count; i++) for (j=i+1; j<=count; j++)
+                if (first[j] < first[i] || (first[j] == first[i] && last[j] < last[i])) {
+                    swap=first[i]; first[i]=first[j]; first[j]=swap
+                    swap=last[i]; last[i]=last[j]; last[j]=swap
+                }
+            out=""; have=0
+            for (i=1; i<=count; i++) {
+                if (!have) { lo=first[i]; hi=last[i]; have=1; continue }
+                if (first[i] <= hi+1) {
+                    if (last[i] > hi) hi=last[i]
+                    continue
+                }
+                token=(lo == hi ? lo : lo ":" hi)
+                out=out (out == "" ? "" : ",") token
+                lo=first[i]; hi=last[i]
+            }
+            if (have) {
+                token=(lo == hi ? lo : lo ":" hi)
+                out=out (out == "" ? "" : ",") token
+            }
+            return out
+        }
+        {
+            sub(/\r$/, "")
+            if ($0 ~ /^--new(=.*)?$/) { flush_profile(); next }
+            if ($0 == "--skip") { profile_skip=1; next }
+            if ($0 ~ /^--filter-tcp=/) {
+                value=substr($0, length("--filter-tcp=") + 1)
+                profile_tcp=profile_tcp (profile_tcp == "" ? "" : ",") value
+                next
+            }
+            if ($0 ~ /^--filter-udp=/) {
+                value=substr($0, length("--filter-udp=") + 1)
+                profile_udp=profile_udp (profile_udp == "" ? "" : ",") value
+                next
+            }
+            if ($0 ~ /^--filter-l7=/) {
+                value=substr($0, length("--filter-l7=") + 1)
+                count=split(value, l7_values, ",")
+                for (i=1; i<=count; i++)
+                    if (l7_values[i] == "stun" || l7_values[i] == "discord") profile_voice=1
+            }
+        }
+        END {
+            flush_profile()
+            # Key each line so an empty union stays distinguishable after
+            # command substitution strips trailing newlines.
+            print "tcp=" normalize(tcp_first, tcp_last, tcp_count)
+            print "udp=" normalize(udp_first, udp_last, udp_count)
+        }
+    ' "$preset_file")" || return 1
+    case "$captured" in
+        "tcp="*"$newline""udp="*) ;;
+        *) return 1 ;;
+    esac
+    rest="${captured#*"$newline"}"
+    case "$rest" in *"$newline"*) return 1 ;; esac
+    COMPILED_TCP_PORTS="${captured%%"$newline"*}"
+    COMPILED_TCP_PORTS="${COMPILED_TCP_PORTS#tcp=}"
+    COMPILED_UDP_PORTS="${rest#udp=}"
+    [ -n "$COMPILED_TCP_PORTS$COMPILED_UDP_PORTS" ] || {
+        preset_validation_fail NO_ENABLED_PROFILE
+        return 1
+    }
+}
+
+# The exact configuration surface the compiled argv consumes. Binding the
+# artifact to this signature instead of the runtime.ini byte identity keeps a
+# compiled preset current across every runtime edit that does not change these
+# scalars — in particular a selection change, which only moves active_preset.
+current_config_signature() {
+    CONFIG_SIG_CURRENT="qnum=${QNUM:-200};mark=${DESYNC_MARK:-0x40000000};uid=${NFQWS_UID:-0:0};log=${LOG_MODE:-none}"
+}
+
+compile_preset_artifact() {
+    local preset_file="$1" logical_name="$2" artifact="$3" tmp source_sha size
+    local install_generation=unbound
+    local install_archive_sha256=0000000000000000000000000000000000000000000000000000000000000000
+    # Retire any previous artifact's metadata proof first: an early failure
+    # here must not leave a stale proof that lets a later run_compiled_artifact
+    # skip its own authentication.
+    COMPILED_METADATA_FOR=""
+    validate_preset_file "$preset_file" "$logical_name" || return 1
+    collect_capture_ports "$preset_file" || return 1
+    source_sha="$(sha256sum "$preset_file" 2>/dev/null)" || return 1
+    source_sha="${source_sha%% *}"
+    is_lower_sha256 "$source_sha" || return 1
+    current_config_signature
+    # Offline preview/qualification may compile outside an installed
+    # generation; such an artifact is deliberately never reusable by a live
+    # launcher. Installed callers bind both immutable generation dimensions.
+    if read_install_generation_meta 2>/dev/null; then
+        install_generation="$INSTALL_META_GENERATION"
+        install_archive_sha256="$INSTALL_META_ARCHIVE_SHA256"
+    fi
+    tmp="$artifact.tmp.$$"
+    [ ! -e "$tmp" ] && [ ! -L "$tmp" ] || return 1
+    umask 077
+    {
+        printf 'Z2_ARGV\t4\n'
+        printf 'PRESET\t%s\nSHA256\t%s\nCONFIG_SIG\t%s\nINSTALL_GENERATION\t%s\nINSTALL_ARCHIVE_SHA256\t%s\nTCP\t%s\nUDP\t%s\n' \
+            "$logical_name" "$source_sha" "$CONFIG_SIG_CURRENT" "$install_generation" \
+            "$install_archive_sha256" "$COMPILED_TCP_PORTS" "$COMPILED_UDP_PORTS"
+        printf 'TCP_PKT_OUT\t%s\nTCP_PKT_IN\t%s\nUDP_PKT_OUT\t%s\nUDP_PKT_IN\t%s\nARGS\n' \
+            "$COMPILED_TCP_PKT_OUT" "$COMPILED_TCP_PKT_IN" \
+            "$COMPILED_UDP_PKT_OUT" "$COMPILED_UDP_PKT_IN"
+        printf '%s\n' "--qnum=${QNUM:-200}" "--fwmark=${DESYNC_MARK:-0x40000000}" "--uid=${NFQWS_UID:-0:0}"
+        case "${LOG_MODE:-none}" in
+            android) printf '%s\n' '--debug=android' ;;
+            file) printf '%s\n' "--debug=@${DEBUG_LOG}" ;;
+            syslog) printf '%s\n' '--debug=syslog' ;;
+            none) ;;
+            *) return 1 ;;
+        esac
+        awk \
+            -v lua_prefix="$ZAPRET_DIR/lua/" \
+            -v bin_prefix="$ZAPRET_DIR/bin/" \
+            -v lists_prefix="$LISTS_DIR/" '
+            {
+                sub(/\r$/, "")
+                if ($0 == "" || $0 ~ /^[#;]/) next
+                if ($0 ~ /^--lua-init=@lua\//) {
+                    sub(/^--lua-init=@lua\//, "--lua-init=@" lua_prefix)
+                } else if ($0 ~ /^--blob=.*:@bin\//) {
+                    sub(/:@bin\//, ":@" bin_prefix)
+                } else if ($0 ~ /^--(hostlist|hostlist-exclude|ipset|ipset-exclude)=lists\//) {
+                    sub(/=lists\//, "=" lists_prefix)
+                }
+                print
+            }
+        ' "$preset_file"
+    } > "$tmp" || { rm -f "$tmp"; return 1; }
+    size="$(wc -c < "$tmp" 2>/dev/null)" || { rm -f "$tmp"; return 1; }
+    case "$size" in ''|*[!0-9]*) rm -f "$tmp"; return 1 ;; esac
+    [ "$size" -gt 0 ] && [ "$size" -le "$COMPILED_ARGV_MAX_BYTES" ] || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$artifact" || { rm -f "$tmp"; return 1; }
+    COMPILED_ARGV_FILE="$artifact"
+    # The compiler is now the authority for every metadata field the artifact
+    # carries; publishing them here lets callers skip a full re-parse.
+    COMPILED_PRESET="$logical_name"
+    COMPILED_SOURCE_SHA256="$source_sha"
+    COMPILED_CONFIG_SIG="$CONFIG_SIG_CURRENT"
+    COMPILED_INSTALL_GENERATION="$install_generation"
+    COMPILED_INSTALL_ARCHIVE_SHA256="$install_archive_sha256"
+    COMPILED_METADATA_FOR="$artifact"
+}
+
+compiled_artifact_binding_current() {
+    local artifact="$1" preset_file="$2" logical_name="$3"
+    local current_source_sha
+    read_compiled_artifact_metadata "$artifact" || return 1
+    [ "$COMPILED_PRESET" = "$logical_name" ] || return 1
+    read_install_generation_meta || return 1
+    [ "$COMPILED_INSTALL_GENERATION" = "$INSTALL_META_GENERATION" ] &&
+        [ "$COMPILED_INSTALL_ARCHIVE_SHA256" = "$INSTALL_META_ARCHIVE_SHA256" ] ||
+        return 1
+    current_config_signature
+    [ "$COMPILED_CONFIG_SIG" = "$CONFIG_SIG_CURRENT" ] || return 1
+    current_source_sha="$(sha256sum "$preset_file" 2>/dev/null)" || return 1
+    current_source_sha="${current_source_sha%% *}"
+    [ "$current_source_sha" = "$COMPILED_SOURCE_SHA256" ]
+}
+
+COMPILED_VALIDATION_RECEIPT_VERSION=1
+
+read_compiled_validation_receipt() {
+    local path="${1:-$COMPILED_VALIDATION_RECEIPT}" size extra
+    local version_line generation_line archive_line argv_line
+    VALIDATED_INSTALL_GENERATION=
+    VALIDATED_INSTALL_ARCHIVE_SHA256=
+    VALIDATED_ARGV_SHA256=
+    path_meta_capture "$path"
+    if state_file_is_secure "$path" && path_mode_is_0600 "$path" &&
+        path_nlink_is_one "$path" && path_meta_size_read "$path"; then
+        size="$Z2_PATH_SIZE"
+        path_meta_retire
+    else
+        path_meta_retire
+        return 1
+    fi
+    is_decimal "$size" && [ "$size" -gt 0 ] 2>/dev/null &&
+        [ "$size" -le 1024 ] 2>/dev/null || return 1
+    {
+        IFS= read -r version_line &&
+        IFS= read -r generation_line &&
+        IFS= read -r archive_line &&
+        IFS= read -r argv_line
+        if IFS= read -r extra; then return 1; fi
+    } < "$path" || return 1
+    [ "$version_line" = "version=$COMPILED_VALIDATION_RECEIPT_VERSION" ] || return 1
+    case "$generation_line" in install_generation=*) ;; *) return 1 ;; esac
+    case "$archive_line" in install_archive_sha256=*) ;; *) return 1 ;; esac
+    case "$argv_line" in argv_sha256=*) ;; *) return 1 ;; esac
+    VALIDATED_INSTALL_GENERATION="${generation_line#*=}"
+    VALIDATED_INSTALL_ARCHIVE_SHA256="${archive_line#*=}"
+    VALIDATED_ARGV_SHA256="${argv_line#*=}"
+    is_safe_token "$VALIDATED_INSTALL_GENERATION" &&
+        is_lower_sha256 "$VALIDATED_INSTALL_ARCHIVE_SHA256" &&
+        is_lower_sha256 "$VALIDATED_ARGV_SHA256"
+}
+
+# A cache slot carries its receipt as a sibling; every other artifact uses the
+# canonical receipt slot.
+validation_receipt_path_for() {
+    case "$1" in
+        "$STATE_DIR"/argv-cache.*.argv) Z2_RECEIPT_PATH="$1.validated" ;;
+        *) Z2_RECEIPT_PATH="$COMPILED_VALIDATION_RECEIPT" ;;
+    esac
+}
+
+compiled_validation_receipt_current() {
+    local artifact="$1" receipt="${2:-}" argv_sha256
+    [ -n "$receipt" ] || {
+        validation_receipt_path_for "$artifact"
+        receipt="$Z2_RECEIPT_PATH"
+    }
+    read_install_generation_meta || return 1
+    read_compiled_validation_receipt "$receipt" || return 1
+    [ "$VALIDATED_INSTALL_GENERATION" = "$INSTALL_META_GENERATION" ] &&
+        [ "$VALIDATED_INSTALL_ARCHIVE_SHA256" = "$INSTALL_META_ARCHIVE_SHA256" ] ||
+        return 1
+    argv_sha256="$(sha256sum "$artifact" 2>/dev/null)" || return 1
+    argv_sha256="${argv_sha256%% *}"
+    [ "$argv_sha256" = "$VALIDATED_ARGV_SHA256" ]
+}
+
+write_compiled_validation_receipt() {
+    local artifact="$1" receipt="${2:-}" argv_sha256 tmp
+    [ -n "$receipt" ] || {
+        validation_receipt_path_for "$artifact"
+        receipt="$Z2_RECEIPT_PATH"
+    }
+    tmp="$receipt.tmp.$$"
+    read_install_generation_meta || return 1
+    argv_sha256="$(sha256sum "$artifact" 2>/dev/null)" || return 1
+    argv_sha256="${argv_sha256%% *}"
+    is_lower_sha256 "$argv_sha256" || return 1
+    state_file_target_is_safe "$receipt" || return 1
+    state_path_is_managed_file "$tmp" || return 1
+    [ ! -e "$tmp" ] && [ ! -L "$tmp" ] || return 1
+    umask 077
+    {
+        printf 'version=%s\n' "$COMPILED_VALIDATION_RECEIPT_VERSION"
+        printf 'install_generation=%s\n' "$INSTALL_META_GENERATION"
+        printf 'install_archive_sha256=%s\n' "$INSTALL_META_ARCHIVE_SHA256"
+        printf 'argv_sha256=%s\n' "$argv_sha256"
+    } > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$receipt" || {
+            rm -f "$tmp"
+            return 1
+        }
+}
+
+# Validated-artifact cache: one flat STATE_DIR slot per exact preset content
+# identity, so the managed-file policy applies unchanged. STATE_DIR is a
+# root-owned 0700 directory and slots are only ever written with their dry-run
+# receipt by a lock holder, so a hit consumes the slot in place — no copy into
+# the canonical path and no receipt recomputation. The launcher still
+# validates every argv line at exec time; anything stale or damaged misses.
+# A restored slot is adopted as the launch artifact, so it must satisfy exactly
+# the binding the launcher re-checks — nothing weaker. Screening it on a subset
+# (logical name, source digest, config signature) accepted a slot compiled by a
+# *previous* installation generation, which zapret-start.sh then refused with
+# "compiled preset source binding changed before launch". That is not a
+# transient disagreement: the cache is keyed by the preset's source digest, so
+# every later start restored the same stale slot and hit the same refusal, and
+# the service could not be started at all until the cache was deleted by hand.
+# The two checks are the same check now, so a slot this accepts cannot be one
+# the launcher rejects.
+compiled_cache_restore() {
+    local preset_file="$1" logical_name="$2" slot
+    COMPILED_CACHE_SOURCE_SHA="$(sha256sum "$preset_file" 2>/dev/null)" || return 1
+    COMPILED_CACHE_SOURCE_SHA="${COMPILED_CACHE_SOURCE_SHA%% *}"
+    is_lower_sha256 "$COMPILED_CACHE_SOURCE_SHA" || return 1
+    slot="$STATE_DIR/argv-cache.$COMPILED_CACHE_SOURCE_SHA.argv"
+    state_file_is_secure "$slot" || return 1
+    compiled_artifact_binding_current "$slot" "$preset_file" "$logical_name" || return 1
+    [ "$COMPILED_SOURCE_SHA256" = "$COMPILED_CACHE_SOURCE_SHA" ] || return 1
+    COMPILED_ARGV_FILE="$slot"
+    COMPILED_METADATA_FOR="$slot"
+    return 0
+}
+
+compiled_cache_store() {
+    local artifact="$1" source_sha="$2" slot tmp keep
+    is_lower_sha256 "$source_sha" || return 1
+    slot="$STATE_DIR/argv-cache.$source_sha.argv"
+    # A slot pinned as the live rollback source must survive both the
+    # overflow sweep and an aliasing overwrite.
+    keep="${Z2_DAEMON_REPLACE_ROLLBACK_ARTIFACT:-}"
+    [ "$slot" != "$keep" ] || return 0
+    # Crude, self-healing bound: a full sweep on overflow beats bookkeeping.
+    set -- "$STATE_DIR"/argv-cache.*.argv
+    if [ "$#" -gt 16 ]; then
+        for tmp in "$STATE_DIR"/argv-cache.*.argv; do
+            [ "$tmp" != "$keep" ] || continue
+            rm -f "$tmp" "$tmp.validated" 2>/dev/null
+        done
+    fi
+    state_file_target_is_safe "$slot" || return 1
+    tmp="$slot.tmp.$$"
+    rm -f "$tmp" 2>/dev/null
+    umask 077
+    cp "$artifact" "$tmp" && mv -f "$tmp" "$slot" || {
+        rm -f "$tmp" 2>/dev/null
+        return 1
+    }
+    write_compiled_validation_receipt "$slot" "$slot.validated"
+}
+
+ensure_compiled_artifact() {
+    local preset_file="$1" logical_name="$2" artifact="$3"
+    if compiled_artifact_binding_current "$artifact" "$preset_file" "$logical_name"; then
+        COMPILED_ARGV_FILE="$artifact"
+        return 0
+    fi
+    compiled_cache_restore "$preset_file" "$logical_name" && return 0
+    compile_preset_artifact "$preset_file" "$logical_name" "$artifact"
+}
+
+# Header-only projection of read_compiled_artifact_metadata for callers that
+# already hold a content proof (the dry-run receipt pins the artifact's exact
+# sha256): every metadata field lives before ARGS, and the launcher re-checks
+# each argv line itself, so re-walking the argv body here proves nothing.
+read_compiled_artifact_header() {
+    local artifact="$1" mode=header
+    read_compiled_artifact_metadata "$artifact" "$mode"
+}
+
+read_compiled_artifact_metadata() {
+    local artifact="$1" mode="${2:-full}" line stage=0 seen_preset=0 seen_sha=0 seen_config_sig=0 seen_tcp=0 seen_udp=0
+    local seen_install_generation=0 seen_install_archive=0
+    local seen_tcp_out=0 seen_tcp_in=0 seen_udp_out=0 seen_udp_in=0 size tab key value
+    COMPILED_METADATA_FOR=""
+    COMPILED_PRESET=; COMPILED_SOURCE_SHA256=; COMPILED_CONFIG_SIG=; COMPILED_TCP_PORTS=; COMPILED_UDP_PORTS=
+    COMPILED_INSTALL_GENERATION=; COMPILED_INSTALL_ARCHIVE_SHA256=
+    COMPILED_TCP_PKT_OUT=; COMPILED_TCP_PKT_IN=; COMPILED_UDP_PKT_OUT=; COMPILED_UDP_PKT_IN=
+    [ -f "$artifact" ] && [ ! -L "$artifact" ] && [ -r "$artifact" ] || return 1
+    size="$(wc -c < "$artifact" 2>/dev/null)" || return 1
+    case "$size" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$size" -gt 0 ] && [ "$size" -le "$COMPILED_ARGV_MAX_BYTES" ] || return 1
+    tab='	'
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$stage" -eq 0 ]; then
+            [ "$line" = "Z2_ARGV${tab}4" ] || return 1
+            stage=1
+            continue
+        fi
+        if [ "$stage" -eq 1 ]; then
+            [ "$line" != ARGS ] || {
+                stage=2
+                [ "$mode" = full ] || break
+                continue
+            }
+            case "$line" in *"$tab"*) ;; *) return 1 ;; esac
+            key="${line%%"$tab"*}"; value="${line#*"$tab"}"
+            case "$key" in
+                PRESET) [ "$seen_preset" -eq 0 ] || return 1; COMPILED_PRESET="$value"; seen_preset=1 ;;
+                SHA256) [ "$seen_sha" -eq 0 ] || return 1; COMPILED_SOURCE_SHA256="$value"; seen_sha=1 ;;
+                CONFIG_SIG) [ "$seen_config_sig" -eq 0 ] || return 1; COMPILED_CONFIG_SIG="$value"; seen_config_sig=1 ;;
+                INSTALL_GENERATION) [ "$seen_install_generation" -eq 0 ] || return 1; COMPILED_INSTALL_GENERATION="$value"; seen_install_generation=1 ;;
+                INSTALL_ARCHIVE_SHA256) [ "$seen_install_archive" -eq 0 ] || return 1; COMPILED_INSTALL_ARCHIVE_SHA256="$value"; seen_install_archive=1 ;;
+                TCP) [ "$seen_tcp" -eq 0 ] || return 1; COMPILED_TCP_PORTS="$value"; seen_tcp=1 ;;
+                UDP) [ "$seen_udp" -eq 0 ] || return 1; COMPILED_UDP_PORTS="$value"; seen_udp=1 ;;
+                TCP_PKT_OUT) [ "$seen_tcp_out" -eq 0 ] || return 1; COMPILED_TCP_PKT_OUT="$value"; seen_tcp_out=1 ;;
+                TCP_PKT_IN) [ "$seen_tcp_in" -eq 0 ] || return 1; COMPILED_TCP_PKT_IN="$value"; seen_tcp_in=1 ;;
+                UDP_PKT_OUT) [ "$seen_udp_out" -eq 0 ] || return 1; COMPILED_UDP_PKT_OUT="$value"; seen_udp_out=1 ;;
+                UDP_PKT_IN) [ "$seen_udp_in" -eq 0 ] || return 1; COMPILED_UDP_PKT_IN="$value"; seen_udp_in=1 ;;
+                *) return 1 ;;
+            esac
+            continue
+        fi
+        case "$line" in --*) ;; *) return 1 ;; esac
+    done < "$artifact"
+    [ "$stage" -eq 2 ] &&
+        [ "$seen_preset$seen_sha$seen_config_sig$seen_install_generation$seen_install_archive$seen_tcp$seen_udp$seen_tcp_out$seen_tcp_in$seen_udp_out$seen_udp_in" = 11111111111 ] ||
+        return 1
+    is_safe_preset_file_name "$COMPILED_PRESET" || return 1
+    case "$COMPILED_SOURCE_SHA256" in *[!0-9a-f]*|'') return 1 ;; esac
+    [ "${#COMPILED_SOURCE_SHA256}" -eq 64 ] || return 1
+    case "$COMPILED_CONFIG_SIG" in qnum=*";mark="*";uid="*";log="*) ;; *) return 1 ;; esac
+    [ "${#COMPILED_CONFIG_SIG}" -le 160 ] || return 1
+    case "$COMPILED_CONFIG_SIG" in *[[:cntrl:]]*) return 1 ;; esac
+    is_safe_token "$COMPILED_INSTALL_GENERATION" || return 1
+    is_lower_sha256 "$COMPILED_INSTALL_ARCHIVE_SHA256" || return 1
+    [ -z "$COMPILED_TCP_PORTS" ] ||
+        validate_capture_ports "$COMPILED_TCP_PORTS" || return 1
+    [ -z "$COMPILED_UDP_PORTS" ] ||
+        validate_capture_ports "$COMPILED_UDP_PORTS" || return 1
+    [ -n "$COMPILED_TCP_PORTS$COMPILED_UDP_PORTS" ] || return 1
+    validate_capture_packet_count "$COMPILED_TCP_PKT_OUT" || return 1
+    validate_capture_packet_count "$COMPILED_TCP_PKT_IN" || return 1
+    validate_capture_packet_count "$COMPILED_UDP_PKT_OUT" || return 1
+    validate_capture_packet_count "$COMPILED_UDP_PKT_IN" || return 1
+    COMPILED_METADATA_FOR="$artifact"
+}
+
+run_compiled_artifact() {
+    local artifact="$1" mode="$2" line in_args=0
+    # Every launch path has already authenticated this exact artifact via a
+    # binding or metadata read in the same process; re-parse only when that
+    # proof is missing. The argv loop below still validates each line.
+    [ "${COMPILED_METADATA_FOR:-}" = "$artifact" ] ||
+        read_compiled_artifact_metadata "$artifact" || return 1
+    set --
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$in_args" -eq 0 ]; then [ "$line" != ARGS ] || in_args=1; continue; fi
+        case "$line" in
+            --ipcache*) return 1 ;;
+            --*) set -- "$@" "$line" ;;
+            *) return 1 ;;
+        esac
+    done < "$artifact"
+    [ "$#" -gt 3 ] || return 1
+    case "$mode" in
+        dry-run) "$NFQWS2" --dry-run "$@" ;;
+        foreground) "$NFQWS2" "$@" ;;
+        daemon)
+            [ -n "${PIDFILE:-}" ] || return 1
+            "$NFQWS2" --daemon "--pidfile=$PIDFILE" "$@" >/dev/null 2>&1 &
+            LAUNCHED_PID=$!
+            ;;
+        background)
+            "$NFQWS2" "$@" >/dev/null 2>&1 &
+            LAUNCHED_PID=$!
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+preview_compiled_artifact_machine() {
+    local artifact="$1" logical_name="$2" line in_args=0 count=0
+    read_compiled_artifact_metadata "$artifact" || return 1
+    [ "$COMPILED_PRESET" = "$logical_name" ] || return 1
+    printf 'Z2_COMMAND_PREVIEW\t2\t%s\tTCP=%s\tUDP=%s\tTCP_OUT=%s\tTCP_IN=%s\tUDP_OUT=%s\tUDP_IN=%s\n' \
+        "$logical_name" "$COMPILED_TCP_PORTS" "$COMPILED_UDP_PORTS" \
+        "$COMPILED_TCP_PKT_OUT" "$COMPILED_TCP_PKT_IN" \
+        "$COMPILED_UDP_PKT_OUT" "$COMPILED_UDP_PKT_IN"
+    printf 'Z2_COMMAND_EXECUTABLE\t%s\n' "$NFQWS2"
+    # Preview is a pure projection of the packaged launcher contract. Runtime
+    # capability checks and binary execution belong to preflight/start.
+    printf 'Z2_COMMAND_ARGUMENT\t--daemon\n'
+    printf 'Z2_COMMAND_ARGUMENT\t--pidfile=%s\n' "$PIDFILE"
+    count=2
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$in_args" -eq 0 ]; then
+            [ "$line" != ARGS ] || in_args=1
+            continue
+        fi
+        case "$line" in --*) ;; *) return 1 ;; esac
+        printf 'Z2_COMMAND_ARGUMENT\t%s\n' "$line"
+        count=$((count + 1))
+    done < "$artifact"
+    [ "$count" -gt 3 ] || return 1
+    printf 'Z2_COMMAND_SUMMARY\t1\tcount=%s\n' "$count"
+}
+
+scan_presets_machine() {
+    local preset_file preset_name valid=0 quarantined=0 total=0
+    [ -d "$PRESETS_DIR" ] && [ ! -L "$PRESETS_DIR" ] || {
+        printf 'Z2_PRESET_ERROR\tPRESET_CATALOG_MISSING\n'; return 2;
+    }
+    for preset_file in "$PRESETS_DIR"/*.txt; do
+        [ -e "$preset_file" ] || [ -L "$preset_file" ] || continue
+        preset_name="${preset_file##*/}"
+        case "$preset_name" in _*) continue ;; esac
+        total=$((total + 1))
+        if validate_preset_file "$preset_file" "$preset_name"; then
+            valid=$((valid + 1)); printf 'Z2_PRESET\tVALID\tOK\t%s\n' "$preset_name"
+        else
+            quarantined=$((quarantined + 1)); printf 'Z2_PRESET\tQUARANTINED\t%s\t%s\n' "$PRESET_VALIDATION_CODE" "$preset_name"
+        fi
+    done
+    printf 'Z2_PRESET_SUMMARY\t1\tvalid=%s\tquarantined=%s\ttotal=%s\n' "$valid" "$quarantined" "$total"
+}
+
+# Runtime discovery is deliberately not package qualification. Published
+# presets were exhaustively qualified before release, and app-authored changes
+# are qualified before their atomic replacement. Listing therefore performs
+# only bounded directory-entry checks; the deep scanner remains a release/CI
+# boundary and must never occupy the APK's shared root transport.
+list_presets_machine() {
+    local preset_file preset_name ready=0 quarantined=0 total=0 reason
+    [ -d "$PRESETS_DIR" ] && [ ! -L "$PRESETS_DIR" ] || {
+        printf 'Z2_PRESET_ERROR\tPRESET_CATALOG_MISSING\n'; return 2;
+    }
+    for preset_file in "$PRESETS_DIR"/*.txt; do
+        [ -e "$preset_file" ] || [ -L "$preset_file" ] || continue
+        preset_name="${preset_file##*/}"
+        case "$preset_name" in _*) continue ;; esac
+        # Unsafe names are not representable in the app protocol and remain
+        # invisible rather than invalidating the complete trusted catalog.
+        is_safe_preset_file_name "$preset_name" || continue
+        total=$((total + 1))
+        reason=
+        if [ -L "$preset_file" ]; then
+            reason=PRESET_SYMLINK
+        elif [ ! -f "$preset_file" ]; then
+            reason=PRESET_MISSING
+        elif [ ! -s "$preset_file" ]; then
+            reason=PRESET_EMPTY
+        elif [ ! -r "$preset_file" ]; then
+            reason=PRESET_UNREADABLE
+        fi
+        if [ -z "$reason" ]; then
+            ready=$((ready + 1))
+            printf 'Z2_PRESET\tREADY\tOK\t%s\n' "$preset_name"
+        else
+            quarantined=$((quarantined + 1))
+            printf 'Z2_PRESET\tQUARANTINED\t%s\t%s\n' "$reason" "$preset_name"
+        fi
+    done
+    printf 'Z2_PRESET_SUMMARY\t2\tready=%s\tquarantined=%s\ttotal=%s\n' \
+        "$ready" "$quarantined" "$total"
+}
+
+validate_preset_machine() {
+    if validate_preset_file "$1" "$2"; then
+        printf 'Z2_PRESET_VALIDATION\t1\tOK\t%s\n' "$2"; return 0
+    fi
+    printf 'Z2_PRESET_VALIDATION\t0\t%s\t%s\n' "$PRESET_VALIDATION_CODE" "$2"; return 1
+}
+
+validate_strategy_catalog_file() {
+    local file="$1" line cr size section= seen='|' names=0 authors=0 labels=0 descriptions=0 blobs=0 strategies=0
+    [ -f "$file" ] && [ ! -L "$file" ] && [ -s "$file" ] && [ -r "$file" ] || return 1
+    size="$(wc -c < "$file" 2>/dev/null)" || return 1
+    case "$size" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$size" -le "$STRATEGY_CATALOG_MAX_BYTES" ] || return 1
+    cr="$Z2_CR"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%"$cr"}"
+        case "$line" in ''|'#'*|';'*) continue ;; esac
+        case "$line" in
+            '['*']')
+                [ -z "$section" ] || {
+                    [ "$names" -eq 1 ] && [ "$authors" -le 1 ] && [ "$labels" -le 1 ] &&
+                        [ "$descriptions" -le 1 ] && [ "$blobs" -le 1 ] && [ "$strategies" -gt 0 ] || return 1
+                }
+                section="${line#[}"; section="${section%]}"
+                case "$section" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; esac
+                case "$seen" in *"|$section|"*) return 1 ;; esac
+                seen="$seen$section|"; names=0; authors=0; labels=0; descriptions=0; blobs=0; strategies=0
+                ;;
+            'name = '*) [ -n "$section" ] && [ -n "${line#name = }" ] || return 1; names=$((names + 1)) ;;
+            'author = '*) [ -n "$section" ] && [ -n "${line#author = }" ] || return 1; authors=$((authors + 1)) ;;
+            'label = '*) [ -n "$section" ] && [ -n "${line#label = }" ] || return 1; labels=$((labels + 1)) ;;
+            'description = '*) [ -n "$section" ] && [ -n "${line#description = }" ] || return 1; descriptions=$((descriptions + 1)) ;;
+            'blobs = '*)
+                [ -n "$section" ] && [ -n "${line#blobs = }" ] || return 1
+                validate_strategy_blob_list "${line#blobs = }" || return 1
+                blobs=$((blobs + 1))
+                ;;
+            --lua-desync=*) [ -n "$section" ] && [ -n "${line#*=}" ] || return 1; case "$line" in *--ipcache*) return 1 ;; esac; strategies=$((strategies + 1)) ;;
+            *) return 1 ;;
+        esac
+    done < "$file"
+    [ -n "$section" ] && [ "$names" -eq 1 ] && [ "$authors" -le 1 ] && [ "$labels" -le 1 ] &&
+        [ "$descriptions" -le 1 ] && [ "$blobs" -le 1 ] && [ "$strategies" -gt 0 ]
+}
+
+# Strategy catalogs contain hundreds of sections. Keep this validation in the
+# current shell: a grep process for every `blobs =` row takes tens of seconds
+# on process-heavy Android devices and blocks every other root-backed screen.
+validate_strategy_blob_list() {
+    local remaining="$1" item
+    case "$remaining" in ''|,*|*,|*,,*) return 1 ;; esac
+    trim_config_value_in_place "$remaining"
+    [ "$CONFIG_VALUE_TRIMMED" = "$remaining" ] || return 1
+    while [ -n "$remaining" ]; do
+        item="${remaining%%,*}"
+        case "$remaining" in *','*) remaining="${remaining#*,}" ;; *) remaining="" ;; esac
+        trim_config_value_in_place "$item"
+        item="$CONFIG_VALUE_TRIMMED"
+        case "$item" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; esac
+    done
+    return 0
+}
+
+validate_strategy_catalogs_machine() {
+    local catalog
+    for catalog in tcp udp voice http80; do
+        validate_strategy_catalog_file "$ZAPRET_DIR/strategy-catalogs/$catalog.txt" || return 1
+    done
+}
+
+if [ "$COMMAND_BUILDER_CLI_MODE" -eq 1 ]; then
+    case "$1" in
+        --list-presets-machine)
+            [ "$#" -eq 2 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            list_presets_machine; exit $?
+            ;;
+        --scan-presets-machine)
+            [ "$#" -eq 2 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            scan_presets_machine; exit $?
+            ;;
+        --validate-preset-machine)
+            [ "$#" -eq 4 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            validate_preset_machine "$3" "$4"; exit $?
+            ;;
+        --preflight-preset-machine)
+            [ "$#" -eq 4 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            load_effective_core_config_readonly || { printf 'Z2_PRESET_ERROR\tRUNTIME_UNAVAILABLE\n'; exit 2; }
+            ensure_state_tmp_dir || { printf 'Z2_PRESET_ERROR\tRUNTIME_UNAVAILABLE\n'; exit 2; }
+            # The candidate is compiled into the canonical slot: once the app
+            # publishes the validated candidate under its final name, the
+            # binding (same content identity, same runtime.ini) is current and
+            # the receipt is fresh, so the restart that follows skips its own
+            # compile and dry-run instead of repeating this one. A candidate
+            # that is never published leaves a stale binding behind, which the
+            # next start simply recompiles.
+            state_path_is_managed_file "$COMPILED_ARGV_FILE" || { printf 'Z2_PRESET_ERROR\tRUNTIME_UNAVAILABLE\n'; exit 2; }
+            if compile_preset_artifact "$3" "$4" "$COMPILED_ARGV_FILE"; then
+                if run_compiled_artifact "$COMPILED_ARGV_FILE" dry-run >/dev/null 2>&1; then
+                    # The receipt is an optimization, never a gate: without it
+                    # the restart revalidates exactly as before.
+                    write_compiled_validation_receipt "$COMPILED_ARGV_FILE" || :
+                    printf 'Z2_PRESET_VALIDATION\t1\tOK\t%s\n' "$4"; exit 0
+                fi
+                # The compile replaced the canonical artifact and the dry-run
+                # then refused it; an artifact that never passed validation
+                # must not stay in the slot.
+                rm -f "$COMPILED_ARGV_FILE"
+            fi
+            [ "$PRESET_VALIDATION_CODE" != OK ] || PRESET_VALIDATION_CODE=NFQWS_DRY_RUN_FAILED
+            printf 'Z2_PRESET_VALIDATION\t0\t%s\t%s\n' "$PRESET_VALIDATION_CODE" "$4"; exit 1
+            ;;
+        --preview-preset-machine)
+            [ "$#" -eq 4 ] || { printf 'Z2_PRESET_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            load_effective_core_config_readonly || { printf 'Z2_PRESET_ERROR\tRUNTIME_UNAVAILABLE\n'; exit 2; }
+            ensure_state_tmp_dir || { printf 'Z2_PRESET_ERROR\tUNSAFE_PREVIEW_TARGET\n'; exit 2; }
+            artifact="${Z2_STATE_TMP}/preset-preview.$$"
+            state_file_target_is_safe "$artifact" || { printf 'Z2_PRESET_ERROR\tUNSAFE_PREVIEW_TARGET\n'; exit 2; }
+            if compile_preset_artifact "$3" "$4" "$artifact" &&
+                preview_compiled_artifact_machine "$artifact" "$4"; then
+                rm -f "$artifact"; exit 0
+            fi
+            [ "$PRESET_VALIDATION_CODE" != OK ] || PRESET_VALIDATION_CODE=PREVIEW_FAILED
+            rm -f "$artifact"
+            printf 'Z2_COMMAND_PREVIEW\t0\t%s\t%s\n' "$PRESET_VALIDATION_CODE" "$4"
+            exit 1
+            ;;
+        --validate-strategies-machine)
+            [ "$#" -eq 2 ] || { printf 'Z2_STRATEGIES_ERROR\tINVALID_ARGUMENTS\n'; exit 2; }
+            if validate_strategy_catalogs_machine; then printf 'Z2_STRATEGIES\tOK\n'; exit 0; fi
+            printf 'Z2_STRATEGIES_ERROR\tINVALID_CONFIGURATION\n'; exit 1
+            ;;
+    esac
+fi
+
+# --- ZDT-D fork: compile a preset into a bare argv file ---------------------
+# Usage: sh command-builder.sh zdt-compile <preset_file> <argv_out>
+# Compiles <preset_file> with compile_preset_artifact (same strict path as
+# upstream) and writes ONLY the ARGS section (one argv token per line) to
+# <argv_out>, so the Rust daemon can feed it straight to nfqws2. Metadata
+# lines (Z2_ARGV / PRESET / SHA256 / ports / --qnum / --fwmark / --uid /
+# --debug) are dropped; the daemon already supplies --qnum/--uid itself and
+# ignores the rest.
+if [ "${1:-}" = zdt-compile ]; then
+    [ "$#" -eq 3 ] || { echo "usage: zdt-compile <preset_file> <argv_out>" >&2; exit 2; }
+    preset_file="$2"
+    argv_out="$3"
+    logical_name="${preset_file##*/}"
+    case "$logical_name" in *.txt) ;; *) logical_name="$logical_name.txt" ;; esac
+
+    tmp="$argv_out.tmp.$$"
+    if compile_preset_artifact "$preset_file" "$logical_name" "$tmp"; then
+        # Extract the ARGS section: everything after the standalone "ARGS" line.
+        awk 'BEGIN{p=0} /^ARGS$/{p=1; next} p{print}' "$tmp" > "$argv_out" || {
+            rm -f "$tmp" "$argv_out"; exit 1
+        }
+        rm -f "$tmp"
+        exit 0
+    fi
+    rm -f "$tmp"
+    exit 1
+fi
