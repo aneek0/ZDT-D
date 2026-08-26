@@ -785,17 +785,21 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
     sections.push(all_tokens[start..].iter().map(|t| t.as_str()).collect());
 
     let mut out_tokens: Vec<String> = Vec::new();
+    // The daemon owns the hostlist/ipset selection only when the user actually
+    // picked lists. If the selection is empty, the preset manages its own
+    // --hostlist*/--ipset* entries (e.g. game-filter strategies ship built-in
+    // ipset filters inside --new sections), so we must keep them verbatim.
+    let user_picked = !injected_args.is_empty();
     for (i, section) in sections.iter().enumerate() {
-        // Drop any hardcoded selection args from the strategy; the daemon owns
-        // these now. --hostlist-auto= is data-driven and is KEPT.
         for arg in &injected_args {
             out_tokens.push(arg.clone());
         }
         for t in section.iter() {
-            if t.starts_with("--hostlist=")
-                || t.starts_with("--hostlist-exclude=")
-                || t.starts_with("--ipset=")
-                || t.starts_with("--ipset-exclude=")
+            if user_picked
+                && (t.starts_with("--hostlist=")
+                    || t.starts_with("--hostlist-exclude=")
+                    || t.starts_with("--ipset=")
+                    || t.starts_with("--ipset-exclude="))
             {
                 continue;
             }
@@ -822,8 +826,11 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
 }
 
 /// Reads the current profile config and extracts the domain (hostlist) and IP
-/// (ipset) selection already chosen there. Lets the daemon reuse a profile's
-/// existing selection without the client mirroring that state.
+/// (ipset) selection the user chose. The selection the daemon injects lives in
+/// the GLOBAL section (before the first `--new`); per-section `--hostlist*`/
+/// `--ipset*` entries inside `--new` blocks are part of the preset strategy
+/// itself (e.g. game-filter built-in ipset filters) and must NOT be treated as
+/// the user's selection, otherwise a re-apply would wrongly strip them.
 fn extract_selection_from_config(cfg: &Path) -> Selection {
     let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
     let mut sel = Selection {
@@ -838,6 +845,11 @@ fn extract_selection_from_config(cfg: &Path) -> Selection {
     let text = String::from_utf8_lossy(&data);
     for token in text.split_whitespace() {
         let t = token.trim();
+        // Stop at the first profile section: everything after belongs to the
+        // preset strategy, not the user's global selection.
+        if t == "--new" {
+            break;
+        }
         if let Some(rest) = t.strip_prefix("--hostlist=") {
             if let Some(name) = rest.strip_prefix(module_list) {
                 if !name.is_empty() {
