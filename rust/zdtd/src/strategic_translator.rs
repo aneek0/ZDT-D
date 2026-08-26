@@ -17,9 +17,15 @@
 //! --blob=fake_tls:@/data/adb/modules/ZDT-D/strategic/bin/fake_tls_1.bin
 //! ```
 //!
-//! `human_to_nfqws2` (the "retranslator") rewrites a human-readable preset into
-//! the absolute form understood by the nfqws2 core. `nfqws2_to_human` does the
-//! reverse so the UI can present a clean, editable preset view.
+//! The *forward* compile (human-readable preset -> absolute argv consumed by
+//! nfqws2) is now performed by the strict compiler mirrored from magisk-zapret2
+//! at `module_template/strategic/scripts/command-builder.sh` (invoked by the
+//! daemon at profile start via `zdt-compile`). This keeps ZDT-D in lock-step
+//! with upstream preset handling.
+//!
+//! `nfqws2_to_human` reconstructs the human-readable form from an absolute-path
+//! config so the UI can present a clean, editable preset view. `human_to_nfqws2`
+//! is retained for symmetry/tests but is no longer on the apply path.
 //!
 //! Both directions are line-oriented and preserve comments (`#`) and the
 //! `--new` section markers verbatim. No shell word-splitting is performed: each

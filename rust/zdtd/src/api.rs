@@ -972,16 +972,14 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                     data
                 };
 
-                // Compile the (possibly human-readable) preset into the absolute
-                // nfqws2 config the core consumes. Guarantees a clean,
-                // newline-separated file even when the source uses relative
-                // `@lua/`/`@bin/` references or inline line continuations.
-                let compiled = crate::strategic_translator::human_to_nfqws2(
-                    &String::from_utf8_lossy(&data),
-                );
-
                 let dst = prof_root.join("config/config.txt");
-                write_bytes_atomic(&dst, compiled.as_bytes())?;
+                // The nfqws2 core config is now the human-readable preset verbatim
+                // (with optional hostlist/ipset selection already injected by
+                // apply_selection_to_config above). The strict compiler
+                // (strategic/scripts/command-builder.sh, invoked by the daemon at
+                // profile start) turns this into the absolute argv nfqws2 consumes,
+                // mirroring magisk-zapret2. We no longer pre-compile here.
+                write_bytes_atomic(&dst, &data)?;
                 Ok(json!({"ok": true}))
             }
             ("POST", ["api", "strategicvar", "hostlists"]) => {

@@ -20,6 +20,11 @@ const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 const NFQWS2_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws2";
 const NFQWS2_BIN: &str = "/data/adb/modules/ZDT-D/bin/nfqws2";
+// Strict preset compiler mirrored from magisk-zapret2. The daemon compiles the
+// human-readable preset (config.txt) into the absolute argv nfqws2 consumes.
+const STRATEGIC_DIR: &str = "/data/adb/modules/ZDT-D/strategic";
+const COMMAND_BUILDER: &str = "/data/adb/modules/ZDT-D/strategic/scripts/command-builder.sh";
+const SH_BIN: &str = "/system/bin/sh";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
@@ -115,16 +120,31 @@ let resolved_mobile = count_valid_uid_pairs(&out_mobile)?;
     }
 
     let config_path = profile_dir.join("config/config.txt");
-let raw = fs::read_to_string(&config_path)
-    .with_context(|| format!("read {}", config_path.display()))?;
-let config_args = normalize_config_args(&raw);
+    let raw = fs::read_to_string(&config_path)
+        .with_context(|| format!("read {}", config_path.display()))?;
 
-let port_filter = crate::programs::nfqws_filters::extract_proto_port_filter(&raw);
-let port_filter_ref = if port_filter.is_empty() { None } else { Some(&port_filter) };
+    // Compile the human-readable preset into absolute argv via the strict
+    // compiler (mirrors magisk-zapret2). Falls back to the legacy in-process
+    // normalizer if the script is unavailable or fails, so an older module
+    // layout still starts nfqws2.
+    let argv_tmp = profile_dir.join("config/argv.txt");
+    let config_args = match compile_preset_argv(port_cfg.port, &config_path, &argv_tmp) {
+        Some(args) => args,
+        None => {
+            log::warn!(
+                "nfqws2[{}]: command-builder.sh unavailable, using built-in normalizer",
+                profile_name
+            );
+            normalize_config_args(&raw)
+        }
+    };
+
+    let port_filter = crate::programs::nfqws_filters::extract_proto_port_filter(&raw);
+    let port_filter_ref = if port_filter.is_empty() { None } else { Some(&port_filter) };
 
 
     crate::logging::user_info(&format!("zapret2[{profile_name}]: запуск"));
-spawn_nfqws(&profile_dir, port_cfg.port, &config_args, &log_path)?;
+    spawn_nfqws(&profile_dir, port_cfg.port, &config_args, &log_path)?;
 
     // Apply iptables:
     crate::logging::user_info(&format!("zapret2[{profile_name}]: iptables"));
@@ -182,6 +202,71 @@ fn spawn_nfqws(workdir: &Path, port: u16, config_args: &[String], log_path: &Pat
     }
 
     Ok(())
+}
+
+/// Compile the human-readable preset at `config_path` into one-argv-per-line
+/// form using the strict compiler mirrored from magisk-zapret2
+/// (`strategic/scripts/command-builder.sh zdt-compile`). Returns the argv
+/// tokens, or `None` if the script is missing or fails so the caller can fall
+/// back to the built-in normalizer.
+///
+/// The script emits `--qnum`/`--uid` itself; we strip those so `spawn_nfqws`
+/// remains the single owner of the queue number and uid it already supplies.
+fn compile_preset_argv(port: u16, config_path: &Path, argv_tmp: &Path) -> Option<Vec<String>> {
+    if !Path::new(COMMAND_BUILDER).is_file() {
+        return None;
+    }
+    let qnum = format!("{}", port);
+    let status = Command::new(SH_BIN)
+        .arg(COMMAND_BUILDER)
+        .arg("zdt-compile")
+        .arg(config_path)
+        .arg(argv_tmp)
+        .env("QNUM", &qnum)
+        .env("ZAPRET_DIR", STRATEGIC_DIR)
+        .env("PRESETS_DIR", format!("{}/strategicvar/nfqws2", STRATEGIC_DIR))
+        .env("LISTS_DIR", format!("{}/list", STRATEGIC_DIR))
+        .env("Z2_LUA_DIR", format!("{}/lua", STRATEGIC_DIR))
+        .env("Z2_BIN_DIR", format!("{}/bin", STRATEGIC_DIR))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    let status = match status {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("nfqws2: command-builder.sh spawn failed: {e}");
+            return None;
+        }
+    };
+    if !status.success() {
+        log::warn!("nfqws2: command-builder.sh exited {}", status);
+        return None;
+    }
+
+    let text = match fs::read_to_string(argv_tmp) {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("nfqws2: read argv tmp failed: {e}");
+            return None;
+        }
+    };
+    let mut args = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Drop tokens the daemon owns (spawn_nfqws re-adds --qnum/--uid).
+        if line.starts_with("--qnum=") || line.starts_with("--uid=") {
+            continue;
+        }
+        args.push(line.to_string());
+    }
+    if args.is_empty() {
+        return None;
+    }
+    Some(args)
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
