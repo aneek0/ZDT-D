@@ -895,6 +895,10 @@ fn extract_selection_from_config(cfg: &Path) -> Selection {
         return sel;
     };
     let text = String::from_utf8_lossy(&data);
+    // Preserve the previously written preset marker so a re-apply with no
+    // explicit selection (e.g. blockcheck) keeps the chip on the green
+    // built-in name instead of reverting to "Пользовательский конфиг".
+    sel.variant_name = read_variant_marker(&text);
     for token in text.split_whitespace() {
         let t = token.trim();
         // Stop at the first profile section: everything after belongs to the
@@ -7917,5 +7921,60 @@ mod strategic_selection_tests {
             1,
             "instagram must appear exactly once (as the preset's built-in)"
         );
+    }
+
+    #[test]
+    fn reuse_path_preserves_variant_marker() {
+        // Regression: an apply with an EMPTY selection must reuse the selection
+        // already stored in the profile config. Before the fix, extract_selection_from_config
+        // returned variant_name=None, so apply_selection_to_config dropped the
+        // `# @zdtd-variant <name>` marker and the UI chip reverted to the red
+        // "Пользовательский конфиг". The marker must survive a re-apply.
+        let root = repo_root();
+        let f = root.join("module_template/strategic/strategicvar/nfqws2/Default multisplit_sni.txt");
+        let original = std::fs::read(&f).expect("preset must exist");
+
+        // First apply stores a user choice AND writes the marker.
+        let sel = Selection {
+            hostlists: vec!["claude.txt".to_string()],
+            exclude_hostlists: vec![],
+            ipsets: vec![],
+            exclude_ipsets: vec![],
+            variant_name: Some("Default multisplit_sni.txt".to_string()),
+        };
+        let stored = apply_selection_to_config(&original, &sel);
+        assert_eq!(
+            read_variant_marker(&String::from_utf8_lossy(&stored)).as_deref(),
+            Some("Default multisplit_sni.txt"),
+            "first apply must persist the marker"
+        );
+
+        // Now a re-apply with NO selection (the blockcheck / reuse path): the
+        // daemon re-derives the selection from the stored config.
+        let dir = std::env::temp_dir().join(format!("zdtd_sel_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let cfg = dir.join("config.txt");
+        std::fs::write(&cfg, &stored).unwrap();
+        let reused = extract_selection_from_config(&cfg);
+        assert_eq!(
+            reused.variant_name.as_deref(),
+            Some("Default multisplit_sni.txt"),
+            "reuse path must recover the variant marker from the stored config"
+        );
+
+        // Re-applying with the reused (empty-selection) request keeps the marker.
+        let reapplied = apply_selection_to_config(&stored, &reused);
+        let reapplied_text = String::from_utf8_lossy(&reapplied);
+        assert_eq!(
+            read_variant_marker(&reapplied_text).as_deref(),
+            Some("Default multisplit_sni.txt"),
+            "marker must survive a reuse-path re-apply (no red chip)"
+        );
+        assert_eq!(
+            reapplied_text.matches(&format!("--hostlist={MODULE_LIST}claude.txt")).count(),
+            1,
+            "user choice must not be duplicated on reuse-path re-apply"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
