@@ -800,6 +800,32 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         return data.to_vec();
     }
 
+    // Collect the VALUES of any --hostlist*/--ipset* arguments that already ship
+    // inside preset --new sections. If the user picks a list that the preset
+    // already applies on its own, injecting it again would create a duplicate
+    // argument (the user choice would live in the global section AND the preset
+    // would still apply it via its own --new block). Skip such an injection: the
+    // preset's own block already covers it.
+    let first_new = all_tokens.iter().position(|t| t == "--new");
+    let (global, rest): (&[String], &[String]) = match first_new {
+        Some(pos) => (&all_tokens[..pos], &all_tokens[pos..]),
+        None => (&all_tokens[..], &[][..]),
+    };
+    let builtin_values: std::collections::HashSet<&str> = rest
+        .iter()
+        .filter(|t| {
+            t.starts_with("--hostlist=")
+                || t.starts_with("--hostlist-exclude=")
+                || t.starts_with("--ipset=")
+                || t.starts_with("--ipset-exclude=")
+        })
+        .map(|t| t.as_str())
+        .collect();
+    let injected_args: Vec<String> = injected_args
+        .into_iter()
+        .filter(|a| !builtin_values.contains(a.as_str()))
+        .collect();
+
     // Split into the GLOBAL section (before the first `--new`) and the
     // per-section blocks that follow each `--new`. The user's hostlist/ipset
     // selection is owned by the daemon and lives ONLY in the global section.
@@ -807,11 +833,6 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
     // --hostlist*/--ipset* entries (e.g. per-service lists in nfqws2 presets)
     // and those must be preserved verbatim, so editing the user selection
     // never strips or duplicates the preset's own strategy.
-    let first_new = all_tokens.iter().position(|t| t == "--new");
-    let (global, rest): (&[String], &[String]) = match first_new {
-        Some(pos) => (&all_tokens[..pos], &all_tokens[pos..]),
-        None => (&all_tokens[..], &[][..]),
-    };
 
     // Within the global section, drop any pre-existing user selection tokens so
     // re-applying does not accumulate duplicates. Preset strategy tokens that
@@ -7858,6 +7879,43 @@ mod strategic_selection_tests {
             out2_text.matches("--hostlist=").count() - 1,
             builtin_in_section,
             "built-in --hostlist entries must still be preserved after re-apply"
+        );
+    }
+
+    #[test]
+    fn user_choice_matching_a_builtin_list_is_not_duplicated() {
+        // The preset ships `instagram.txt` as a built-in --hostlist inside a --new
+        // block. If the user picks the same list, the daemon must NOT inject a
+        // second identical --hostlist argument into the global section: the
+        // preset's own block already applies it.
+        let root = repo_root();
+        let f = root.join("module_template/strategic/strategicvar/nfqws2/Default multisplit_sni.txt");
+        let original = std::fs::read(&f).expect("preset must exist");
+        let sel = Selection {
+            hostlists: vec!["instagram.txt".to_string()],
+            exclude_hostlists: vec![],
+            ipsets: vec![],
+            exclude_ipsets: vec![],
+            variant_name: Some("Default multisplit_sni.txt".to_string()),
+        };
+        let out = apply_selection_to_config(&original, &sel);
+        let out_text = String::from_utf8_lossy(&out);
+        let builtin_in_section = out_text
+            .split("--new")
+            .skip(1)
+            .map(|blk| blk.matches("--hostlist=").count())
+            .sum::<usize>();
+        // instagram appears once as a built-in; the user choice must not add a
+        // duplicate, so the total is exactly the built-in count.
+        assert_eq!(
+            out_text.matches("--hostlist=").count(),
+            builtin_in_section,
+            "user choice equal to a built-in list must not create a duplicate"
+        );
+        assert_eq!(
+            out_text.matches(&format!("--hostlist={MODULE_LIST}instagram.txt")).count(),
+            1,
+            "instagram must appear exactly once (as the preset's built-in)"
         );
     }
 }
