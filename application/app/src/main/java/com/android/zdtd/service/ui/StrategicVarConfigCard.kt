@@ -202,7 +202,7 @@ fun StrategicVarConfigCard(
       lastLoadedIpsets = ips
       lastLoadedExcludeIpsets = exi
       if (marker != null) currentVariantName = marker
-      else if (match != null) currentVariantName = match.name
+      else if (matched != null) currentVariantName = matched.name
       loading = false
     }
   }
