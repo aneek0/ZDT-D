@@ -800,17 +800,25 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         return data.to_vec();
     }
 
-    // Collect the VALUES of any --hostlist*/--ipset* arguments that already ship
-    // inside preset --new sections. If the user picks a list that the preset
-    // already applies on its own, injecting it again would create a duplicate
-    // argument (the user choice would live in the global section AND the preset
-    // would still apply it via its own --new block). Skip such an injection: the
-    // preset's own block already covers it.
+    // Split into the GLOBAL section (before the first `--new`) and the
+    // per-section blocks that follow each `--new`. The user's hostlist/ipset
+    // selection is owned by the daemon and lives ONLY in the global section.
+    // Preset strategy blocks (`--new` sections) may ship their OWN
+    // --hostlist*/--ipset* entries (e.g. per-service lists in nfqws2 presets)
+    // and those must be preserved verbatim, so editing the user selection
+    // never strips or duplicates the preset's own strategy.
     let first_new = all_tokens.iter().position(|t| t == "--new");
     let (global, rest): (&[String], &[String]) = match first_new {
         Some(pos) => (&all_tokens[..pos], &all_tokens[pos..]),
         None => (&all_tokens[..], &[][..]),
     };
+
+    // Collect the VALUES of any --hostlist*/--ipset* arguments that already ship
+    // inside preset --new sections. If the user picks a list that the preset
+    // already applies on its own (within a --new block), injecting it again
+    // would create a duplicate argument. Skip such an injection: the preset's
+    // own block already covers it. (Lists that live in the global section of a
+    // preset are treated as the daemon-owned selection and handled below.)
     let builtin_values: std::collections::HashSet<&str> = rest
         .iter()
         .filter(|t| {
@@ -825,14 +833,6 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         .into_iter()
         .filter(|a| !builtin_values.contains(a.as_str()))
         .collect();
-
-    // Split into the GLOBAL section (before the first `--new`) and the
-    // per-section blocks that follow each `--new`. The user's hostlist/ipset
-    // selection is owned by the daemon and lives ONLY in the global section.
-    // Preset strategy blocks (`--new` sections) may ship their OWN
-    // --hostlist*/--ipset* entries (e.g. per-service lists in nfqws2 presets)
-    // and those must be preserved verbatim, so editing the user selection
-    // never strips or duplicates the preset's own strategy.
 
     // Within the global section, drop any pre-existing user selection tokens so
     // re-applying does not accumulate duplicates. Preset strategy tokens that
