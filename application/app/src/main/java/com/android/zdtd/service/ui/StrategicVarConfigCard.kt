@@ -60,6 +60,23 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 private const val HOSTLIST_PREFIX = "/data/adb/modules/ZDT-D/strategic/list/"
+// Marker the daemon writes at the top of a config to remember which built-in
+// preset was applied. Reading it back lets us keep showing the preset name even
+// after the user edits the hostlist selection (which changes the file hash).
+private const val VARIANT_MARKER = "# @zdtd-variant "
+
+/** Returns the applied preset file name stored in a config via [VARIANT_MARKER]. */
+private fun readVariantMarker(text: String): String? {
+  for (line in text.lineSequence()) {
+    val trimmed = line.trimStart()
+    if (trimmed.startsWith(VARIANT_MARKER)) {
+      val name = trimmed.removePrefix(VARIANT_MARKER).trim()
+      if (name.isNotEmpty()) return name
+    }
+  }
+  return null
+}
+
 // IP-set selection files live in the same strategic/list/ directory as the
 // hostlists; the daemon injects them as --ipset=/.../list/<name>. Every ipset
 // file is named with the "ipset" substring, so classify by name rather than a
@@ -172,10 +189,10 @@ fun StrategicVarConfigCard(
       val ex = sel.excludeHostlists.distinct()
       val ips = sel.ipsets.distinct()
       val exi = sel.excludeIpsets.distinct()
-      // If the freshly-loaded file already matches a prebuilt variant, lift
-      // that into currentVariantName so visual feedback survives hostlist edits.
-      val hash = sha256HexUtf8(t)
-      val match = variants.firstOrNull { it.sha256 != null && it.sha256.equals(hash, ignoreCase = true) }
+      // Prefer the persisted preset marker over a hash match: the marker survives
+      // hostlist edits (which change the file hash) and survives re-entering the
+      // screen (where the in-memory currentVariantName is reset).
+      val marker = readVariantMarker(t)
       selectedHostlists = hl
       selectedExcludeHostlists = ex
       selectedIpsets = ips
@@ -184,7 +201,8 @@ fun StrategicVarConfigCard(
       lastLoadedExcludeHostlists = ex
       lastLoadedIpsets = ips
       lastLoadedExcludeIpsets = exi
-      if (match != null) currentVariantName = match.name
+      if (marker != null) currentVariantName = marker
+      else if (match != null) currentVariantName = match.name
       loading = false
     }
   }

@@ -734,17 +734,48 @@ struct ApplyStrategicVarReq {
 
 /// Holds the user-selected domain (hostlist) and IP (ipset) selection that the
 /// daemon injects into a strategy file, replacing any hardcoded selection args.
+/// `variant_name`, when set, is the built-in preset the user applied; it is
+/// persisted as a comment marker in the config so the UI can keep showing the
+/// preset name even after the user edits the hostlist selection (which changes
+/// the file hash and would otherwise make the preset unrecognizable).
 struct Selection {
     hostlists: Vec<String>,
     exclude_hostlists: Vec<String>,
     ipsets: Vec<String>,
     exclude_ipsets: Vec<String>,
+    variant_name: Option<String>,
+}
+
+/// Marker written at the very top of a config so the applied preset name
+/// survives hostlist edits. Must be a comment that both nfqws2 and the daemon
+/// ignore during argument parsing.
+const VARIANT_MARKER: &str = "# @zdtd-variant ";
+
+/// Reads a previously written `# @zdtd-variant <name>` marker from config text.
+fn read_variant_marker(text: &str) -> Option<String> {
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix(VARIANT_MARKER) {
+            let name = rest.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
     let text = String::from_utf8_lossy(data);
     let module_list = "/data/adb/modules/ZDT-D/strategic/list/";
 
+    // Determine the applied preset name to persist: prefer an explicit value
+    // from the request, otherwise keep a previously written marker so that
+    // hostlist-only edits don't erase the preset association.
+    let variant_name = match &sel.variant_name {
+        Some(v) if !v.is_empty() => Some(v.clone()),
+        _ => read_variant_marker(&text),
+    };
     let mut injected_args: Vec<String> = Vec::new();
     for hl in &sel.hostlists {
         injected_args.push(format!("--hostlist={module_list}{hl}"));
@@ -769,45 +800,39 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         return data.to_vec();
     }
 
-    let new_positions: Vec<usize> = all_tokens
+    // Split into the GLOBAL section (before the first `--new`) and the
+    // per-section blocks that follow each `--new`. The user's hostlist/ipset
+    // selection is owned by the daemon and lives ONLY in the global section.
+    // Preset strategy blocks (`--new` sections) may ship their OWN
+    // --hostlist*/--ipset* entries (e.g. per-service lists in nfqws2 presets)
+    // and those must be preserved verbatim, so editing the user selection
+    // never strips or duplicates the preset's own strategy.
+    let first_new = all_tokens.iter().position(|t| t == "--new");
+    let (global, rest): (&[String], &[String]) = match first_new {
+        Some(pos) => (&all_tokens[..pos], &all_tokens[pos..]),
+        None => (&all_tokens[..], &[][..]),
+    };
+
+    // Within the global section, drop any pre-existing user selection tokens so
+    // re-applying does not accumulate duplicates. Preset strategy tokens that
+    // happen to live in the global section are kept.
+    let is_user_token = |t: &str| {
+        t.starts_with("--hostlist=")
+            || t.starts_with("--hostlist-exclude=")
+            || t.starts_with("--ipset=")
+            || t.starts_with("--ipset-exclude=")
+    };
+    let global_kept: Vec<&str> = global
         .iter()
-        .enumerate()
-        .filter(|(_, t)| *t == "--new")
-        .map(|(i, _)| i)
+        .map(|s| s.as_str())
+        .filter(|t| !is_user_token(t))
         .collect();
 
-    let mut sections: Vec<Vec<&str>> = Vec::new();
-    let mut start = 0;
-    for &pos in &new_positions {
-        sections.push(all_tokens[start..pos].iter().map(|t| t.as_str()).collect());
-        start = pos + 1;
-    }
-    sections.push(all_tokens[start..].iter().map(|t| t.as_str()).collect());
-
     let mut out_tokens: Vec<String> = Vec::new();
-    // The daemon owns the hostlist/ipset selection only when the user actually
-    // picked lists. If the selection is empty, the preset manages its own
-    // --hostlist*/--ipset* entries (e.g. game-filter strategies ship built-in
-    // ipset filters inside --new sections), so we must keep them verbatim.
-    let user_picked = !injected_args.is_empty();
-    for (i, section) in sections.iter().enumerate() {
-        for arg in &injected_args {
-            out_tokens.push(arg.clone());
-        }
-        for t in section.iter() {
-            if user_picked
-                && (t.starts_with("--hostlist=")
-                    || t.starts_with("--hostlist-exclude=")
-                    || t.starts_with("--ipset=")
-                    || t.starts_with("--ipset-exclude="))
-            {
-                continue;
-            }
-            out_tokens.push(t.to_string());
-        }
-        if i < sections.len() - 1 {
-            out_tokens.push("--new".to_string());
-        }
+    out_tokens.extend(injected_args.iter().cloned());
+    out_tokens.extend(global_kept.iter().map(|s| s.to_string()));
+    for t in rest.iter() {
+        out_tokens.push(t.clone());
     }
 
     // Emit one token per line. A real newline is used as the separator (not the
@@ -815,6 +840,11 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
     // token as a distinct argument. `--new` starts a new section on its own
     // line, matching the human-readable nfqws2 preset layout.
     let mut result = String::new();
+    if let Some(name) = &variant_name {
+        result.push_str(VARIANT_MARKER);
+        result.push_str(name);
+        result.push('\n');
+    }
     for (i, token) in out_tokens.iter().enumerate() {
         if i != 0 {
             result.push('\n');
@@ -838,6 +868,7 @@ fn extract_selection_from_config(cfg: &Path) -> Selection {
         exclude_hostlists: Vec::new(),
         ipsets: Vec::new(),
         exclude_ipsets: Vec::new(),
+        variant_name: None,
     };
     let Ok(data) = fs::read(cfg) else {
         return sel;
@@ -970,6 +1001,7 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                         exclude_hostlists: req.exclude_hostlists.clone(),
                         ipsets: req.ipsets.clone(),
                         exclude_ipsets: req.exclude_ipsets.clone(),
+                        variant_name: Some(req.file.clone()),
                     }
                 } else {
                     let cfg = prof_root.join("config/config.txt");
@@ -1030,6 +1062,7 @@ fn handle_strategicvar(stream: TcpStream, method: &str, path: &str, body: &[u8])
                     exclude_hostlists: req.exclude_hostlists.clone(),
                     ipsets: req.ipsets.clone(),
                     exclude_ipsets: req.exclude_ipsets.clone(),
+                    variant_name: None,
                 };
                 let data = apply_selection_to_config(&data, &sel);
                 write_bytes_atomic(&cfg, &data)?;
@@ -7624,6 +7657,7 @@ mod strategic_selection_tests {
         let mut exclude_hostlists = Vec::new();
         let mut ipsets = Vec::new();
         let mut exclude_ipsets = Vec::new();
+        let mut variant_name = None;
         for t in text.split_whitespace() {
             for (prefix, bucket) in [
                 ("--hostlist=", &mut hostlists),
@@ -7641,7 +7675,7 @@ mod strategic_selection_tests {
                 }
             }
         }
-        Selection { hostlists, exclude_hostlists, ipsets, exclude_ipsets }
+        Selection { hostlists, exclude_hostlists, ipsets, exclude_ipsets, variant_name }
     }
 
     #[test]
@@ -7694,15 +7728,16 @@ mod strategic_selection_tests {
     }
 
     /// The NEW workflow: the user picks a selection that may differ from the
-    /// original's hardcoded one. The daemon must inject the chosen args into
-    /// EVERY section (global zone + each --new block), and the cleaned file
-    /// must contain none of those args beforehand (they are no longer
-    /// hardcoded). This is what the app's StrategicVarConfigCard now drives.
+    /// original's hardcoded one. The daemon injects the chosen args ONCE into
+    /// the global section (before the first `--new`); preset strategy blocks
+    /// (`--new` sections) keep their own built-in --hostlist*/--ipset* entries
+    /// verbatim. Re-applying the same selection must NOT accumulate duplicates.
+    /// This is what the app's StrategicVarConfigCard now drives.
     #[test]
-    fn cleaned_strategy_accepts_user_selection_in_every_section() {
+    fn cleaned_strategy_accepts_user_selection_in_global_section() {
         let root = repo_root();
         let f = root.join("module_template/strategic/strategicvar/nfqws/flowseal.txt");
-        let cleaned = std::fs::read(&f).expect("cleaned flowseal.txt must exist");
+        let cleaned = std::fs::read(&f).expect("cleaned flowseal.txt must must exist");
 
         // Picked by the user in the app (names only; daemon adds the prefix).
         let sel = Selection {
@@ -7710,6 +7745,7 @@ mod strategic_selection_tests {
             exclude_hostlists: vec!["exclude.txt".to_string()],
             ipsets: vec!["ipset-v4.txt".to_string()],
             exclude_ipsets: vec![],
+            variant_name: None,
         };
 
         // The cleaned file must NOT contain any hardcoded selection anymore.
@@ -7723,22 +7759,105 @@ mod strategic_selection_tests {
         let out = apply_selection_to_config(&cleaned, &sel);
         let out_text = String::from_utf8_lossy(&out);
 
-        // The daemon renders tokens separated by the literal " \n" (backslash +
-        // letter n), so split_whitespace() does NOT break them apart. Count the
-        // "--new" substring instead: each boundary is one --new token, and
-        // there is one global section before the first --new.
-        let section_count = out_text.matches("--new").count() + 1;
+        // The chosen args are injected once, into the global section (top), and
+        // never duplicated.
         let expected = format!("--hostlist={MODULE_LIST}google.txt");
         let got = out_text.matches(&expected).count();
+        assert_eq!(got, 1, "chosen --hostlist=google.txt must appear exactly once");
         let ip_expected = format!("--ipset={MODULE_LIST}ipset-v4.txt");
         let ip_got = out_text.matches(&ip_expected).count();
+        assert_eq!(ip_got, 1, "chosen --ipset=ipset-v4.txt must appear exactly once");
+
+        // Re-applying the same selection must not accumulate duplicates.
+        let out2 = apply_selection_to_config(&out, &sel);
+        let out2_text = String::from_utf8_lossy(&out2);
         assert_eq!(
-            got, section_count,
-            "chosen --hostlist=google.txt injected into {got} sections, expected all {section_count}"
+            out2_text.matches(&expected).count(),
+            1,
+            "re-applying must not duplicate --hostlist=google.txt"
+        );
+    }
+
+    /// Regression test: a multi-section nfqws2 preset ships its OWN --hostlist*
+    /// entries inside `--new` sections (per-service lists). When the user edits
+    /// their selection, the daemon must keep those built-in lists verbatim and
+    /// must NOT strip or duplicate them.
+    #[test]
+    fn preset_builtin_hostlists_in_sections_are_preserved() {
+        let root = repo_root();
+        let f = root.join("module_template/strategic/strategicvar/nfqws2/Default multisplit_sni.txt");
+        let original = std::fs::read(&f).expect("preset must exist");
+        let orig_text = String::from_utf8_lossy(&original);
+
+        // Count how many built-in --hostlist entries live inside --new sections.
+        let mut in_section = false;
+        let mut builtin_in_section = 0usize;
+        for tok in orig_text.split_whitespace() {
+            if tok == "--new" {
+                in_section = true;
+                continue;
+            }
+            if in_section && tok.starts_with("--hostlist=") {
+                builtin_in_section += 1;
+            }
+        }
+        assert!(builtin_in_section > 0, "preset should ship built-in hostlists in --new sections");
+
+        // User picks a DIFFERENT single list. Previously this stripped every
+        // --hostlist* and injected the user list into every section, breaking
+        // the preset. Now the built-in lists must survive.
+        let sel = Selection {
+            hostlists: vec!["user-choice-a.txt".to_string()],
+            exclude_hostlists: vec![],
+            ipsets: vec![],
+            exclude_ipsets: vec![],
+            variant_name: Some("Default multisplit_sni.txt".to_string()),
+        };
+
+        let out = apply_selection_to_config(&original, &sel);
+        let out_text = String::from_utf8_lossy(&out);
+
+        // The user's choice appears exactly once, in the global section.
+        let user_arg = format!("--hostlist={MODULE_LIST}user-choice-a.txt");
+        assert_eq!(
+            out_text.matches(&user_arg).count(),
+            1,
+            "user selection must be injected exactly once (global section)"
+        );
+
+        // Every built-in --hostlist inside --new sections is preserved.
+        let after_builtin = out_text.matches("--hostlist=").count() - 1; // minus the user's one
+        assert_eq!(
+            after_builtin, builtin_in_section,
+            "built-in --hostlist entries inside --new sections must be preserved"
+        );
+
+        // The preset marker is written so the UI keeps showing the preset name.
+        assert!(
+            out_text.starts_with("# @zdtd-variant Default multisplit_sni.txt"),
+            "variant marker must be persisted at the top of the config"
+        );
+
+        // Re-applying a different selection keeps the built-ins and does not
+        // duplicate the user's choice.
+        let sel2 = Selection {
+            hostlists: vec!["user-choice-b.txt".to_string()],
+            exclude_hostlists: vec![],
+            ipsets: vec![],
+            exclude_ipsets: vec![],
+            variant_name: None,
+        };
+        let out2 = apply_selection_to_config(&out, &sel2);
+        let out2_text = String::from_utf8_lossy(&out2);
+        assert_eq!(
+            out2_text.matches(&format!("--hostlist={MODULE_LIST}user-choice-b.txt")).count(),
+            1,
+            "new user selection must replace the old one exactly once"
         );
         assert_eq!(
-            ip_got, section_count,
-            "chosen --ipset=ipset-v4.txt must appear in every section"
+            out2_text.matches("--hostlist=").count() - 1,
+            builtin_in_section,
+            "built-in --hostlist entries must still be preserved after re-apply"
         );
     }
 }
