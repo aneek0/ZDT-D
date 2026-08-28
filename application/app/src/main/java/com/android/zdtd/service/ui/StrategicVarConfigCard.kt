@@ -191,8 +191,13 @@ fun StrategicVarConfigCard(
       val exi = sel.excludeIpsets.distinct()
       // Prefer the persisted preset marker over a hash match: the marker survives
       // hostlist edits (which change the file hash) and survives re-entering the
-      // screen (where the in-memory currentVariantName is reset).
+      // screen (where the in-memory currentVariantName is reset). Fall back to a
+      // hash match of the loaded config so an unmarked config still resolves to a
+      // known preset name.
       val marker = readVariantMarker(t)
+      val hashMatch = variants.firstOrNull {
+        it.sha256 != null && it.sha256.equals(sha256HexUtf8(t), ignoreCase = true)
+      }
       selectedHostlists = hl
       selectedExcludeHostlists = ex
       selectedIpsets = ips
@@ -202,7 +207,7 @@ fun StrategicVarConfigCard(
       lastLoadedIpsets = ips
       lastLoadedExcludeIpsets = exi
       if (marker != null) currentVariantName = marker
-      else if (matched != null) currentVariantName = matched.name
+      else if (hashMatch != null) currentVariantName = hashMatch.name
       loading = false
     }
   }
