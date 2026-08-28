@@ -67,3 +67,6 @@ build-tail.log
 # Copilot polish runtime/report files
 .copilot-polish-summary.md
 .copilot-polish-summary*.md
+
+# local module zip build output
+out_module/
