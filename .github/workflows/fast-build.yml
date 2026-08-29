@@ -68,14 +68,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - name: Cache Android NDK
         id: ndk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -104,7 +104,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -143,14 +143,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - name: Cache Android NDK
         id: ndk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -178,7 +178,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -217,14 +217,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - name: Cache Android NDK
         id: ndk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -252,7 +252,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -291,11 +291,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
         id: ndk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -408,7 +408,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - name: Install SDK packages
         run: |
