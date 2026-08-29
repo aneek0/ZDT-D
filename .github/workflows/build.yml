@@ -296,7 +296,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -304,7 +304,7 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -360,7 +360,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and zdtd target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -441,7 +441,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -449,7 +449,7 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -505,7 +505,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and t2s target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -600,10 +600,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -859,16 +859,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -899,10 +899,10 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1090,16 +1090,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1207,16 +1207,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1337,16 +1337,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1470,16 +1470,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1613,7 +1613,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26.4'
           cache: false
@@ -1729,10 +1729,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -1869,16 +1869,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2018,16 +2018,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2162,16 +2162,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24.4'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2292,10 +2292,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2496,10 +2496,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2718,10 +2718,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -2993,10 +2993,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -3236,16 +3236,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.22.12'
           cache: false
 
       - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -3414,10 +3414,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -3742,7 +3742,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -3750,7 +3750,7 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -3806,7 +3806,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and dpi-detector target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -3887,7 +3887,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -3895,7 +3895,7 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -3951,7 +3951,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and nfqws-tester target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -4032,10 +4032,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Cache Android NDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
           key: ndk-${{ env.NDK_VERSION }}
@@ -4111,7 +4111,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         run: |
