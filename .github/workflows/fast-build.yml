@@ -33,11 +33,9 @@ jobs:
       zdtd: ${{ steps.detect.outputs.zdtd }}
       dpi_detector: ${{ steps.detect.outputs.dpi_detector }}
       nfqws_tester: ${{ steps.detect.outputs.nfqws_tester }}
-      busybox: ${{ steps.detect.outputs.busybox }}
       zdtd_missing: ${{ steps.detect.outputs.zdtd_missing }}
       dpi_detector_missing: ${{ steps.detect.outputs.dpi_detector_missing }}
       nfqws_tester_missing: ${{ steps.detect.outputs.nfqws_tester_missing }}
-      busybox_missing: ${{ steps.detect.outputs.busybox_missing }}
 
     steps:
       - uses: actions/checkout@v6
@@ -51,11 +49,9 @@ jobs:
           echo "zdtd=$(echo "$CHANGED" | grep -qE '^rust/zdtd/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "dpi_detector=$(echo "$CHANGED" | grep -qE '^rust/dpi-detector/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "nfqws_tester=$(echo "$CHANGED" | grep -qE '^rust/nfqws-tester/|^rust/Cargo\.' && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "busybox=$(echo "$CHANGED" | grep -qE '^scripts/module/build-busybox' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "zdtd_missing=$([ -f prebuilt/bin/arm64-v8a/zdtd ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
           echo "dpi_detector_missing=$([ -f prebuilt/bin/arm64-v8a/dpi-detector ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
           echo "nfqws_tester_missing=$([ -f prebuilt/bin/arm64-v8a/nfqws-tester ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
-          echo "busybox_missing=$([ -f prebuilt/bin/arm64-v8a/busybox ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
 
   build_zdtd:
     name: build zdtd
@@ -280,52 +276,6 @@ jobs:
           path: out/artifacts/nfqws-tester/arm64/nfqws-tester
           retention-days: 1
 
-  build_busybox:
-    name: build BusyBox
-    runs-on: ubuntu-latest
-    needs: check_changes
-    if: needs.check_changes.outputs.busybox == 'true' || needs.check_changes.outputs.busybox_missing == 'true'
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - uses: android-actions/setup-android@v4
-
-      - name: Cache Android NDK
-        id: ndk-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
-          key: ndk-${{ env.NDK_VERSION }}
-
-      - name: Install NDK
-        run: |
-          NDK_VERSION="27.2.12479018"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager "ndk;$NDK_VERSION"
-          fi
-          [[ -d "$NDK_ROOT" ]] || NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Build BusyBox arm64
-        run: |
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
-          ls -lh prebuilt/bin/arm64-v8a/busybox
-          test -s prebuilt/bin/arm64-v8a/busybox
-
-      - name: Upload BusyBox
-        uses: actions/upload-artifact@v7
-        with:
-          name: busybox-arm64
-          path: |
-            prebuilt/bin/arm64-v8a/busybox
-            prebuilt/bin/arm64-v8a/busybox.source
-          retention-days: 1
-
   sync_prebuilt:
     name: sync native binaries to prebuilt
     runs-on: ubuntu-latest
@@ -333,8 +283,7 @@ jobs:
       - build_zdtd
       - build_dpi_detector
       - build_nfqws_tester
-      - build_busybox
-    if: always() && (needs.build_zdtd.result == 'success' || needs.build_dpi_detector.result == 'success' || needs.build_nfqws_tester.result == 'success' || needs.build_busybox.result == 'success')
+    if: always() && (needs.build_zdtd.result == 'success' || needs.build_dpi_detector.result == 'success' || needs.build_nfqws_tester.result == 'success')
 
     steps:
       - uses: actions/checkout@v6
@@ -359,12 +308,6 @@ jobs:
         with:
           name: nfqws-tester-arm64
           path: out/sync/nfqws-tester
-      - name: Download busybox
-        if: needs.build_busybox.result == 'success'
-        uses: actions/download-artifact@v7
-        with:
-          name: busybox-arm64
-          path: out/sync/busybox
 
       - name: Stage prebuilt and commit
         run: |
@@ -375,11 +318,9 @@ jobs:
           [ -f "$SRC/zdtd/zdtd" ] && cp -f "$SRC/zdtd/zdtd" "$DST/zdtd" && chmod 755 "$DST/zdtd"
           [ -f "$SRC/dpi-detector/dpi-detector" ] && cp -f "$SRC/dpi-detector/dpi-detector" "$DST/dpi-detector" && chmod 755 "$DST/dpi-detector"
           [ -f "$SRC/nfqws-tester/nfqws-tester" ] && cp -f "$SRC/nfqws-tester/nfqws-tester" "$DST/nfqws-tester" && chmod 755 "$DST/nfqws-tester"
-          [ -f "$SRC/busybox/busybox" ] && cp -f "$SRC/busybox/busybox" "$DST/busybox" && chmod 755 "$DST/busybox"
-          [ -f "$SRC/busybox/busybox.source" ] && cp -f "$SRC/busybox/busybox.source" "$DST/busybox.source"
           git config user.email "ci@zdt-d.local"
           git config user.name "ZDT-D CI"
-          git add prebuilt/bin/arm64-v8a/zdtd prebuilt/bin/arm64-v8a/dpi-detector prebuilt/bin/arm64-v8a/nfqws-tester prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm64-v8a/busybox.source
+          git add prebuilt/bin/arm64-v8a/zdtd prebuilt/bin/arm64-v8a/dpi-detector prebuilt/bin/arm64-v8a/nfqws-tester
           if git diff --staged --quiet; then
             echo "No prebuilt changes to commit"
           else
@@ -395,7 +336,6 @@ jobs:
       - build_zdtd
       - build_dpi_detector
       - build_nfqws_tester
-      - build_busybox
     if: always() && needs.check_changes.result == 'success'
 
     steps:
@@ -442,19 +382,10 @@ jobs:
         with:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
-      - name: Download BusyBox
-        if: needs.build_busybox.result == 'success'
-        uses: actions/download-artifact@v7
-        with:
-          name: busybox-arm64
-          path: prebuilt/bin/arm64-v8a
-
-      - name: Verify BusyBox
+      - name: Verify BusyBox from prebuilt
         run: |
           test -s prebuilt/bin/arm64-v8a/busybox
           chmod 755 prebuilt/bin/arm64-v8a/busybox
-
-
 
       - name: Prepare module zip (prebuilt + fresh zdtd)
         run: |
