@@ -2,6 +2,28 @@
 
 ZDT-D is an Android Magisk/KernelSU module for DPI bypass. Kotlin UI app + Rust daemon + Lua packet manipulation.
 
+## Fork identity — this is the FORK, not the original
+
+- This repository is the personal fork **`aneek0/ZDT-D`** (git remote `origin`),
+  NOT the original project `GAME-OVER-op/ZDT-D` (git remote `upstream`).
+  All work happens in this fork; commits, releases, and support belong here.
+- Never attribute changes to the original repo, never open issues/PRs against
+  it, never switch `origin` to it.
+- Every user-facing URL — app update checks, APK/module release assets,
+  geodb and tg_ws_proxy asset downloads, SupportScreen/MainActivity links,
+  CI workflows, docs — MUST point at `aneek0/ZDT-D`. After every upstream
+  merge, verify merged-in URLs still target `aneek0/ZDT-D`, not
+  `GAME-OVER-op/ZDT-D` (app already does: `MainViewModel.kt`,
+  `GeoLocationRepository.kt`, `TgWsProxyComponentRepository.kt`,
+  `SupportScreen.kt`, `MainActivity.kt`, `.github/workflows/*`).
+- Do not revert fork-specific changes during upstream merges:
+  `AGENTS.md`, the fork banner and "Differences from upstream" sections in
+  `README*.md`, `.github/workflows/fast-build.yml`, fork-specific strings and
+  host lists.
+- References to the original repo are allowed ONLY as attribution: the fork
+  disclaimer in the READMEs and the `upstream` git remote itself.
+
+
 ## Project Structure
 
 ```
