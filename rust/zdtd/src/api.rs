@@ -738,6 +738,7 @@ struct ApplyStrategicVarReq {
 /// persisted as a comment marker in the config so the UI can keep showing the
 /// preset name even after the user edits the hostlist selection (which changes
 /// the file hash and would otherwise make the preset unrecognizable).
+#[derive(Clone)]
 struct Selection {
     hostlists: Vec<String>,
     exclude_hostlists: Vec<String>,
@@ -790,89 +791,109 @@ fn apply_selection_to_config(data: &[u8], sel: &Selection) -> Vec<u8> {
         injected_args.push(format!("--ipset-exclude={module_list}{ex}"));
     }
 
-    let all_tokens: Vec<String> = text
-        .split_whitespace()
-        .filter(|t| *t != "\\")
-        .map(|t| t.to_string())
-        .collect();
+    // ---- line-oriented pass -------------------------------------------------
+    // The config must stay in the human-readable nfqws2 preset format the
+    // strict compiler (command-builder.sh) expects: one option per line,
+    // comment lines (`# ...`) intact. The previous implementation flattened
+    // the whole file through split_whitespace(), which exploded every comment
+    // into one word per line (`#`, `Preset:`, `Default`, ...). Those bare
+    // words hit the compiler's UNKNOWN_OPTION branch and the profile refused
+    // to start after any hostlist edit — the bypass silently died.
+    let mut out_lines: Vec<String> = Vec::new();
 
-    if all_tokens.is_empty() {
-        return data.to_vec();
+    // Pass 1: collect the selection tokens that already live inside preset
+    // `--new` sections so we never inject a duplicate (the preset's own
+    // block already covers that list). Only section-internal tokens count:
+    // global tokens are the daemon-owned selection and are replaced below.
+    let mut builtin_values: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut in_section = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line == "--new" || line.starts_with("--new=") {
+            in_section = true;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if tok.starts_with("--hostlist=")
+                || tok.starts_with("--hostlist-exclude=")
+                || tok.starts_with("--ipset=")
+                || tok.starts_with("--ipset-exclude=")
+            {
+                builtin_values.insert(tok.to_string());
+            }
+        }
     }
-
-    // Split into the GLOBAL section (before the first `--new`) and the
-    // per-section blocks that follow each `--new`. The user's hostlist/ipset
-    // selection is owned by the daemon and lives ONLY in the global section.
-    // Preset strategy blocks (`--new` sections) may ship their OWN
-    // --hostlist*/--ipset* entries (e.g. per-service lists in nfqws2 presets)
-    // and those must be preserved verbatim, so editing the user selection
-    // never strips or duplicates the preset's own strategy.
-    let first_new = all_tokens.iter().position(|t| t == "--new");
-    let (global, rest): (&[String], &[String]) = match first_new {
-        Some(pos) => (&all_tokens[..pos], &all_tokens[pos..]),
-        None => (&all_tokens[..], &[][..]),
-    };
-
-    // Collect the VALUES of any --hostlist*/--ipset* arguments that already ship
-    // inside preset --new sections. If the user picks a list that the preset
-    // already applies on its own (within a --new block), injecting it again
-    // would create a duplicate argument. Skip such an injection: the preset's
-    // own block already covers it. (Lists that live in the global section of a
-    // preset are treated as the daemon-owned selection and handled below.)
-    let builtin_values: std::collections::HashSet<&str> = rest
-        .iter()
-        .filter(|t| {
-            t.starts_with("--hostlist=")
-                || t.starts_with("--hostlist-exclude=")
-                || t.starts_with("--ipset=")
-                || t.starts_with("--ipset-exclude=")
-        })
-        .map(|t| t.as_str())
-        .collect();
     let injected_args: Vec<String> = injected_args
         .into_iter()
-        .filter(|a| !builtin_values.contains(a.as_str()))
+        .filter(|a| !builtin_values.contains(a))
         .collect();
 
-    // Within the global section, drop any pre-existing user selection tokens so
-    // re-applying does not accumulate duplicates. Preset strategy tokens that
-    // happen to live in the global section are kept.
+    // Pass 2: rebuild the file. Injected selection goes to the top of the
+    // GLOBAL section (before the first `--new`); existing daemon-owned
+    // selection tokens in the global section are dropped so re-apply never
+    // duplicates. Comment lines and section lines are copied verbatim.
     let is_user_token = |t: &str| {
         t.starts_with("--hostlist=")
             || t.starts_with("--hostlist-exclude=")
             || t.starts_with("--ipset=")
             || t.starts_with("--ipset-exclude=")
     };
-    let global_kept: Vec<&str> = global
-        .iter()
-        .map(|s| s.as_str())
-        .filter(|t| !is_user_token(t))
-        .collect();
+    let mut seen_first_new = false;
+    let mut selection_emitted = false;
+    for raw_line in text.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let trimmed = line.trim();
 
-    let mut out_tokens: Vec<String> = Vec::new();
-    out_tokens.extend(injected_args.iter().cloned());
-    out_tokens.extend(global_kept.iter().map(|s| s.to_string()));
-    for t in rest.iter() {
-        out_tokens.push(t.clone());
+        // Keep the variant marker line out of the body: it is re-emitted at
+        // the very top below.
+        if trimmed.starts_with(VARIANT_MARKER) {
+            continue;
+        }
+
+        if trimmed == "--new" || trimmed.starts_with("--new=") {
+            if !selection_emitted {
+                // First section boundary: the global section is complete, so
+                // the user selection must have been emitted before it.
+                out_lines.extend(injected_args.iter().cloned());
+                selection_emitted = true;
+            }
+            seen_first_new = true;
+            out_lines.push(line.to_string());
+            continue;
+        }
+
+        // Comment lines and blank lines are preserved verbatim, everywhere.
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            out_lines.push(line.to_string());
+            continue;
+        }
+
+        // Non-comment global line before the first section: drop old
+        // selection tokens, keep everything else.
+        if !seen_first_new && is_user_token(trimmed) {
+            continue;
+        }
+
+        out_lines.push(line.to_string());
+    }
+    // No `--new` at all: the whole file is the global section.
+    if !selection_emitted {
+        out_lines.extend(injected_args.iter().cloned());
     }
 
-    // Emit one token per line. A real newline is used as the separator (not the
-    // literal "\n" string) so the re-normalizer and nfqws2 itself parse each
-    // token as a distinct argument. `--new` starts a new section on its own
-    // line, matching the human-readable nfqws2 preset layout.
     let mut result = String::new();
     if let Some(name) = &variant_name {
         result.push_str(VARIANT_MARKER);
         result.push_str(name);
         result.push('\n');
     }
-    for (i, token) in out_tokens.iter().enumerate() {
-        if i != 0 {
-            result.push('\n');
-        }
-        result.push_str(token);
+    for l in &out_lines {
+        result.push_str(l);
+        result.push('\n');
     }
-    result.push('\n');
     result.into_bytes()
 }
 
@@ -7976,5 +7997,61 @@ mod strategic_selection_tests {
             "user choice must not be duplicated on reuse-path re-apply"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regression: apply_selection_to_config used to flatten the config through
+    /// split_whitespace(), exploding comment lines into one word per line
+    /// (`#`, `Preset:`, `Default`, ...). Those bare words are rejected by the
+    /// strict compiler (command-builder.sh UNKNOWN_OPTION), so after ANY
+    /// hostlist edit the profile refused to start and the bypass silently died.
+    /// Comments and one-option-per-line layout must survive an apply.
+    #[test]
+    fn comments_and_line_layout_survive_selection_apply() {
+        let root = repo_root();
+        let f = root.join("module_template/strategic/strategicvar/nfqws2/Default v5 (game filter).txt");
+        let original = std::fs::read(&f).expect("preset must exist");
+        let sel = Selection {
+            hostlists: vec!["twitter.txt".to_string()],
+            exclude_hostlists: vec![],
+            ipsets: vec![],
+            exclude_ipsets: vec![],
+            variant_name: Some("Default v5 (game filter).txt".to_string()),
+        };
+        let out = apply_selection_to_config(&original, &sel);
+        let out_text = String::from_utf8_lossy(&out);
+
+        // Every comment line from the preset must still be present verbatim.
+        for line in String::from_utf8_lossy(&original).lines() {
+            let line = line.trim();
+            if line.starts_with('#') && !line.is_empty() {
+                assert!(
+                    out_text.lines().any(|l| l == line),
+                    "comment line {line:?} must be preserved verbatim after apply"
+                );
+            }
+        }
+
+        // No line may be a bare non-option word (the exploded-comment symptom).
+        for line in out_text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            assert!(
+                line.starts_with("--") || line == "--new" || line.starts_with("--new="),
+                "line {line:?} is not a valid preset line (comment explosion regression?)"
+            );
+        }
+
+        // The header block keeps its meaning: capture-policy comments intact.
+        assert!(
+            out_text.contains("# NFQWS2_TCP_PKT_OUT=20"),
+            "capture policy comment must survive (compiler reads it)"
+        );
+
+        // Re-apply on the result is a fixpoint for the comment layout too.
+        let sel2 = Selection { variant_name: None, ..sel.clone() };
+        let out2 = apply_selection_to_config(&out, &sel2);
+        assert_eq!(out, out2, "re-apply must be a byte-identical fixpoint");
     }
 }
