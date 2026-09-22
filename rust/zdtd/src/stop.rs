@@ -290,3 +290,8 @@ fn reap_children() {
         }
     }
 }
+
+/// Periodic-safe wrapper for the background reaper thread in daemon::run.
+pub fn reap_children_public() {
+    reap_children();
+}

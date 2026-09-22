@@ -57,7 +57,11 @@ class BlockcheckRunner(
     fun run(
         program: String,
         hostsFile: String,
-        qnum: Int = 200,
+        // Dedicated tester queue: the daemon's nfqws/nfqws2 profiles own 200
+        // (ports.rs program_base). Sharing 200 made blockcheck steal packets
+        // from (and kill) a running daemon session. Keep in sync with
+        // DEFAULT_QNUM in rust/nfqws-tester/src/main.rs.
+        qnum: Int = 300,
         timeoutSecs: Int = 2,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()

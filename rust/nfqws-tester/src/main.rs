@@ -9,7 +9,7 @@ use std::hash::Hasher;
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Child, Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -20,9 +20,12 @@ const WORK_DIR: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws_tester";
 const SESSION_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json";
 const SETTING_DIR: &str = "/data/adb/modules/ZDT-D/setting";
 const MULTIPORT_NO_FILE: &str = "multiport_no";
-const DEFAULT_QNUM: u16 = 200;
+// The ZDT-D daemon owns queue 200 for nfqws/nfqws2 profiles (see
+// ports.rs program_base). The tester uses a dedicated queue so a running
+// daemon session never loses its packets while blockcheck iterates
+// strategies. An explicit --qnum still wins.
+const DEFAULT_QNUM: u16 = 300;
 const DESYNC_MARK: &str = "0x10000000";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SessionState {
     program: String,
@@ -59,6 +62,9 @@ impl ProtoPortFilter {
 }
 
 fn main() -> ExitCode {
+    // Broken pipe on stdout (UI closed the stream) must not kill the tester
+    // mid-run leaving iptables rules behind; probes handle write errors.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
     match entry() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -105,7 +111,10 @@ fn entry() -> Result<()> {
                 Ok(v) => v.parse::<u64>().context("invalid --timeout")?,
                 Err(_) => 2,
             };
-            run_auto(&normalize_program(&program)?, &hosts_file, qnum, timeout_secs)
+            // SIGTERM/SIGINT (UI "stop", su teardown): die fast but let
+            // run_auto's exit path clean the engine + rules first. The handler
+            // re-raises after cleanup via the Termination path in main.
+            run_auto_guarded(&normalize_program(&program)?, &hosts_file, qnum, timeout_secs)
         }
         "usage" => {
             let pid_raw = parse_named_value(&args[1..], "--pid")?;
@@ -200,9 +209,9 @@ fn start_strategy(options: StartOptions) -> Result<()> {
         .with_context(|| format!("read {}", config_path.display()))?;
     let args = normalize_config_args(&raw);
     let filter = extract_proto_port_filter(&raw);
-    let pid = spawn_program(&options.program, &bin, config_path.parent().unwrap_or(Path::new("/")), options.qnum, &args)?;
+    let mut child = spawn_program(&options.program, &bin, config_path.parent().unwrap_or(Path::new("/")), options.qnum, &args)?;
     if let Err(err) = apply_nfqueue_rules(&options.program, options.qnum, &filter) {
-        let _ = kill_program(&options.program);
+        stop_child(&mut child);
         let _ = cleanup_rules_for_program(&options.program);
         return Err(err);
     }
@@ -211,18 +220,26 @@ fn start_strategy(options: StartOptions) -> Result<()> {
         program: options.program.clone(),
         config_path: config_path.display().to_string(),
         config_name: config_path.file_name().and_then(|s| s.to_str()).unwrap_or_default().to_string(),
-        pid,
+        pid: child.id(),
         qnum: options.qnum,
         started_at_unix_ms: now_unix_ms(),
     };
     write_session(&state)?;
+
+    // Detach: the engine keeps running after this command exits. The Child
+    // handle must stay reaped-able: dropping without wait() would leave a
+    // zombie under our parent until it exits. Double-fork semantics come from
+    // setsid in pre_exec; the zombie lives until the shell parent exits and
+    // init reaps it, which is immediate here.
+    let pid = child.id();
+    std::mem::forget(child);
 
     println!("{}", json!({
         "ok": true,
         "program": state.program,
         "config_path": state.config_path,
         "config_name": state.config_name,
-        "pid": state.pid,
+        "pid": pid,
         "qnum": state.qnum,
         "filter": {
             "tcp": format_ranges(&filter.tcp),
@@ -321,18 +338,37 @@ fn read_session() -> Result<Option<SessionState>> {
 }
 
 fn cleanup_all() -> Result<()> {
-    kill_program("nfqws")?;
-    kill_program("nfqws2")?;
+    // Only the process this tester spawned (recorded in the session file).
+    // A previously running tester session is stopped too, so a crashed run
+    // never leaves a stray engine behind.
+    kill_session_process()?;
     cleanup_rules_for_program("nfqws")?;
     cleanup_rules_for_program("nfqws2")?;
+    Ok(())
+}
+
+/// Terminate a process the tester spawned, by pid. Never matches by name:
+/// the daemon's own nfqws/nfqws2 (queue 200) must survive a blockcheck run.
+fn kill_tester_process(pid: u32) -> Result<()> {
+    if pid == 0 {
+        return Ok(());
+    }
+    // SIGTERM first so the engine closes its nfq handle cleanly, then SIGKILL.
+    let _ = run("sh", &["-c", &format!("kill -TERM {pid} 2>/dev/null || true")]);
+    thread::sleep(Duration::from_millis(100));
+    let _ = run("sh", &["-c", &format!("kill -KILL {pid} 2>/dev/null || true")]);
+    Ok(())
+}
+
+/// Kill the process recorded in the tester session file, if any, and clear it.
+fn kill_session_process() -> Result<()> {
+    if let Ok(Some(state)) = read_session() {
+        let _ = kill_tester_process(state.pid);
+    }
     let _ = fs::remove_file(SESSION_FILE);
     Ok(())
 }
 
-fn kill_program(program: &str) -> Result<()> {
-    let _ = run("sh", &["-c", &format!("pkill -9 -x {program} 2>/dev/null || true")])?;
-    Ok(())
-}
 
 fn chain_name(program: &str) -> &'static str {
     match program {
@@ -498,7 +534,7 @@ fn add_protocol_rules_per_port(cmd: &str, chain: &str, queue: u16, proto: &str, 
     Ok(())
 }
 
-fn spawn_program(program: &str, bin: &Path, cwd: &Path, qnum: u16, config_args: &[String]) -> Result<u32> {
+fn spawn_program(program: &str, bin: &Path, cwd: &Path, qnum: u16, config_args: &[String]) -> Result<Child> {
     let devnull = File::options().read(true).write(true).open("/dev/null").context("open /dev/null")?;
     let devnull_err = devnull.try_clone().context("clone /dev/null")?;
     let mut cmd = Command::new(bin);
@@ -524,9 +560,19 @@ fn spawn_program(program: &str, bin: &Path, cwd: &Path, qnum: u16, config_args: 
     let pid = child.id();
     thread::sleep(Duration::from_millis(200));
     if !process_alive(pid) {
+        // Reap via wait() so a failed spawn never lingers as a zombie.
+        let mut child = child;
+        let _ = child.wait();
         bail!("{program} exited immediately after start")
     }
-    Ok(pid)
+    Ok(child)
+}
+
+/// SIGKILL a tester-spawned engine child and reap it so no zombie remains.
+/// Dropping the returned Child would leak the zombie entry under init.
+fn stop_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn process_alive(pid: u32) -> bool {
@@ -856,9 +902,29 @@ fn curl_probe_baseline(host: &str, timeout_secs: u64) -> Result<(u32, String, St
     Ok((http_code, String::new(), String::new()))
 }
 
+static SHUTDOWN_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn tester_signal_handler(_sig: libc::c_int) {
+    SHUTDOWN_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn run_auto_guarded(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Result<()> {
+    unsafe {
+        libc::signal(libc::SIGTERM, tester_signal_handler as libc::sighandler_t);
+        libc::signal(libc::SIGINT, tester_signal_handler as libc::sighandler_t);
+    }
+    let result = run_auto(program, hosts_file, qnum, timeout_secs);
+    // run_auto already cleaned up; ensure nothing is left even on error.
+    let _ = cleanup_all();
+    result
+}
+
 fn emit_event(event: &serde_json::Value) {
-    use std::io::Write;
-    let stdout = std::io::stdout();
+    let stdout = io::stdout();
     let mut handle = stdout.lock();
     let _ = writeln!(handle, "{event}");
     let _ = handle.flush();
@@ -952,6 +1018,20 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
     let mut failed: Vec<String> = Vec::new();
 
     for (idx, strategy) in strategies.iter().enumerate() {
+        if shutdown_requested() {
+            emit_event(&json!({
+                "type": "auto_finished",
+                "ok": true,
+                "program": program,
+                "total_strategies": total,
+                "working": working,
+                "failed": failed,
+                "interrupted": true,
+                "ts": now_unix_ms(),
+            }));
+            let _ = cleanup_all();
+            return Ok(());
+        }
         let config_path = strategic_dir(program).join(strategy);
         if !config_path.is_file() {
             emit_event(&json!({
@@ -992,8 +1072,8 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
         ensure_work_dir()?;
         cleanup_all()?;
 
-        let pid = match spawn_program(program, &bin, config_path.parent().unwrap_or(Path::new("/")), qnum, &config_args) {
-            Ok(p) => p,
+        let mut child = match spawn_program(program, &bin, config_path.parent().unwrap_or(Path::new("/")), qnum, &config_args) {
+            Ok(c) => c,
             Err(err) => {
                 emit_event(&json!({
                     "type": "auto_strategy_error",
@@ -1006,8 +1086,20 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
             }
         };
 
+        // Keep the session file in sync so `stop` (or a SIGKILL recovery on the
+        // next run) can kill exactly this engine, not the daemon's.
+        write_session(&SessionState {
+            program: program.to_string(),
+            config_path: config_path.display().to_string(),
+            config_name: strategy.clone(),
+            pid: child.id(),
+            qnum,
+            started_at_unix_ms: now_unix_ms(),
+        })?;
+
+
         if let Err(err) = apply_nfqueue_rules(program, qnum, &filter) {
-            let _ = kill_program(program);
+            stop_child(&mut child);
             let _ = cleanup_rules_for_program(program);
             emit_event(&json!({
                 "type": "auto_strategy_error",
@@ -1036,10 +1128,13 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
             .count() as u32;
 
         for host in &hosts {
+            if shutdown_requested() {
+                break;
+            }
             // Reuse the IP resolved once in the baseline phase (no second resolve).
             let ip = resolved_ips.get(host).cloned().unwrap_or_else(|| resolve_ip(host));
-            let result = match ip {
-                Some(ref ip) => curl_probe(host, ip, timeout_secs),
+            let result = match &ip {
+                Some(ip) => curl_probe(host, ip, timeout_secs),
                 None => curl_probe_baseline(host, timeout_secs),
             };
 
@@ -1079,8 +1174,12 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
             }));
         }
 
-        // Stop strategy
-        cleanup_all()?;
+        // Stop strategy: kill exactly the child we spawned (reap it, so no
+        // zombie) and drop our tester-only iptables chains. The daemon's
+        // nfqws/nfqws2 on queue 200 is untouched.
+        stop_child(&mut child);
+        let _ = cleanup_rules_for_program(program);
+        let _ = fs::remove_file(SESSION_FILE);
 
         // Gradient verdict: opened_pct is the share of baseline-blocked hosts
         // that this strategy successfully opened. Denominator is baseline_blocked
@@ -1137,5 +1236,7 @@ fn run_auto(program: &str, hosts_file: &str, qnum: u16, timeout_secs: u64) -> Re
         "ts": now_unix_ms(),
     }));
 
+    // Safety net: no engine, no rules, no session file left behind.
+    let _ = cleanup_all();
     Ok(())
 }

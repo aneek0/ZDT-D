@@ -22,7 +22,9 @@ class NfqwsTesterRunner(
         }
     }
 
-    suspend fun startStrategy(program: String, configPath: String, qnum: Int = 200): JSONObject = withContext(Dispatchers.IO) {
+    // Dedicated tester queue (daemon owns 200). Keep in sync with DEFAULT_QNUM
+    // in rust/nfqws-tester/src/main.rs.
+    suspend fun startStrategy(program: String, configPath: String, qnum: Int = 300): JSONObject = withContext(Dispatchers.IO) {
         runJson(listOf("start", "--program", program, "--config", configPath, "--qnum", qnum.toString()))
     }
 

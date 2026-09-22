@@ -98,6 +98,11 @@ private fun parseStrategySelection(text: String): StrategySelection {
   val excludeIpsets = mutableListOf<String>()
   for (token in text.split(Regex("\\s+"))) {
     val t = token.trim()
+    // Stop at the first profile section: everything after `--new` belongs to
+    // the preset strategy, not the user's global selection. Mirrors the
+    // daemon's extract_selection_from_config so the chips never re-apply
+    // preset-internal lists as the user's own choice.
+    if (t == "--new") break
     when {
       t.startsWith("--hostlist=") -> {
         val path = t.removePrefix("--hostlist=")

@@ -109,6 +109,17 @@ pub fn run(_cfg: &Config) -> Result<()> {
         });
     }
 
+    // Background zombie reaper: daemon-spawned engines (nfqws, nfqws2, ...)
+    // are never waited on after spawn. When one exits (TERM from a tester run,
+    // crash, OOM), it lingers as a zombie under this daemon until a full stop.
+    // A 60s periodic reap keeps the process table clean without racing
+    // code that waits on its own child (amneziawg's try_wait loop): reap only
+    // returns children that have already exited.
+    std::thread::spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        crate::stop::reap_children_public();
+    });
+
     api::serve(state.clone(), "127.0.0.1:1006")
 }
 
