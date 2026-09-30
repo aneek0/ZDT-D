@@ -293,9 +293,19 @@ class BlockcheckRunner(
         }
 
         // A tester blocked on a stdin confirm answer produces no output and
-        // would hang a graceful destroy: kill the process tree forcibly; the
+        // would hang a graceful destroy: kill the process tree forcibly. The
         // next run's cleanup_all() recovers leftover chains/session.
-        awaitClose { process.destroyForcibly() }
+        //
+        // Only a cancel (stop, or a replaced run) reaches awaitClose. A normal
+        // end must RETURN: an open channel would keep this flow — and the
+        // controller's run job — alive forever, so the scan could never be
+        // observed as finished and the next Start would look like a silent
+        // no-op.
+        if (isActive) {
+            process.destroyForcibly()
+        } else {
+            awaitClose { process.destroyForcibly() }
+        }
     }
 
     /** Answer a pending auto_confirm_needed prompt. */
