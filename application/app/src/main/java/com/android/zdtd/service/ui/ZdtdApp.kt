@@ -776,6 +776,19 @@ private fun MainShell(
     val (p, pr) = lastStrategyProfile
     appsRoute = AppsRoute.Blockcheck(p, pr)
   }
+  // Notification tap reopens the live scan; also make sure the apps tab is
+  // showing so the route is visible.
+  val blockcheckOpenRequests by com.android.zdtd.service.BlockcheckOpenRequest.requests.collectAsStateWithLifecycle()
+  LaunchedEffect(blockcheckOpenRequests) {
+    if (blockcheckOpenRequests <= 0L) return@LaunchedEffect
+    val running = com.android.zdtd.service.diagnostics.blockcheck.BlockcheckStore.state.value
+    if (!running.isRunning) return@LaunchedEffect
+    tab = Tab.APPS
+    appsRoute = AppsRoute.Blockcheck(
+      running.program.ifBlank { lastStrategyProfile.first },
+      running.profile.ifBlank { lastStrategyProfile.second },
+    )
+  }
   val internalOnOpenOptionalTools: () -> Unit = { appsRoute = AppsRoute.OptionalTools }
   val internalOnOpenVpsServers: () -> Unit = { appsRoute = AppsRoute.VpsServers }
   val internalOnOpenVpsServer: (String) -> Unit = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) }

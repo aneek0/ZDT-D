@@ -1832,6 +1832,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f MB</string>
     <string name="nfqws_tester_service_blocked_start">Stop the strategy tester first. Its temporary iptables rules must be cleaned before starting the service.</string>
 
+    <string name="blockcheck_notification_channel">Strategy scan</string>
+    <string name="blockcheck_notification_title">Strategy scan running</string>
     <string name="nfqws_tester_overlay_section_strategy">Strategy</string>
     <string name="nfqws_tester_overlay_section_progress">Progress</string>
     <string name="nfqws_tester_overlay_section_resources">Resources</string>

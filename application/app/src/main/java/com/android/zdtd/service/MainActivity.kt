@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     val fromLauncher = intent?.action == Intent.ACTION_MAIN && (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true)
     vm.onAppStart(fromLauncher)
     handleIncomingBackupIntent(intent)
+    handleBlockcheckOpenIntent(intent)
 
     // Handle update events (open browser / request permission / install APK).
     lifecycleScope.launch {
@@ -168,6 +169,16 @@ class MainActivity : AppCompatActivity() {
     super.onNewIntent(intent)
     setIntent(intent)
     handleIncomingBackupIntent(intent)
+    handleBlockcheckOpenIntent(intent)
+  }
+
+  /** Ongoing strategy-scan notification tap: focus the live scan screen. */
+  private fun handleBlockcheckOpenIntent(intent: Intent?) {
+    if (intent?.action != com.android.zdtd.service.diagnostics.blockcheck.BlockcheckScanService.ACTION_OPEN_BLOCKCHECK) return
+    BlockcheckOpenRequest.raise()
+    // Consume the action: activity recreation must not re-navigate after the
+    // user has moved elsewhere.
+    intent.action = null
   }
 
   private fun handleIncomingBackupIntent(intent: Intent?) {

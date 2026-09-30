@@ -20,7 +20,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.diagnostics.blockcheck.*
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
@@ -42,27 +41,34 @@ fun BlockcheckScreen(
     val state by BlockcheckStore.state.collectAsStateWithLifecycle()
     val runner = remember { BlockcheckRunner(context) }
 
-    var selectedProgram by remember { mutableStateOf(program) }
-    var selectedProfile by remember { mutableStateOf(profile) }
-    var selectedProtocol by remember { mutableStateOf("tcp_https") }
-    var selectedMode by remember { mutableStateOf("full") }
-    var allStrategies by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Re-entering the screen must resume whatever the store already holds: a
+    // run that is still going, and the finished/stopped results of one that
+    // completed while the user was elsewhere. The store is the source of
+    // truth; the UI never owns the scan lifecycle.
+    val resumed = remember { BlockcheckStore.state.value }
+    val entryProgram = remember { resumed.program.ifBlank { program } }
+
+    var selectedProgram by remember { mutableStateOf(resumed.program.ifBlank { program }) }
+    var selectedProfile by remember { mutableStateOf(resumed.profile.ifBlank { profile }) }
+    var selectedProtocol by remember { mutableStateOf(resumed.protocol) }
+    var selectedMode by remember { mutableStateOf(resumed.mode) }
+    var allStrategies by remember { mutableStateOf<List<String>>(resumed.allStrategies) }
     // nfqws2 scans the shipped atomic catalog; nfqws v1 scans preset files.
     var catalogStrategies by remember { mutableStateOf<List<CatalogStrategy>>(emptyList()) }
     var hostFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedHostFile by remember { mutableStateOf(hostsFile) }
     var customDomain by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
-    var runJob by remember { mutableStateOf<Job?>(null) }
-    var stoppedManually by remember { mutableStateOf(false) }
-    var runTargetKey by remember { mutableStateOf("") }
 
     LaunchedEffect(selectedProgram) {
-        runJob?.cancel()
-        runJob = null
-        stoppedManually = false
-        BlockcheckStore.reset()
-        selectedProfile = "default"
+        // Only an explicit program change starts over. The first composition
+        // keeps whatever the store holds: a live run, or the results of a run
+        // that finished while the user was on another tab.
+        if (selectedProgram != entryProgram) {
+            if (BlockcheckController.isActive) return@LaunchedEffect
+            BlockcheckStore.reset()
+            selectedProfile = "default"
+        }
         hostFiles = runner.listHostFiles()
     }
 
@@ -76,11 +82,15 @@ fun BlockcheckScreen(
         val catalog = if (selectedProgram == "nfqws2") runner.listCatalog(selectedProtocol) else emptyList()
         catalogStrategies = catalog
         allStrategies = if (catalog.isNotEmpty()) catalog.map { it.id } else runner.listStrategies(selectedProgram)
-        BlockcheckStore.update {
-            it.copy(
-                allStrategies = allStrategies,
-                strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
-            )
+        // A live run owns the store: its ordered/capped candidate list must not
+        // be replaced by the full idle catalog list.
+        if (!BlockcheckController.isActive) {
+            BlockcheckStore.update {
+                it.copy(
+                    allStrategies = allStrategies,
+                    strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
+                )
+            }
         }
     }
 
@@ -100,106 +110,28 @@ fun BlockcheckScreen(
                 tmp.absolutePath
             } else selectedHostFile
         }
-        runTargetKey = if (isTcp) {
+        val targetKey = if (isTcp) {
             hostInput?.let { File(it).name } ?: ""
         } else {
             selectedProtocol
         }
-        stoppedManually = false
-        BlockcheckStore.reset()
-        BlockcheckStore.update {
-            it.copy(
+        BlockcheckController.start(
+            context,
+            BlockcheckRequest(
                 program = selectedProgram,
+                profile = selectedProfile,
                 protocol = selectedProtocol,
                 mode = selectedMode,
+                hostsFile = hostInput,
+                targetKey = targetKey,
                 allStrategies = allStrategies,
                 strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
-                isRunning = true,
-            )
-        }
-        runJob = coroutineScope.launch {
-            runner.run(
-                program = selectedProgram,
-                hostsFile = hostInput,
-                protocol = selectedProtocol,
-                mode = selectedMode,
-                historyPath = BlockcheckHistory(context).path(),
-            ).collect { event ->
-                when (event) {
-                    is BlockcheckEvent.Started -> BlockcheckStore.replace(
-                        event.session.copy(
-                            program = selectedProgram,
-                            allStrategies = event.session.allStrategies.ifEmpty { allStrategies },
-                            isRunning = true,
-                        )
-                    )
-                    is BlockcheckEvent.Phase -> BlockcheckStore.update { it.copy(phase = event.phase) }
-                    is BlockcheckEvent.StrategyStarted -> BlockcheckStore.update { it.copy(currentStrategy = event.strategy, currentStrategyIndex = event.index) }
-                    is BlockcheckEvent.StrategyResult -> {
-                        BlockcheckStore.update {
-                            val r = event.result
-                            val w = if (r.isWorking) it.workingStrategies + r.strategy else it.workingStrategies
-                            val u = if (r.isUnstable || r.noBaselineBlock || r.verdict == "not_counted") it.unstableStrategies + r.strategy else it.unstableStrategies
-                            val f = if (!r.isWorking && !r.isUnstable && !r.noBaselineBlock && r.verdict != "not_counted") it.failedStrategies + r.strategy else it.failedStrategies
-                            it.copy(workingStrategies = w, failedStrategies = f, unstableStrategies = u, results = it.results + r)
-                        }
-                    }
-                    is BlockcheckEvent.StrategySkipped -> BlockcheckStore.update { it.copy(skippedStrategies = it.skippedStrategies + event.strategy) }
-                    is BlockcheckEvent.StrategyError -> BlockcheckStore.update { it.copy(failedStrategies = it.failedStrategies + event.strategy) }
-                    is BlockcheckEvent.ConfirmNeeded -> BlockcheckStore.update { it.copy(pendingConfirm = event.question) }
-                    is BlockcheckEvent.Fatal -> {
-                        val resId = when (event.stopKind) {
-                            "no_internet" -> R.string.blockcheck_fatal_no_internet
-                            "dns_stub" -> R.string.blockcheck_fatal_dns_stub
-                            "address_block" -> R.string.blockcheck_fatal_address_block
-                            "network_lost" -> R.string.blockcheck_fatal_network_lost
-                            else -> null
-                        }
-                        val msg = resId?.let { context.getString(it) } ?: event.message
-                        BlockcheckStore.update { it.copy(isError = true, errorMessage = msg, isRunning = false) }
-                    }
-                    is BlockcheckEvent.Finished -> {
-                        val unstableNow = BlockcheckStore.state.value.results
-                            .filter { it.isUnstable || it.noBaselineBlock || it.verdict == "not_counted" }
-                            .map { it.strategy }
-                        BlockcheckStore.update {
-                            it.copy(
-                                workingStrategies = event.working,
-                                failedStrategies = event.failed.filter { s -> s !in unstableNow },
-                                unstableStrategies = unstableNow,
-                                isFinished = true,
-                                isRunning = false,
-                                forced = event.forced,
-                                stopKind = event.stopKind,
-                                pendingConfirm = null,
-                            )
-                        }
-                        if (event.stopKind == "declined") stoppedManually = true
-                        // Informational (forced) runs never touch history.
-                        if (!event.forced && event.stopKind == null) {
-                            BlockcheckHistory(context).record(
-                                program = selectedProgram,
-                                protocol = selectedProtocol,
-                                targetKey = runTargetKey,
-                                working = event.working,
-                                failed = event.failed,
-                            )
-                        }
-                    }
-                    is BlockcheckEvent.Error -> BlockcheckStore.update { it.copy(isError = true, errorMessage = event.message, isRunning = false) }
-                    else -> {}
-                }
-            }
-        }
+            ),
+        )
     }
 
     fun stopRun() {
-        runJob?.cancel()
-        runJob = null
-        stoppedManually = true
-        BlockcheckStore.update {
-            it.copy(isRunning = false, isFinished = true, phase = "stopped")
-        }
+        BlockcheckController.stop()
     }
 
     // Catalog ids are opaque; show the human title from the catalog when known.
@@ -365,10 +297,9 @@ fun BlockcheckScreen(
                             enabled = !state.isRunning && (selectedProtocol != "tcp_https" || !showCustom || customDomain.isNotBlank()),
                         ) { Text(context.getString(R.string.blockcheck_start)) }
                         if (state.isRunning || state.isFinished || state.isError) {
-                            OutlinedButton(onClick = {
-                                BlockcheckStore.reset()
-                                stoppedManually = false
-                            }) { Text(context.getString(R.string.blockcheck_reset)) }
+                            OutlinedButton(onClick = { BlockcheckStore.reset() }) {
+                                Text(context.getString(R.string.blockcheck_reset))
+                            }
                         }
                     }
                 }
@@ -408,7 +339,7 @@ fun BlockcheckScreen(
             }
         }
 
-        if (state.isFinished && stoppedManually) {
+        if (state.isFinished && state.stoppedManually) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -552,7 +483,7 @@ fun BlockcheckScreen(
             }
         }
 
-        if (state.isFinished && !stoppedManually) {
+        if (state.isFinished && !state.stoppedManually) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.forced) {
@@ -669,13 +600,13 @@ fun BlockcheckScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    runner.answerConfirm(true)
+                    BlockcheckController.answerConfirm(true)
                     BlockcheckStore.update { it.copy(pendingConfirm = null) }
                 }) { Text(context.getString(R.string.blockcheck_confirm_continue)) }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    runner.answerConfirm(false)
+                    BlockcheckController.answerConfirm(false)
                     BlockcheckStore.update { it.copy(pendingConfirm = null) }
                 }) { Text(context.getString(R.string.blockcheck_stop)) }
             },

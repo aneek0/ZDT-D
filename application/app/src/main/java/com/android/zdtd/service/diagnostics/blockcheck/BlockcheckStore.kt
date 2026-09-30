@@ -17,6 +17,8 @@ data class BlockcheckSession(
     // Catalog id -> human title (nfqws2 catalog runs only).
     val strategyTitles: Map<String, String> = emptyMap(),
     val mode: String = "full",
+    // The profile the run will apply its winner to; survives screen detach.
+    val profile: String = "default",
     val currentStrategy: String = "",
     val currentStrategyIndex: Int = -1,
     val phase: String = "",
