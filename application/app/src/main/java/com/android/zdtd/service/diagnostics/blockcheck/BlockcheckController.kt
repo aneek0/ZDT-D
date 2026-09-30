@@ -65,6 +65,11 @@ object BlockcheckController {
         }
     }
 
+    /** Answers a pending confirm prompt; no-op when no run is active. */
+    fun answerConfirm(accept: Boolean) {
+        impl?.answerConfirm(accept)
+    }
+
     /**
      * Starts a scan. No-op when one is already active, so re-entering the
      * screen cannot restart or clobber a run that is still going.

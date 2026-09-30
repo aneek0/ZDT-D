@@ -47,6 +47,8 @@ fun BlockcheckScreen(
     // truth; the UI never owns the scan lifecycle.
     val resumed = remember { BlockcheckStore.state.value }
     val entryProgram = remember { resumed.program.ifBlank { program } }
+    val entryProtocol = remember { resumed.protocol }
+
 
     var selectedProgram by remember { mutableStateOf(resumed.program.ifBlank { program }) }
     var selectedProfile by remember { mutableStateOf(resumed.profile.ifBlank { profile }) }
@@ -60,13 +62,14 @@ fun BlockcheckScreen(
     var customDomain by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
 
+    val targetChanged = selectedProgram != entryProgram || selectedProtocol != entryProtocol
+
     LaunchedEffect(selectedProgram) {
         // Only an explicit program change starts over. The first composition
         // keeps whatever the store holds: a live run, or the results of a run
         // that finished while the user was on another tab.
         if (selectedProgram != entryProgram) {
             if (BlockcheckController.isActive) return@LaunchedEffect
-            BlockcheckStore.reset()
             selectedProfile = "default"
         }
         hostFiles = runner.listHostFiles()
@@ -82,9 +85,12 @@ fun BlockcheckScreen(
         val catalog = if (selectedProgram == "nfqws2") runner.listCatalog(selectedProtocol) else emptyList()
         catalogStrategies = catalog
         allStrategies = if (catalog.isNotEmpty()) catalog.map { it.id } else runner.listStrategies(selectedProgram)
-        // A live run owns the store: its ordered/capped candidate list must not
-        // be replaced by the full idle catalog list.
-        if (!BlockcheckController.isActive) {
+        // The store's candidate list belongs to a scan and must not be replaced
+        // by the full idle catalog list: the run's order and mode cap matter,
+        // and a finished run's list is what the results table renders against.
+        if (targetChanged && !BlockcheckController.isActive) {
+            // A different target invalidates the previous run's results.
+            BlockcheckStore.reset()
             BlockcheckStore.update {
                 it.copy(
                     allStrategies = allStrategies,
