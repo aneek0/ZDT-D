@@ -17,6 +17,10 @@ import java.io.InputStreamReader
 class BlockcheckRunner(
     private val context: Context,
 ) {
+    /** su stdin pipe while a run is active; the tester reads confirm answers from it. */
+    @Volatile
+    private var confirmWriter: java.io.OutputStream? = null
+
     suspend fun listStrategies(program: String): List<String> = withContext(Dispatchers.IO) {
         val fromBinary = runCatching {
             val binary = NfqwsTesterBinary(context).ensureInstalled()
@@ -56,43 +60,58 @@ class BlockcheckRunner(
 
     fun run(
         program: String,
-        hostsFile: String,
+        // Only used for tcp_https; omitted for the fixed-target UDP protocols.
+        hostsFile: String?,
+        protocol: String = "tcp_https",
+        mode: String = "full",
+        historyPath: String? = null,
         // Dedicated tester queue: the daemon's nfqws/nfqws2 profiles own 200
         // (ports.rs program_base). Sharing 200 made blockcheck steal packets
         // from (and kill) a running daemon session. Keep in sync with
         // DEFAULT_QNUM in rust/nfqws-tester/src/main.rs.
         qnum: Int = 300,
-        timeoutSecs: Int = 2,
+        timeoutSecs: Int = 4,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
-        val args = listOf(
-            "auto",
-            "--program", program,
-            "--hosts", hostsFile,
-            "--qnum", qnum.toString(),
-            "--timeout", timeoutSecs.toString()
-        )
+        val args = buildList {
+            add("auto")
+            add("--program"); add(program)
+            if (protocol == "tcp_https" && hostsFile != null) {
+                add("--hosts"); add(hostsFile)
+            }
+            add("--protocol"); add(protocol)
+            add("--mode"); add(mode)
+            if (historyPath != null) {
+                add("--history"); add(historyPath)
+            }
+            add("--qnum"); add(qnum.toString())
+            add("--timeout"); add(timeoutSecs.toString())
+        }
         val cmd = buildShellCommand(binary.absolutePath, args)
 
         Log.d(TAG, "starting: ${binary.absolutePath} ${args.joinToString(" ")}")
 
-        withContext(Dispatchers.IO) {
-            val process = ProcessBuilder("su")
-                .redirectErrorStream(true)
-                .start()
+        val process = ProcessBuilder("su")
+            .redirectErrorStream(true)
+            .start()
 
-            process.outputStream.write(cmd.toByteArray())
-            process.outputStream.close()
+        // Keep the su stdin pipe open: the shell consumes the command lines
+        // before `exec`, and the tester later reads confirm answers from fd 0.
+        val writer = process.outputStream
+        confirmWriter = writer
+        writer.write(cmd.toByteArray())
+        writer.flush()
 
-            var session: BlockcheckSession? = null
-            var sentError = false
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
+        var session: BlockcheckSession? = null
+        var sentError = false
+        val reader = BufferedReader(InputStreamReader(process.inputStream))
 
-            try {
+        try {
+            withContext(Dispatchers.IO) {
                 var line = reader.readLine()
                 while (line != null) {
                     if (!isActive) {
-                        process.destroy()
+                        process.destroyForcibly()
                         break
                     }
                     val trimmed = line.trim()
@@ -107,7 +126,13 @@ class BlockcheckRunner(
                                         totalHosts = json.optInt("total_hosts", 0),
                                         hosts = json.optJSONArray("hosts")?.let { arr ->
                                             buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
-                                        } ?: emptyList()
+                                        } ?: emptyList(),
+                                        protocol = json.optString("protocol", protocol),
+                                        mode = json.optString("mode", mode),
+                                        // Actual run order after history ordering + mode cap.
+                                        allStrategies = json.optJSONArray("strategies")?.let { arr ->
+                                            buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
+                                        } ?: emptyList(),
                                     )
                                     trySend(BlockcheckEvent.Started(session!!))
                                 }
@@ -117,9 +142,20 @@ class BlockcheckRunner(
                                 "auto_baseline_probe" -> {
                                     trySend(BlockcheckEvent.BaselineProbe(probe = BlockcheckBaselineProbe(
                                         host = json.optString("host", ""),
+                                        verdict = json.optString("verdict", ""),
+                                        reason = json.optString("reason", ""),
                                         httpCode = json.optInt("http_code", 0),
                                         size = json.optString("size", ""),
                                     ), session = session!!))
+                                }
+                                "auto_confirm_needed" -> {
+                                    trySend(BlockcheckEvent.ConfirmNeeded(json.optString("question", "")))
+                                }
+                                "auto_fatal" -> {
+                                    trySend(BlockcheckEvent.Fatal(
+                                        json.optString("stop_kind", ""),
+                                        json.optString("message", ""),
+                                    ))
                                 }
                                 "auto_strategy_start" -> {
                                     trySend(BlockcheckEvent.StrategyStarted(
@@ -133,17 +169,20 @@ class BlockcheckRunner(
                                     trySend(BlockcheckEvent.StrategyProbe(probe = BlockcheckStrategyProbe(
                                         strategy = json.optString("strategy", ""),
                                         host = json.optString("host", ""),
-                                        httpCode = json.optInt("http_code", 0),
-                                        baselineCode = json.optInt("baseline_code", 0),
+                                        attempt = json.optInt("attempt", 1),
+                                        attemptsOk = json.optInt("attempts_ok", 0),
+                                        attemptsTotal = json.optInt("attempts_total", 0),
+                                        verdict = json.optString("verdict", ""),
+                                        reason = json.optString("reason", ""),
                                         works = json.optBoolean("works", false),
+                                        timeMs = json.optLong("time_ms", 0L),
+                                        httpCode = json.optInt("http_code", 0),
                                     ), session = session!!))
                                 }
                                 "auto_strategy_result" -> {
                                     trySend(BlockcheckEvent.StrategyResult(result = BlockcheckStrategyResult(
                                         strategy = json.optString("strategy", ""),
                                         verdict = json.optString("verdict", "unknown"),
-                                        allMatch = json.optBoolean("all_match", false),
-                                        anyMatch = json.optBoolean("any_match", false),
                                         hostsTotal = json.optInt("hosts_total", 0),
                                         baselineBlocked = json.optInt("baseline_blocked", 0),
                                         hostsOpened = json.optInt("hosts_opened", 0),
@@ -153,6 +192,12 @@ class BlockcheckRunner(
                                             val raw = json.opt("score")
                                             if (raw is Number) raw.toDouble() else null
                                         },
+                                        timeMs = run {
+                                            val raw = json.opt("time_ms")
+                                            if (raw is Number) raw.toDouble() else null
+                                        },
+                                        attemptsOk = json.optInt("attempts_ok", 0),
+                                        attemptsTotal = json.optInt("attempts_total", 0),
                                     ), session = session!!))
                                 }
                                 "auto_finished" -> {
@@ -164,7 +209,13 @@ class BlockcheckRunner(
                                     json.optJSONArray("failed")?.let { arr ->
                                         for (i in 0 until arr.length()) failed.add(arr.getString(i))
                                     }
-                                    trySend(BlockcheckEvent.Finished(working, failed, session!!))
+                                    val stopKind = json.optString("stop_kind", "").ifBlank { null }
+                                    trySend(BlockcheckEvent.Finished(
+                                        working, failed,
+                                        forced = json.optBoolean("forced", false),
+                                        stopKind = stopKind,
+                                        session = session!!,
+                                    ))
                                 }
                                 "auto_strategy_skip" -> {
                                     trySend(BlockcheckEvent.StrategySkipped(
@@ -184,27 +235,41 @@ class BlockcheckRunner(
                         } else if (session == null) {
                             trySend(BlockcheckEvent.Error(trimmed))
                             sentError = true
-                            process.destroy()
+                            process.destroyForcibly()
                             break
                         }
                     }
                     line = reader.readLine()
                 }
-            } finally {
-                reader.close()
-                process.destroy()
             }
-
-            // Stub/missing binaries (0-byte APK asset) exit without emitting any JSON.
-            // Surface that as an error instead of leaving the UI stuck on "starting".
-            if (session == null && !sentError && isActive) {
-                trySend(BlockcheckEvent.Error(
-                    "nfqws_tester binary failed to start (no output). The APK ships an empty stub; rebuild the APK with the real binary."
-                ))
-            }
+        } finally {
+            runCatching { reader.close() }
+            runCatching { writer.close() }
+            confirmWriter = null
+            process.destroy()
         }
 
-        awaitClose { }
+        // Stub/missing binaries (0-byte APK asset) exit without emitting any JSON.
+        // Surface that as an error instead of leaving the UI stuck on "starting".
+        if (session == null && !sentError) {
+            trySend(BlockcheckEvent.Error(
+                "nfqws_tester binary failed to start (no output). The APK ships an empty stub; rebuild the APK with the real binary."
+            ))
+        }
+
+        // A tester blocked on a stdin confirm answer produces no output and
+        // would hang a graceful destroy: kill the process tree forcibly; the
+        // next run's cleanup_all() recovers leftover chains/session.
+        awaitClose { process.destroyForcibly() }
+    }
+
+    /** Answer a pending auto_confirm_needed prompt. */
+    fun answerConfirm(accept: Boolean) {
+        val writer = confirmWriter ?: return
+        runCatching {
+            writer.write((if (accept) "y\n" else "n\n").toByteArray())
+            writer.flush()
+        }
     }
 
     companion object {

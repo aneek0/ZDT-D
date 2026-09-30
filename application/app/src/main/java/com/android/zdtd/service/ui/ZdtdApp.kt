@@ -1326,7 +1326,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
-    tab == Tab.APPS && appsRoute is AppsRoute.Blockcheck -> "Auto Blockcheck"
+    tab == Tab.APPS && appsRoute is AppsRoute.Blockcheck -> stringResource(R.string.blockcheck_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId

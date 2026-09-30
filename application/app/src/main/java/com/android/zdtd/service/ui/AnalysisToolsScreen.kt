@@ -69,9 +69,9 @@ fun AnalysisToolsScreen(
     }
     item {
       AnalysisToolCard(
-        title = "Auto Blockcheck",
-        subtitle = "Automatically test all DPI bypass strategies",
-        badge = "Recommended",
+        title = stringResource(R.string.blockcheck_title),
+        subtitle = stringResource(R.string.blockcheck_short_desc),
+        badge = stringResource(R.string.analysis_tools_badge_recommended),
         icon = Icons.Outlined.PlaylistPlay,
         accent = MaterialTheme.colorScheme.primary,
         onClick = onOpenBlockcheck,
