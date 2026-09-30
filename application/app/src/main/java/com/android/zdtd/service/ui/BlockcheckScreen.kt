@@ -237,6 +237,38 @@ fun BlockcheckScreen(
             }
         }
 
+        if (state.isRunning) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = when {
+                                state.phase == "network" -> context.getString(R.string.blockcheck_phase_network)
+                                state.phase == "baseline" -> context.getString(R.string.blockcheck_baseline)
+                                state.phase == "pass_control" -> context.getString(R.string.blockcheck_phase_pass_control)
+                                state.phase == "strategies" && state.currentStrategyIndex >= 0 ->
+                                    context.getString(R.string.blockcheck_testing_fmt, state.currentStrategyIndex + 1, state.totalStrategies)
+                                else -> context.getString(R.string.blockcheck_starting)
+                            },
+                            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                        )
+                        val progress = if (state.totalStrategies > 0 && state.currentStrategyIndex >= 0)
+                            (state.currentStrategyIndex + 1).toFloat() / state.totalStrategies else 0f
+                        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = { stopRun() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            ) { Text(context.getString(R.string.blockcheck_stop)) }
+                        }
+                    }
+                }
+            }
+        }
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -258,7 +290,10 @@ fun BlockcheckScreen(
                                 value = customDomain, onValueChange = { customDomain = it },
                                 label = { Text(context.getString(R.string.blockcheck_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                             )
-                        } else {
+                        } else if (!state.isRunning) {
+                            // Mid-run the list is not selectable anyway, and a
+                            // few hundred chips would bury the progress card
+                            // (with Stop) far below the fold.
                             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                                 hostFiles.forEach { file ->
                                     val path = "/data/adb/modules/ZDT-D/strategic/list/$file"
@@ -312,38 +347,6 @@ fun BlockcheckScreen(
             }
         }
 
-        if (state.isRunning) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
-                ) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = when {
-                                state.phase == "network" -> context.getString(R.string.blockcheck_phase_network)
-                                state.phase == "baseline" -> context.getString(R.string.blockcheck_baseline)
-                                state.phase == "pass_control" -> context.getString(R.string.blockcheck_phase_pass_control)
-                                state.phase == "strategies" && state.currentStrategyIndex >= 0 ->
-                                    context.getString(R.string.blockcheck_testing_fmt, state.currentStrategyIndex + 1, state.totalStrategies)
-                                else -> context.getString(R.string.blockcheck_starting)
-                            },
-                            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-                        )
-                        val progress = if (state.totalStrategies > 0 && state.currentStrategyIndex >= 0)
-                            (state.currentStrategyIndex + 1).toFloat() / state.totalStrategies else 0f
-                        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = { stopRun() },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            ) { Text(context.getString(R.string.blockcheck_stop)) }
-                        }
-                    }
-                }
-            }
-        }
 
         if (state.isFinished && state.stoppedManually) {
             item {
