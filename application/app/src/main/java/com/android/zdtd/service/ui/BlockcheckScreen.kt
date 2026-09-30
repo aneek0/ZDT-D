@@ -3,6 +3,7 @@ package com.android.zdtd.service.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BlockcheckScreen(
     program: String,
@@ -256,7 +258,10 @@ fun BlockcheckScreen(
             ) {
                 Column(Modifier.padding(if (compact) 16.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(context.getString(R.string.blockcheck_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         FilterChip(selected = selectedProgram == "nfqws", onClick = { selectedProgram = "nfqws" }, label = { Text("nfqws") })
                         FilterChip(selected = selectedProgram == "nfqws2", onClick = { selectedProgram = "nfqws2" }, label = { Text("nfqws2") })
                     }
@@ -265,7 +270,10 @@ fun BlockcheckScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         FilterChip(selected = selectedProtocol == "tcp_https", onClick = { selectedProtocol = "tcp_https" }, label = { Text(context.getString(R.string.blockcheck_protocol_tcp_https)) })
                         FilterChip(selected = selectedProtocol == "stun_voice", onClick = { selectedProtocol = "stun_voice" }, label = { Text(context.getString(R.string.blockcheck_protocol_stun_voice)) })
                         FilterChip(selected = selectedProtocol == "udp_games", onClick = { selectedProtocol = "udp_games" }, label = { Text(context.getString(R.string.blockcheck_protocol_udp_games)) })
@@ -275,7 +283,10 @@ fun BlockcheckScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         FilterChip(selected = selectedMode == "quick", onClick = { selectedMode = "quick" }, label = { Text(context.getString(R.string.blockcheck_mode_quick)) })
                         FilterChip(selected = selectedMode == "standard", onClick = { selectedMode = "standard" }, label = { Text(context.getString(R.string.blockcheck_mode_standard)) })
                         FilterChip(selected = selectedMode == "full", onClick = { selectedMode = "full" }, label = { Text(context.getString(R.string.blockcheck_mode_full)) })
@@ -298,7 +309,10 @@ fun BlockcheckScreen(
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (selectedProtocol == "tcp_https") {
                         Text(context.getString(R.string.blockcheck_hosts_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
                             FilterChip(selected = !showCustom, onClick = { showCustom = false }, label = { Text(context.getString(R.string.blockcheck_from_list)) })
                             FilterChip(selected = showCustom, onClick = { showCustom = true }, label = { Text(context.getString(R.string.blockcheck_custom_domain)) })
                         }
@@ -343,7 +357,10 @@ fun BlockcheckScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         Button(
                             onClick = { startRun() },
                             enabled = !state.isRunning && (selectedProtocol != "tcp_https" || !showCustom || customDomain.isNotBlank()),
