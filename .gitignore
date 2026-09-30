@@ -70,3 +70,6 @@ build-tail.log
 
 # local module zip build output
 out_module/
+
+# Local agent scratch (plans, notes)
+/.omp/

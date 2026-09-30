@@ -4,12 +4,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
+
+/** One atomic strategy from the shipped scan catalog (nfqws2 only). */
+data class CatalogStrategy(val id: String, val name: String)
+
 data class BlockcheckSession(
     val program: String,
     val totalStrategies: Int,
     val totalHosts: Int,
     val hosts: List<String>,
     val protocol: String = "tcp_https",
+    // Catalog id -> human title (nfqws2 catalog runs only).
+    val strategyTitles: Map<String, String> = emptyMap(),
     val mode: String = "full",
     val currentStrategy: String = "",
     val currentStrategyIndex: Int = -1,

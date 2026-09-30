@@ -175,10 +175,19 @@ on top of the merge base) are a smaller, focused set:
 
 - **In-app blockcheck (strategy autotest).** A `diagnostics/blockcheck/` UI plus
   a native `nfqws-tester auto` sweep that probes a host list with no strategy
-  (baseline) and then tests every `nfqws`/`nfqws2` strategy file, showing a
-  per-strategy opened percentage and a `Works` / `Partial` / `Failed` /
-  `No baseline block` verdict (with a share/test-results function). This does
-  not exist upstream.
+  (baseline) and then tests every bypass strategy — atomic catalog entries for
+  `nfqws2`, preset files for `nfqws` — showing a per-strategy opened percentage
+  and a `Works` / `Partial` / `Failed` / `No baseline block` verdict (with a
+  share/test-results function). This does not exist upstream.
+- **Atomic nfqws2 scan catalog.** For `nfqws2` the scan tests individual atomic
+  strategies, not whole preset files: `module_template/strategic/scan/{tcp,
+  voice,udp}.txt` (ported from zapretgui's `strategy_catalogs`) plus the
+  `module_template/strategic/scan/blobs.txt` blob registry. The tester assembles a
+  per-protocol config (lua-init block, blob declarations, filter lines,
+  strategy), scans it, and on apply writes the winning strategy as a normal
+  preset into the module's `strategicvar/nfqws2/` so the daemon can start it —
+  the user's hostlist/ipset selection is then injected by the daemon as usual.
+  `nfqws` v1 has no such catalog and keeps scanning preset files.
 - **Blockcheck UI / appearance.** The fork adds the `BlockcheckScreen` Compose
   screen (start/stop, host-file picker, live strategy list with progress bars
   and `Works` / `Partial` / `Failed` chips), matching the app-wide card/button

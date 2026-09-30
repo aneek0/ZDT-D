@@ -58,6 +58,42 @@ class BlockcheckRunner(
         result.lines().filter { it.isNotBlank() && it.endsWith(".txt") && !it.startsWith("ipset-") }.sorted()
     }
 
+    /**
+     * Atomic strategies of a scan catalog for nfqws2: stable id + display
+     * title, already filtered by the tester to entries whose blobs resolve.
+     */
+    suspend fun listCatalog(protocol: String): List<CatalogStrategy> = withContext(Dispatchers.IO) {
+        runCatching {
+            val binary = NfqwsTesterBinary(context).ensureInstalled()
+            val cmd = buildShellCommand(binary.absolutePath, listOf("catalog", "--protocol", protocol))
+            val json = runCatching { JSONObject(runRoot(cmd)) }.getOrNull() ?: return@runCatching emptyList()
+            val arr = json.optJSONArray("strategies") ?: return@runCatching emptyList()
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val id = obj.optString("id", "")
+                    if (id.isNotBlank()) add(CatalogStrategy(id, obj.optString("name", id)))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Turn a catalog strategy into a preset file the daemon can apply, and
+     * return that file's name (module strategicvar dir). Null on failure.
+     */
+    suspend fun exportStrategy(program: String, protocol: String, id: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val binary = NfqwsTesterBinary(context).ensureInstalled()
+            val cmd = buildShellCommand(
+                binary.absolutePath,
+                listOf("export", "--program", program, "--protocol", protocol, "--id", id),
+            )
+            val json = runCatching { JSONObject(runRoot(cmd)) }.getOrNull() ?: return@runCatching null
+            json.optString("file", "").ifBlank { null }
+        }.getOrNull()
+    }
+
     fun run(
         program: String,
         // Only used for tcp_https; omitted for the fixed-target UDP protocols.
@@ -130,9 +166,8 @@ class BlockcheckRunner(
                                         protocol = json.optString("protocol", protocol),
                                         mode = json.optString("mode", mode),
                                         // Actual run order after history ordering + mode cap.
-                                        allStrategies = json.optJSONArray("strategies")?.let { arr ->
-                                            buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
-                                        } ?: emptyList(),
+                                        allStrategies = jsonStringList(json, "strategies"),
+                                        strategyTitles = jsonTitleMap(json),
                                     )
                                     trySend(BlockcheckEvent.Started(session!!))
                                 }
@@ -305,6 +340,33 @@ class BlockcheckRunner(
             // The pipe stays open for confirm answers: without a trailing
             // newline sh would wait for EOF before running the exec line.
             append('\n')
+        }
     }
-}
+
+    /** String array field of a tester event; empty when absent or all blank. */
+    private fun jsonStringList(json: JSONObject, key: String): List<String> {
+        val arr = json.optJSONArray(key) ?: return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i, "")
+                if (v.isNotBlank()) add(v)
+            }
+        }
+    }
+
+    /**
+     * Catalog ids paired with their display titles. `strategies` and `titles`
+     * are parallel arrays in auto_started; a blank title falls back to the id.
+     */
+    private fun jsonTitleMap(json: JSONObject): Map<String, String> {
+        val ids = json.optJSONArray("strategies") ?: return emptyMap()
+        val titles = json.optJSONArray("titles") ?: return emptyMap()
+        return buildMap {
+            for (i in 0 until minOf(ids.length(), titles.length())) {
+                val id = ids.optString(i, "")
+                if (id.isBlank()) continue
+                put(id, titles.optString(i, "").ifBlank { id })
+            }
+        }
+    }
 }

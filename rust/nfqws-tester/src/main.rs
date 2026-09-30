@@ -92,6 +92,17 @@ fn entry() -> Result<()> {
             let program = parse_named_value(&args[1..], "--program")?;
             list_strategies(&normalize_program(&program)?)
         }
+        "catalog" => {
+            let protocol = parse_named_value(&args[1..], "--protocol")
+                .unwrap_or_else(|_| "tcp_https".to_string());
+            list_catalog(&protocol)
+        }
+        "export" => {
+            let program = normalize_program(&parse_named_value(&args[1..], "--program")?)?;
+            let protocol = parse_named_value(&args[1..], "--protocol")?;
+            let id = parse_named_value(&args[1..], "--id")?;
+            export_strategy(&program, &protocol, &id)
+        }
         "start" => {
             let options = parse_start_options(&args[1..])?;
             start_strategy(options)
@@ -152,6 +163,9 @@ fn print_help() {
     println!("  nfqws-tester --version");
     println!("  nfqws-tester list --program nfqws|nfqws2");
     println!("  nfqws-tester start --program nfqws|nfqws2 --config /path/to/file.txt [--qnum 200]");
+    println!("  nfqws-tester auto --program nfqws|nfqws2 [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
+    println!("  nfqws-tester export --program nfqws2 --protocol tcp_https|stun_voice|udp_games --id <strategy-id>");
+    println!("  nfqws-tester catalog --protocol tcp_https|stun_voice|udp_games");
     println!("  nfqws-tester stop");
     println!("  nfqws-tester status");
     println!("  nfqws-tester usage --pid 1234");
@@ -210,6 +224,66 @@ fn list_strategies(program: &str) -> Result<()> {
     }
     items.sort();
     println!("{}", json!({"ok": true, "program": program, "dir": dir, "strategies": items}));
+    Ok(())
+}
+
+/// List the atomic strategies of a scan catalog for the UI: id + display title.
+fn list_catalog(protocol: &str) -> Result<()> {
+    let catalog = load_catalog(protocol)?;
+    let registry = load_blob_registry();
+    let mut entries = Vec::new();
+    let mut skipped = Vec::new();
+    for entry in &catalog {
+        // The pass strategy is the pass-control baseline, never a candidate:
+        // the scan drops it (`Candidate::is_pass`) and so must the preview.
+        if is_pass_techniques(&technique_set("nfqws2", &entry.lines.join("\n"))) {
+            skipped.push(json!(entry.id));
+            continue;
+        }
+        if plan_blobs(&entry.lines, &registry).unresolved.is_empty() {
+            entries.push(json!({"id": entry.id, "name": entry.title}));
+        } else {
+            skipped.push(json!(entry.id));
+        }
+    }
+    println!("{}", json!({
+        "ok": true,
+        "protocol": protocol,
+        "dir": SCAN_CATALOG_DIR,
+        "count": entries.len(),
+        "strategies": entries,
+        "skipped": skipped,
+    }));
+    Ok(())
+}
+
+/// Write one catalog entry as a preset the daemon can apply:
+/// no hostlist (the daemon injects the user's selection), full lua-init block.
+fn export_strategy(program: &str, protocol: &str, id: &str) -> Result<()> {
+    if program != "nfqws2" {
+        bail!("catalog export is only available for nfqws2");
+    }
+    let catalog = load_catalog(protocol)?;
+    let entry = catalog
+        .iter()
+        .find(|e| e.id == id)
+        .with_context(|| format!("strategy not found in {protocol} catalog: {id}"))?;
+    let registry = load_blob_registry();
+    let text = catalog_config_text(protocol, entry, None, &registry)?;
+    let dir = strategicvar_dir(program);
+    fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    let name = export_file_name(protocol, id);
+    let path = dir.join(&name);
+    fs::write(&path, &text).with_context(|| format!("write {}", path.display()))?;
+    println!("{}", json!({
+        "ok": true,
+        "program": program,
+        "protocol": protocol,
+        "id": entry.id,
+        "name": entry.title,
+        "file": name,
+        "path": path.display().to_string(),
+    }));
     Ok(())
 }
 
@@ -960,6 +1034,32 @@ const FREEZE_MIN_BYTES: u64 = 14_000;
 const FREEZE_MAX_BYTES: u64 = 24_000;
 const LUA_INIT_ZAPRET: &str = "--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-lib.lua";
 
+/// Directory of the strategy scan catalogs shipped with the module.
+const SCAN_CATALOG_DIR: &str = "/data/adb/modules/ZDT-D/strategic/scan";
+/// Directory of the Lua libraries, mirroring the shipped nfqws2 presets.
+const LUA_DIR: &str = "/data/adb/modules/ZDT-D/strategic/lua";
+
+/// The nfqws2 lua-init block every preset (and every generated scan config)
+/// must load before any `--filter-*`/`--lua-desync` line.
+const LUA_INIT_FILES: [&str; 7] = [
+    "zapret-lib.lua",
+    "zapret-antidpi.lua",
+    "zapret-auto.lua",
+    "custom_funcs.lua",
+    "zapret-multishake.lua",
+    "fakemultisplit.lua",
+    "fakemultidisorder.lua",
+];
+
+/// Registry file listing the `--blob=NAME:VALUE` declarations the catalogs
+/// reference. Shipped next to the catalogs; the tester never guesses names.
+const BLOB_REGISTRY: &str = "/data/adb/modules/ZDT-D/strategic/scan/blobs.txt";
+
+
+/// Payloads nfqws2 provides itself: referencing them must not emit a
+/// declaration (declaring one is an error: "duplicate blob name").
+const BLOB_BUILTIN_NAMES: [&str; 3] = ["fake_default_tls", "fake_default_http", "fake_default_quic"];
+
 const CONTROL_HOSTS: [&str; 3] = ["ya.ru", "www.microsoft.com", "www.google.com"];
 
 /// DNS answers that indicate a provider stub page instead of the real host.
@@ -1275,18 +1375,43 @@ fn load_history(path: Option<&str>, program: &str, protocol: &str, target_key: &
 
 #[derive(Debug, Clone)]
 struct Candidate {
+    /// Stable id: history key, event payload and (for presets) file name.
     name: String,
+    /// Human-readable title from the catalog (`name =` line); equals `name`
+    /// for shipped presets.
+    title: String,
     techniques: std::collections::BTreeSet<String>,
+    /// Generated config path for catalog entries. `None` = shipped preset in
+    /// the program's strategicvar directory.
+    generated: Option<std::path::PathBuf>,
 }
 
 impl Candidate {
+    fn preset(name: String, techniques: std::collections::BTreeSet<String>) -> Self {
+        Candidate { title: name.clone(), name, techniques, generated: None }
+    }
+
     /// Pass-only strategies carry no bypass technique: scanning them proves
     /// nothing (they are the pass-control baseline, not candidates).
     fn is_pass(&self) -> bool {
-        self.techniques.is_empty()
-            || (self.techniques.len() == 1 && self.techniques.contains("pass"))
+        is_pass_techniques(&self.techniques)
+    }
+
+    /// Config file to spawn the engine with.
+    fn config_path(&self, program: &str) -> std::path::PathBuf {
+        match &self.generated {
+            Some(path) => path.clone(),
+            None => strategic_dir(program).join(&self.name),
+        }
     }
 }
+
+/// A technique set with no bypass in it (`{}` or `{"pass"}`): the strategy is
+/// the pass-control baseline, never a scan candidate.
+fn is_pass_techniques(techniques: &std::collections::BTreeSet<String>) -> bool {
+    techniques.is_empty() || (techniques.len() == 1 && techniques.contains("pass"))
+}
+
 
 /// Technique fingerprint of a strategy config: desync function names.
 fn technique_set(program: &str, raw_config: &str) -> std::collections::BTreeSet<String> {
@@ -1425,6 +1550,320 @@ fn list_strategy_names(program: &str) -> Result<Vec<String>> {
     Ok(items)
 }
 
+// --- Scan catalog (ported from zapretgui strategy_catalogs) ------------------
+
+/// One atomic strategy from the scan catalog: an id, a human title and the
+/// raw `--lua-desync`/`--payload`/`--out-range` lines it applies.
+#[derive(Debug, Clone)]
+struct CatalogEntry {
+    id: String,
+    title: String,
+    lines: Vec<String>,
+}
+
+/// Scan protocol -> catalog file. nfqws v1 has no catalog.
+const CATALOG_FILES: [(&str, &str); 3] =
+    [("tcp_https", "tcp.txt"), ("stun_voice", "voice.txt"), ("udp_games", "udp.txt")];
+
+fn catalog_file_for_protocol(protocol: &str) -> Option<&'static str> {
+    CATALOG_FILES.iter().find(|(p, _)| *p == protocol).map(|(_, f)| *f)
+}
+
+/// Parse a scan catalog: `[id]` sections with `key = value` metadata followed
+/// by raw nfqws2 option lines. Unknown keys and comments are ignored.
+fn parse_catalog(text: &str) -> Vec<CatalogEntry> {
+    let mut out: Vec<CatalogEntry> = Vec::new();
+    let mut current: Option<CatalogEntry> = None;
+    let mut in_meta = true;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            if let Some(entry) = current.take() {
+                if !entry.lines.is_empty() {
+                    out.push(entry);
+                }
+            }
+            let id = line[1..line.len() - 1].trim().to_string();
+            if id.is_empty() {
+                continue;
+            }
+            current = Some(CatalogEntry { title: id.clone(), id, lines: Vec::new() });
+            in_meta = true;
+            continue;
+        }
+        let Some(entry) = current.as_mut() else { continue; };
+        if line.starts_with("--") {
+            in_meta = false;
+            entry.lines.push(line.to_string());
+            continue;
+        }
+        if !in_meta {
+            // Metadata never follows option lines; keep the line only if it is
+            // one more option (unreachable here: options start with "--").
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim();
+            let value = value.trim();
+            if key == "name" && !value.is_empty() {
+                entry.title = value.to_string();
+            }
+        }
+    }
+    if let Some(entry) = current.take() {
+        if !entry.lines.is_empty() {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+fn load_catalog(protocol: &str) -> Result<Vec<CatalogEntry>> {
+    let Some(file) = catalog_file_for_protocol(protocol) else {
+        return Ok(Vec::new());
+    };
+    let path = Path::new(SCAN_CATALOG_DIR).join(file);
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("read scan catalog {}", path.display()))?;
+    Ok(parse_catalog(&text))
+}
+
+/// Blob name -> `--blob=NAME:VALUE` line, parsed from a registry file.
+fn read_blob_registry(path: &Path) -> Result<std::collections::HashMap<String, String>> {
+    let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let mut out = std::collections::HashMap::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        let Some(rest) = line.strip_prefix("--blob=") else { continue; };
+        let Some((name, _value)) = rest.split_once(':') else { continue; };
+        out.insert(name.trim().to_string(), line.to_string());
+    }
+    Ok(out)
+}
+
+/// Registry shipped with the module. A missing file leaves the catalog entries
+/// that need blobs unresolvable, which the scan reports and skips.
+fn load_blob_registry() -> std::collections::HashMap<String, String> {
+    read_blob_registry(Path::new(BLOB_REGISTRY)).unwrap_or_default()
+}
+
+/// Blob names referenced by a strategy line: values of the blob-reference
+/// arguments. Hex literals (`0x..`) and inline payloads are not names.
+fn referenced_blobs(lines: &[String]) -> std::collections::BTreeSet<String> {
+    const BLOB_ARGS: [&str; 5] = ["blob", "fake_blob", "pattern", "seqovl_pattern", "fallback"];
+    let mut out = std::collections::BTreeSet::new();
+    for line in lines {
+        let Some((_opt, value)) = line.split_once('=') else { continue; };
+        for token in value.split([':', ',']) {
+            let Some((key, val)) = token.split_once('=') else { continue; };
+            let val = val.trim();
+            if BLOB_ARGS.contains(&key.trim()) && !val.is_empty() && !val.starts_with("0x") {
+                out.insert(val.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Resolution of the blobs one catalog entry needs.
+struct BlobPlan {
+    /// `--blob=` declaration lines, in registry-file order.
+    blob_lines: Vec<String>,
+    /// Names the registry does not declare.
+    unresolved: Vec<String>,
+}
+
+fn plan_blobs(lines: &[String], registry: &std::collections::HashMap<String, String>) -> BlobPlan {
+    let mut plan = BlobPlan { blob_lines: Vec::new(), unresolved: Vec::new() };
+    let referenced = referenced_blobs(lines);
+    let mut names: Vec<String> = referenced.into_iter().collect();
+    names.sort();
+    for name in names {
+        // Builtins already exist inside nfqws2: declaring one is fatal.
+        if BLOB_BUILTIN_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        match registry.get(&name) {
+            Some(line) => plan.blob_lines.push(line.clone()),
+            None => plan.unresolved.push(name),
+        }
+    }
+    plan
+}
+
+/// Filter lines the scan (and the exported preset) puts before the strategy,
+/// mirroring zapretgui's `build_probe_profile`.
+fn catalog_filter_lines(protocol: &str, hosts_list: Option<&str>) -> Vec<String> {
+    match protocol {
+        "stun_voice" => vec!["--filter-l7=stun,discord".into(), "--payload=stun,discord_ip_discovery".into()],
+        "udp_games" => vec!["--filter-udp=443,50000-65535,19132,27015,28015".into()],
+        _ => {
+            let mut lines = vec!["--filter-tcp=443".to_string(), "--out-range=-d8".to_string()];
+            if let Some(list) = hosts_list.filter(|l| !l.is_empty()) {
+                lines.push(format!("--hostlist={list}"));
+            }
+            lines
+        }
+    }
+}
+
+/// Config text for one catalog entry, in the order nfqws2 requires:
+/// lua-init block, blob declarations, filters, then the strategy lines.
+///
+/// `hosts_list` is the scan-time hostlist; `None` builds the export form
+/// (no hostlist — the daemon injects the user's selection on apply).
+fn catalog_config_text(
+    protocol: &str,
+    entry: &CatalogEntry,
+    hosts_list: Option<&str>,
+    registry: &std::collections::HashMap<String, String>,
+) -> Result<String> {
+    let plan = plan_blobs(&entry.lines, registry);
+    if !plan.unresolved.is_empty() {
+        bail!("unresolved blobs: {}", plan.unresolved.join(", "));
+    }
+    let mut out = String::new();
+    for file in LUA_INIT_FILES {
+        out.push_str(&format!("--lua-init=@{LUA_DIR}/{file}\n"));
+    }
+
+    for line in &plan.blob_lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    for line in catalog_filter_lines(protocol, hosts_list) {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    for line in &entry.lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+/// Preset file the daemon applies for a catalog entry. Must satisfy
+/// `is_safe_filename` (daemon) and the preset compiler's name rules.
+fn export_file_name(protocol: &str, id: &str) -> String {
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    format!("Scan {protocol} {safe}.txt")
+}
+
+/// Directory the daemon reads presets from: an exported scan preset lands
+/// here so `POST /api/strategicvar/apply` can resolve it by file name.
+fn strategicvar_dir(program: &str) -> PathBuf {
+    PathBuf::from(STRATEGIC_DIR).join(program)
+}
+
+/// Strategy id used for a catalog entry: stable, filesystem-safe, and unique
+/// inside one protocol catalog.
+fn catalog_file_name(id: &str) -> String {
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' { c } else { '_' })
+        .collect();
+    format!("scan_{safe}.txt")
+}
+
+/// Candidates to scan plus the generated config files they point at.
+///
+/// nfqws2 scans the atomic catalog (`strategic/scan/*.txt`) so one candidate =
+/// one strategy line, with its config assembled per protocol. nfqws v1 has no
+/// catalog and keeps scanning the shipped strategicvar presets.
+fn build_candidates(
+    program: &str,
+    opts: &AutoOptions,
+    catalog: &[CatalogEntry],
+    registry: &std::collections::HashMap<String, String>,
+) -> Result<(Vec<Candidate>, Vec<std::path::PathBuf>)> {
+    if catalog.is_empty() {
+        let names = list_strategy_names(program)?;
+        let candidates = names
+            .iter()
+            .map(|name| {
+                let raw = fs::read_to_string(strategic_dir(program).join(name)).unwrap_or_default();
+                Candidate::preset(name.clone(), technique_set(program, &raw))
+            })
+            .collect();
+        return Ok((candidates, Vec::new()));
+    }
+
+    // Absolute hostlist path for host-scoped protocols; empty for protocols
+    // whose targets are fixed (voice/udp use protocol-level filters).
+    let hosts_list = if opts.protocol == "tcp_https" {
+        opts.hosts_file
+            .as_deref()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .map(|p| {
+                let path = Path::new(&p);
+                if path.is_absolute() {
+                    p
+                } else {
+                    fs::canonicalize(path).map(|c| c.display().to_string()).unwrap_or(p)
+                }
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    ensure_work_dir()?;
+    let mut candidates = Vec::new();
+    let mut generated = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for entry in catalog {
+        let techniques = technique_set("nfqws2", &entry.lines.join("\n"));
+        if techniques.is_empty() {
+            continue;
+        }
+        let hostlist = Some(hosts_list.as_str()).filter(|l| !l.is_empty());
+        let text = match catalog_config_text(&opts.protocol, entry, hostlist, registry) {
+            Ok(text) => text,
+            Err(_) => {
+                skipped.push(entry.id.clone());
+                continue;
+            }
+        };
+        let path = Path::new(WORK_DIR).join(catalog_file_name(&entry.id));
+        fs::write(&path, text).with_context(|| format!("write {}", path.display()))?;
+        generated.push(path.clone());
+        candidates.push(Candidate {
+            name: entry.id.clone(),
+            title: entry.title.clone(),
+            techniques,
+            generated: Some(path),
+        });
+    }
+    if !skipped.is_empty() {
+        emit_event(&json!({
+            "type": "auto_catalog_skipped",
+            "strategies": skipped,
+            "reason": "unresolvable blob",
+            "ts": now_unix_ms(),
+        }));
+    }
+    Ok((candidates, generated))
+}
+
+/// Per-entry scan configs written for a catalog run, removed when the run ends
+/// (any exit path, including the early "no internet" returns).
+struct GeneratedConfigs(Vec<std::path::PathBuf>);
+
+impl Drop for GeneratedConfigs {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
 // --- run_auto ---------------------------------------------------------------
 
 /// Emit a confirm request and wait for one answer line on stdin (fd 0 is the
@@ -1492,6 +1931,20 @@ fn pass_filter_for_protocol(protocol: &str) -> ProtoPortFilter {
     }
 }
 
+/// NFQUEUE port scope for a strategy config, with a protocol fallback.
+///
+/// A config carrying no `--filter-tcp`/`--filter-udp` would queue ALL traffic,
+/// which is never intended here: the voice catalog scopes traffic via
+/// `--filter-l7=stun,discord`, which has no port spec. Fall back to the ports
+/// the protocol actually probes (the same sets the pass control uses).
+fn nfqueue_port_filter(raw: &str, protocol: &str) -> ProtoPortFilter {
+    let filter = extract_proto_port_filter(raw);
+    if !filter.is_empty() {
+        return filter;
+    }
+    pass_filter_for_protocol(protocol)
+}
+
 fn run_auto(opts: &AutoOptions) -> Result<()> {
     let program = opts.program.as_str();
     let targets = auto_targets(opts)?;
@@ -1499,17 +1952,32 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     let history = load_history(opts.history_path.as_deref(), program, &opts.protocol, &target_key);
     let now = now_unix_ms() / 1000;
 
-    let all_names = list_strategy_names(program)?;
-    if all_names.is_empty() {
+    // A module without the scan catalogs (older install, failed copy) must not
+    // abort the run: fall back to scanning the shipped presets, exactly like
+    // nfqws v1 does.
+    let catalog = if program == "nfqws2" {
+        match load_catalog(&opts.protocol) {
+            Ok(catalog) => catalog,
+            Err(err) => {
+                emit_event(&json!({
+                    "type": "auto_catalog_unavailable",
+                    "error": format!("{err:#}"),
+                    "ts": now_unix_ms(),
+                }));
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let registry = load_blob_registry();
+    let (candidates, generated) = build_candidates(program, opts, &catalog, &registry)?;
+    // Scan configs are transient: drop them on every exit path, including the
+    // early fatal returns below.
+    let _generated = GeneratedConfigs(generated);
+    if candidates.is_empty() {
         bail!("no strategies found for program {program}");
     }
-    let candidates: Vec<Candidate> = all_names
-        .iter()
-        .map(|name| {
-            let raw = fs::read_to_string(strategic_dir(program).join(name)).unwrap_or_default();
-            Candidate { name: name.clone(), techniques: technique_set(program, &raw) }
-        })
-        .collect();
     let ordered = order_candidates(&candidates, &history.confirmed, &history.failed, now);
     let strategies = batch_for_mode(ordered, &opts.mode);
     let total = strategies.len();
@@ -1522,10 +1990,12 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         "qnum": opts.qnum,
         "protocol": opts.protocol,
         "mode": opts.mode,
+        "source": if catalog.is_empty() { "presets" } else { "catalog" },
         "total_strategies": total,
         "total_hosts": total_targets,
         "hosts": targets.iter().map(|t| t.key.clone()).collect::<Vec<_>>(),
         "strategies": strategies.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
+        "titles": strategies.iter().map(|c| c.title.clone()).collect::<Vec<_>>(),
         "ts": now_unix_ms(),
     }));
 
@@ -1706,11 +2176,13 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             break;
         }
         let strategy = candidate.name.clone();
-        let config_path = strategic_dir(program).join(&strategy);
+        let title = candidate.title.clone();
+        let config_path = candidate.config_path(program);
         if !config_path.is_file() {
             emit_event(&json!({
                 "type": "auto_strategy_skip",
                 "strategy": strategy,
+                "title": title,
                 "reason": "config not found",
                 "ts": now_unix_ms(),
             }));
@@ -1720,6 +2192,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         emit_event(&json!({
             "type": "auto_strategy_start",
             "strategy": strategy,
+            "title": title,
             "index": idx,
             "total": total,
             "ts": now_unix_ms(),
@@ -1728,7 +2201,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         let raw = fs::read_to_string(&config_path)
             .with_context(|| format!("read {}", config_path.display()))?;
         let config_args = normalize_config_args(&raw);
-        let filter = extract_proto_port_filter(&raw);
+        let filter = nfqueue_port_filter(&raw, &opts.protocol);
         let bin = program_bin(program);
         if !bin.is_file() {
             emit_event(&json!({
@@ -1942,6 +2415,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         emit_event(&json!({
             "type": "auto_strategy_result",
             "strategy": strategy,
+            "title": title,
             "verdict": verdict,
             "hosts_total": total_targets as u32,
             "baseline_blocked": baseline_blocked_total,
@@ -2063,10 +2537,7 @@ mod tests {
     }
 
     fn candidate(name: &str, tech: &[&str]) -> Candidate {
-        Candidate {
-            name: name.to_string(),
-            techniques: tech.iter().map(|t| t.to_string()).collect(),
-        }
+        Candidate::preset(name.to_string(), tech.iter().map(|t| t.to_string()).collect())
     }
 
     #[test]
@@ -2130,5 +2601,136 @@ mod tests {
         let h = load_history(Some("/nonexistent/strategy_history.json"), "nfqws2", "tcp_https", "default.txt");
         assert!(h.confirmed.is_empty());
         assert!(h.failed.is_empty());
+    }
+
+    #[test]
+    fn catalog_entry_lines_and_title() {
+        let text = "# comment\n[e1]\nname = Fake Simple\nauthor = x\nlabel = stable\nblobs = a,b\n--lua-desync=fake:blob=0x00\n\n[e2]\nname = Multi\n--lua-desync=send:repeats=2\n--out-range=-d8\n";
+        let entries = parse_catalog(text);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].id, "e1");
+        assert_eq!(entries[0].title, "Fake Simple");
+        assert_eq!(entries[0].lines, vec!["--lua-desync=fake:blob=0x00"]);
+        assert_eq!(entries[1].title, "Multi");
+        assert_eq!(entries[1].lines.len(), 2);
+    }
+
+    #[test]
+    fn catalog_config_orders_global_before_filter() {
+        let entry = CatalogEntry {
+            id: "e".into(),
+            title: "T".into(),
+            lines: vec!["--lua-desync=fake:blob=tls_google".into()],
+        };
+        let mut registry = std::collections::HashMap::new();
+        registry.insert(
+            "tls_google".to_string(),
+            "--blob=tls_google:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin".to_string(),
+        );
+        let hostlist = "/data/adb/modules/ZDT-D/strategic/list/youtube.txt";
+        let text = catalog_config_text("tcp_https", &entry, Some(hostlist), &registry).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].starts_with("--lua-init="));
+        let blob_at = lines.iter().position(|l| l.starts_with("--blob=tls_google:")).unwrap();
+        let filter_at = lines.iter().position(|l| l.starts_with("--filter-tcp=")).unwrap();
+        let strategy_at = lines.iter().position(|l| l.starts_with("--lua-desync=")).unwrap();
+        assert!(blob_at < filter_at, "blob declaration must precede filters");
+        assert!(filter_at < strategy_at);
+        assert!(lines.contains(&"--out-range=-d8"));
+
+        // Export form: no scan-time hostlist, everything else identical.
+        let exported = catalog_config_text("tcp_https", &entry, None, &registry).unwrap();
+        assert!(!exported.contains("--hostlist="));
+        assert!(exported.contains("--out-range=-d8"));
+    }
+
+    #[test]
+    fn catalog_config_udp_filters() {
+        let entry = CatalogEntry { id: "e".into(), title: "T".into(), lines: vec!["--lua-desync=fake:blob=0x00".into()] };
+        let registry = std::collections::HashMap::new();
+        let voice = catalog_config_text("stun_voice", &entry, None, &registry).unwrap();
+        assert!(voice.contains("--filter-l7=stun,discord"));
+        assert!(voice.contains("--payload=stun,discord_ip_discovery"));
+        let games = catalog_config_text("udp_games", &entry, None, &registry).unwrap();
+        assert!(games.contains("--filter-udp=443,50000-65535,19132,27015,28015"));
+        assert!(!games.contains("--filter-tcp="));
+    }
+
+    /// A voice config has no port spec (`--filter-l7` only). Queueing ALL
+    /// traffic would be a regression: the fallback must scope to the STUN
+    /// ports the protocol probes.
+    #[test]
+    fn voice_config_falls_back_to_protocol_ports() {
+        let voice = "--filter-l7=stun,discord\n--payload=stun,discord_ip_discovery\n";
+        let filter = nfqueue_port_filter(voice, "stun_voice");
+        assert!(filter.tcp.is_empty());
+        assert_eq!(filter.udp.len(), 2, "stun + 19302 only");
+        assert_eq!((filter.udp[0].start, filter.udp[0].end), (3478, 3478));
+        assert_eq!((filter.udp[1].start, filter.udp[1].end), (19302, 19302));
+
+        // A config that does carry a port filter keeps it verbatim.
+        let tcp = "--filter-tcp=443\n--lua-desync=fake\n";
+        let filter = nfqueue_port_filter(tcp, "tcp_https");
+        assert_eq!((filter.tcp[0].start, filter.tcp[0].end), (443, 443));
+        assert!(filter.udp.is_empty());
+    }
+
+    #[test]
+    fn blob_plan_uses_registry_and_skips_builtins() {
+        let lines = vec![
+            "--lua-desync=fake:blob=fake_zero64:repeats=4".to_string(),
+            "--lua-desync=fake:blob=fake_default_tls".to_string(),
+            "--lua-desync=fake:blob=0x00".to_string(),
+        ];
+        let mut registry = std::collections::HashMap::new();
+        registry.insert(
+            "fake_zero64".to_string(),
+            format!("--blob=fake_zero64:0x{}", "00".repeat(64)),
+        );
+        let plan = plan_blobs(&lines, &registry);
+        assert!(plan.unresolved.is_empty());
+        // Builtins already exist in nfqws2: declaring one is fatal.
+        assert_eq!(plan.blob_lines, vec![format!("--blob=fake_zero64:0x{}", "00".repeat(64))]);
+        // A name without a registry line is reported, never guessed.
+        let missing = plan_blobs(&["--lua-desync=fake:blob=nope".to_string()], &registry);
+        assert_eq!(missing.unresolved, vec!["nope".to_string()]);
+    }
+
+    #[test]
+    fn export_file_name_is_preset_safe() {
+        let name = export_file_name("tcp_https", "fake_simple/v2");
+        assert_eq!(name, "Scan tcp_https fake_simple_v2.txt");
+        assert!(!name.contains('/') && name.ends_with(".txt"));
+        // Preset compiler rejects leading '_' and embedded quotes.
+        assert!(!export_file_name("udp_games", "'_x").starts_with('_'));
+    }
+
+    /// The shipped catalogs must parse and stay internally consistent: every
+    /// referenced blob must resolve through the registry or a Lua declaration,
+    /// otherwise the scan silently drops entries. Guards a bad catalog refresh.
+    #[test]
+    fn shipped_catalogs_reference_only_resolvable_blobs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../module_template/strategic");
+        let registry = read_blob_registry(&root.join("scan/blobs.txt")).expect("read blobs.txt");
+        for name in ["tls_google", "fake_default_udp", "quic_4pda", "stun2"] {
+            assert!(registry.contains_key(name), "registry missing {name}");
+        }
+        for (protocol, file) in CATALOG_FILES {
+            assert_eq!(catalog_file_for_protocol(protocol), Some(file));
+            let raw = fs::read_to_string(root.join("scan").join(file)).expect("read catalog");
+            let entries = parse_catalog(&raw);
+            assert!(!entries.is_empty(), "{file} parsed empty");
+            for entry in &entries {
+                let plan = plan_blobs(&entry.lines, &registry);
+                // tls_sochi is declared upstream but the blob file does not exist
+                // anywhere (upstream bug): those entries are expected to skip.
+                let unexpected: Vec<&String> = plan
+                    .unresolved
+                    .iter()
+                    .filter(|n| n.as_str() != "tls_sochi")
+                    .collect();
+                assert!(unexpected.is_empty(), "{} [{}] unresolved: {unexpected:?}", file, entry.id);
+            }
+        }
     }
 }

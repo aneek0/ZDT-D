@@ -46,6 +46,8 @@ fun BlockcheckScreen(
     var selectedProtocol by remember { mutableStateOf("tcp_https") }
     var selectedMode by remember { mutableStateOf("full") }
     var allStrategies by remember { mutableStateOf<List<String>>(emptyList()) }
+    // nfqws2 scans the shipped atomic catalog; nfqws v1 scans preset files.
+    var catalogStrategies by remember { mutableStateOf<List<CatalogStrategy>>(emptyList()) }
     var hostFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedHostFile by remember { mutableStateOf(hostsFile) }
     var customDomain by remember { mutableStateOf("") }
@@ -61,8 +63,24 @@ fun BlockcheckScreen(
         BlockcheckStore.reset()
         selectedProfile = "default"
         hostFiles = runner.listHostFiles()
-        allStrategies = runner.listStrategies(selectedProgram)
-        BlockcheckStore.update { it.copy(allStrategies = allStrategies) }
+    }
+
+    // The nfqws2 candidate list comes from the protocol catalog, so it must be
+    // reloaded whenever either the program or the protocol changes.
+    LaunchedEffect(selectedProgram, selectedProtocol) {
+        // nfqws2 scans the shipped atomic catalog. An older tester binary
+        // without `catalog` (or a module that ships no catalog) returns
+        // nothing: fall back to the installed preset files, which is what the
+        // tester itself scans in that case.
+        val catalog = if (selectedProgram == "nfqws2") runner.listCatalog(selectedProtocol) else emptyList()
+        catalogStrategies = catalog
+        allStrategies = if (catalog.isNotEmpty()) catalog.map { it.id } else runner.listStrategies(selectedProgram)
+        BlockcheckStore.update {
+            it.copy(
+                allStrategies = allStrategies,
+                strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
+            )
+        }
     }
 
     val compact = rememberIsCompactWidth()
@@ -94,6 +112,7 @@ fun BlockcheckScreen(
                 protocol = selectedProtocol,
                 mode = selectedMode,
                 allStrategies = allStrategies,
+                strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
                 isRunning = true,
             )
         }
@@ -182,19 +201,37 @@ fun BlockcheckScreen(
         }
     }
 
+    // Catalog ids are opaque; show the human title from the catalog when known.
+    fun strategyLabel(id: String): String =
+        state.strategyTitles[id]
+            ?: catalogStrategies.firstOrNull { it.id == id }?.name
+            ?: id
+
     fun applyStrategy(strategy: String) {
         val a = actions ?: return
         coroutineScope.launch {
+            // Catalog runs: the scanned candidate is an atomic strategy id, not
+            // a preset file. Export it into the module's strategicvar dir first
+            // so the daemon can resolve it by name.
+            val fileName = if (catalogStrategies.any { it.id == strategy }) {
+                runner.exportStrategy(selectedProgram, selectedProtocol, strategy)
+            } else {
+                strategy
+            }
+            if (fileName == null) {
+                snackHost?.showSnackbar(context.getString(R.string.common_apply_failed))
+                return@launch
+            }
             // No hostlists passed: the daemon reuses the hostlists already
             // selected on this profile's config, so applying from blockcheck
             // keeps them intact.
             val ok = suspendCancellableCoroutine<Boolean> { cont ->
-                a.applyStrategicVariant(selectedProgram, selectedProfile, strategy) { ok ->
+                a.applyStrategicVariant(selectedProgram, selectedProfile, fileName) { ok ->
                     if (cont.isActive) cont.resumeWith(Result.success(ok))
                 }
             }
             snackHost?.showSnackbar(
-                if (ok) context.getString(R.string.common_applied_with_value, strategy.removeSuffix(".txt"))
+                if (ok) context.getString(R.string.common_applied_with_value, strategyLabel(strategy))
                 else context.getString(R.string.common_apply_failed)
             )
         }
@@ -435,7 +472,7 @@ fun BlockcheckScreen(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                s,
+                                                strategyLabel(s),
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                                 fontWeight = if (status == "testing") FontWeight.SemiBold else FontWeight.Normal,
                                             )
@@ -488,7 +525,7 @@ fun BlockcheckScreen(
                                 }
                             } else {
                                 Text(
-                                    s, modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                    strategyLabel(s), modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                 )
@@ -537,7 +574,7 @@ fun BlockcheckScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text(r.strategy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(strategyLabel(r.strategy), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 r.timeMs?.let {
                                                     Text("%.0f ms".format(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
                                                 }
@@ -564,7 +601,7 @@ fun BlockcheckScreen(
                                 Text(context.getString(R.string.blockcheck_unstable_count_fmt, state.unstableStrategies.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFFF59E0B))
                                 state.unstableStrategies.forEach { s ->
                                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
-                                        Text(s, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(strategyLabel(s), modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -580,7 +617,7 @@ fun BlockcheckScreen(
                                 Text(context.getString(R.string.blockcheck_failed_count_fmt, state.failedStrategies.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
                                 state.failedStrategies.forEach { s ->
                                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
-                                        Text(s, modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(strategyLabel(s), modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
