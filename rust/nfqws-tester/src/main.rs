@@ -842,26 +842,25 @@ fn resolve_ip(host: &str) -> Option<String> {
 }
 
 /// Returns (curl exit code, http status, location header, downloaded bytes).
-fn curl_probe(host: &str, ip: &str, timeout_secs: u64) -> Result<(i32, u32, String, u64)> {
+fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u32, String, u64)> {
     let url = format!("https://{host}/");
-    let connect_to = format!("{host}:443:{ip}");
+    let connect_to = ip.map(|ip| format!("{host}:443:{ip}"));
     let timeout_str = timeout_secs.to_string();
     let host_header = format!("Host: {host}");
     let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
-    let args = vec![
+    let mut args = vec![
         "-sS", "-o", "/dev/null",
         "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
         "--max-time", &timeout_str,
         "--connect-timeout", &timeout_str,
-        "--connect-to", &connect_to,
-        "-H", &host_header,
-        "-A", user_agent,
-        "--compressed",
-        "-L",
-        "--max-redirs", "3",
-        &url,
     ];
+    if let Some(ct) = connect_to.as_deref() {
+        // Pin to the pre-resolved IP (baseline reuse).
+        args.extend(["--connect-to", ct, "-H", &host_header]);
+    }
+    // Without an IP, curl resolves the host itself.
+    args.extend(["-A", user_agent, "--compressed", "-L", "--max-redirs", "3", &url]);
 
     let (code, out) = run(
         "sh",
@@ -1205,22 +1204,24 @@ impl ProbeOutcome {
 
 fn probe_target(target: &ProbeTarget, resolved_ip: Option<&String>, timeout_secs: u64) -> ProbeOutcome {
     let started = std::time::Instant::now();
-    let Some(ip) = resolved_ip else {
-        return ProbeOutcome::failed_resolve();
-    };
     let (verdict, http_code, size_bytes) = match target.kind {
         ProbeKind::Https => {
-            if KNOWN_BLOCK_IPS.contains(&ip.as_str()) {
+            if resolved_ip.map(|ip| KNOWN_BLOCK_IPS.contains(&ip.as_str())).unwrap_or(false) {
                 // DNS stub: no point probing, the answer is a block page IP.
                 (ProbeVerdict::Blocked("dns_stub"), 0, 0)
             } else {
-                match curl_probe(&target.host, ip, timeout_secs) {
+                // No pre-resolved IP: let curl resolve itself (getent may be
+                // missing or broken on the device while curl resolves fine).
+                match curl_probe(&target.host, resolved_ip.map(|s| s.as_str()), timeout_secs) {
                     Ok((rc, code, _location, size)) => (classify_https(rc, code, size), code, size),
                     Err(_) => (ProbeVerdict::Unreachable("connect_failed"), 0, 0),
                 }
             }
         }
         kind => {
+            let Some(ip) = resolved_ip else {
+                return ProbeOutcome::failed_resolve();
+            };
             let request = match kind {
                 ProbeKind::Stun => stun_request().to_vec(),
                 ProbeKind::A2s => a2s_request().to_vec(),
