@@ -50,6 +50,7 @@ DPI bypass resources used by ZDT-D strategies.
 - `strategic/list/` — domain, host, IP, hostlist, and ipset lists used by strategies.
 - `strategic/lua/` — Lua helper scripts for zapret/nfqws logic.
 - `strategic/strategicvar/` — predefined strategy presets for `byedpi`, `dpitunnel`, `nfqws`, and `nfqws2`.
+- `strategic/scan/` — atomic strategy catalogs for the `nfqws2` strategy scan (one candidate per entry, ported from zapretgui), plus `blobs.txt`, the registry of the blob names those catalogs reference.
 - `strategic/instructions.md` — notes and guidance for strategy resources.
 
 ### `working_folder/`
