@@ -302,6 +302,9 @@ class BlockcheckRunner(
                 append(' ')
                 append(quoted)
             }
-        }
+            // The pipe stays open for confirm answers: without a trailing
+            // newline sh would wait for EOF before running the exec line.
+            append('\n')
     }
+}
 }
