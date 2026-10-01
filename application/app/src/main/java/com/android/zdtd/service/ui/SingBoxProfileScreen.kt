@@ -1392,7 +1392,7 @@ private fun SingBoxEndpointResolveCard(
   onToggle: (Boolean) -> Unit,
 ) {
   val accent = Color(0xFF0EA5E9)
-  SingBoxSectionCard(
+  SectionCard(
     title = stringResource(R.string.singbox_endpoint_resolve_label),
     desc = stringResource(R.string.singbox_endpoint_resolve_hint),
     accent = accent,

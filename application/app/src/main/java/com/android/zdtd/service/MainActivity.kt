@@ -181,6 +181,7 @@ class MainActivity : AppCompatActivity() {
     val useDark = when (mode) {
       ZdtdThemeMode.LIGHT -> false
       ZdtdThemeMode.DARK -> true
+      ZdtdThemeMode.AMOLED -> true
       ZdtdThemeMode.SYSTEM -> {
         val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         nightMode == Configuration.UI_MODE_NIGHT_YES

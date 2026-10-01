@@ -227,6 +227,13 @@ fun ZdtdTheme(
   themeMode: ZdtdThemeMode = ZdtdThemeMode.SYSTEM,
   content: @Composable () -> Unit,
 ) {
+  val useDark = when (themeMode) {
+    ZdtdThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ZdtdThemeMode.LIGHT -> false
+    ZdtdThemeMode.DARK -> true
+    ZdtdThemeMode.AMOLED -> true
+  }
+
   val scheme = when (themeMode) {
     ZdtdThemeMode.SYSTEM -> if (isSystemInDarkTheme()) DarkScheme else LightScheme
     ZdtdThemeMode.LIGHT -> LightScheme
