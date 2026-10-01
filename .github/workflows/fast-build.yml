@@ -417,6 +417,12 @@ jobs:
           mkdir -p "$MODULE_DIR" out/module
           cp -a module_template/. "$MODULE_DIR/"
           cp -f module.prop "$MODULE_DIR/module.prop"
+          sed -i '/^buildType=/d; /^buildNumber=/d' "$MODULE_DIR/module.prop"
+          {
+            echo "buildType=service"
+            echo "buildNumber=${GITHUB_RUN_NUMBER}"
+          } >> "$MODULE_DIR/module.prop"
+          cp -f "$MODULE_DIR/module.prop" out/module/module.prop
           rm -rf "$MODULE_DIR/zygisk" "$MODULE_DIR/bin" "$MODULE_DIR/prebuilt" "$MODULE_DIR/verify_sum"
           mkdir -p "$MODULE_DIR/prebuilt/bin/arm64-v8a"
           # Fresh zdtd (or fallback to prebuilt)
