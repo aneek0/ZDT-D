@@ -102,6 +102,16 @@ pub struct RuntimeConfig {
     /// because recent direct attempts failed with timeouts or unreachable errors.
     pub direct_cooldown_until_ts: AtomicU64,
 
+    /// UDP DirectFirst needs its own recent-failure memory. Backend health updates
+    /// may legitimately clear the TCP/direct cooldown, but must not immediately
+    /// forget that a QUIC/UDP direct path just failed.
+    pub udp_direct_cooldown_until_ts: AtomicU64,
+
+    /// Lazy DNS enrichment used only by Web/API views. Cache entries are
+    /// (expires_at_ms, resolved_ip); None is a short-lived negative cache.
+    pub dns_enrichment_cache: Mutex<HashMap<String, (u64, Option<String>)>>,
+    pub dns_enrichment_inflight: Mutex<HashSet<String>>,
+
     /// Health of the direct Internet path used by priority port 0.  It is
     /// checked by the same detailed data-plane probe style as SOCKS5 backend
     /// Internet health, but without the SOCKS hop.
@@ -147,6 +157,16 @@ pub struct RuntimeConfig {
     /// Only one aggregate all-GREEN failure recheck may run at a time.
     pub all_green_failure_recheck_active: AtomicU64,
 
+    /// Recent runtime failure events per backend, used to detect the
+    /// mass-failure signature of a network change (many distinct backends
+    /// failing within a few seconds).
+    pub recent_backend_failures_ms: Mutex<VecDeque<(u64, SocketAddr)>>,
+    /// Throttle accelerated network-change sweeps.
+    pub next_network_sweep_after_ms: AtomicU64,
+    /// Last observed outbound local IP; a change is a deterministic
+    /// network-change signal (no traffic, no probing needed to see it).
+    pub last_egress_ip: Mutex<Option<IpAddr>>,
+
     /// Throttle priority speed-aware stream recycling so a flaky backend cannot
     /// cause repeated reconnect loops.
     pub next_priority_stream_recycle_after_ts: AtomicU64,
@@ -160,6 +180,9 @@ impl Default for RuntimeConfig {
             ui_wakeup: tokio::sync::Notify::new(),
             backend_wakeup: tokio::sync::Notify::new(),
             direct_cooldown_until_ts: AtomicU64::new(0),
+            udp_direct_cooldown_until_ts: AtomicU64::new(0),
+            dns_enrichment_cache: Mutex::new(HashMap::new()),
+            dns_enrichment_inflight: Mutex::new(HashSet::new()),
             direct_internet: Mutex::new(DirectInternetStatus::default()),
             refresh_lock: tokio::sync::Mutex::new(()),
             last_ttl_ping_ts: AtomicU64::new(0),
@@ -176,6 +199,9 @@ impl Default for RuntimeConfig {
             recent_all_green_failures_ms: Mutex::new(VecDeque::with_capacity(8)),
             next_all_green_failure_recheck_after_ms: AtomicU64::new(0),
             all_green_failure_recheck_active: AtomicU64::new(0),
+            recent_backend_failures_ms: Mutex::new(VecDeque::with_capacity(32)),
+            next_network_sweep_after_ms: AtomicU64::new(0),
+            last_egress_ip: Mutex::new(None),
             next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
@@ -275,6 +301,58 @@ impl RuntimeConfig {
 
     pub fn clear_direct_cooldown(&self) {
         self.direct_cooldown_until_ts.store(0, Ordering::Relaxed);
+    }
+
+    pub fn udp_direct_allowed(&self) -> bool {
+        now_ts() >= self.udp_direct_cooldown_until_ts.load(Ordering::Relaxed)
+    }
+
+    pub fn note_udp_direct_failure(&self, seconds: u64) {
+        self.udp_direct_cooldown_until_ts
+            .store(now_ts().saturating_add(seconds.max(1)), Ordering::Relaxed);
+    }
+
+    pub fn clear_udp_direct_cooldown(&self) {
+        self.udp_direct_cooldown_until_ts.store(0, Ordering::Relaxed);
+    }
+
+    /// Returns Some(cached_result) for a fresh cache entry. `Some(None)` is a
+    /// negative cache hit; outer None means there is no fresh entry.
+    pub fn dns_enrichment_cached(&self, host: &str) -> Option<Option<String>> {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return Some(None);
+        }
+        let now = now_ms();
+        let mut cache = self.dns_enrichment_cache.lock();
+        match cache.get(&key) {
+            Some((expires_at, value)) if *expires_at > now => Some(value.clone()),
+            Some(_) => {
+                cache.remove(&key);
+                None
+            }
+            None => None,
+        }
+    }
+
+    pub fn try_begin_dns_enrichment(&self, host: &str) -> bool {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return false;
+        }
+        self.dns_enrichment_inflight.lock().insert(key)
+    }
+
+    pub fn finish_dns_enrichment(&self, host: &str, value: Option<String>) {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return;
+        }
+        let ttl_ms = if value.is_some() { 60_000 } else { 10_000 };
+        self.dns_enrichment_cache
+            .lock()
+            .insert(key.clone(), (now_ms().saturating_add(ttl_ms), value));
+        self.dns_enrichment_inflight.lock().remove(&key);
     }
 
     pub fn try_begin_forced_refresh(&self, min_interval_ms: u64) -> bool {
@@ -461,6 +539,68 @@ impl RuntimeConfig {
                 Err(_) => continue,
             }
         }
+    }
+
+    /// Record a runtime failure signal for one backend. Returns true when
+    /// enough DISTINCT backends failed within the detection window to look
+    /// like a network change rather than a single dead proxy.
+    pub fn note_backend_failure_signal(&self, addr: SocketAddr) -> bool {
+        // A dead upstream does not fail instantly: each attempt burns ~1.5-3s
+        // of handshake timeout, so the failure events of a network change
+        // trickle in over many seconds. 15s still never sees 3 distinct
+        // backends fail in normal operation, but reliably catches a change.
+        const WINDOW_MS: u64 = 15_000;
+        const DISTINCT_BACKENDS: usize = 3;
+        let now = now_ms();
+        let mut q = self.recent_backend_failures_ms.lock();
+        q.push_back((now, addr));
+        let cutoff = now.saturating_sub(WINDOW_MS);
+        while let Some((ts, _)) = q.front().copied() {
+            if ts < cutoff {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        let mut distinct: Vec<SocketAddr> = Vec::with_capacity(8);
+        for (_, failed) in q.iter() {
+            if !distinct.contains(failed) {
+                distinct.push(*failed);
+            }
+        }
+        distinct.len() >= DISTINCT_BACKENDS
+    }
+
+    pub fn try_begin_network_sweep(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_network_sweep_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_network_sweep_after_ms.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Record the current outbound local IP; returns true when it changed.
+    /// A changed source IP (or route disappearing/reappearing) is a
+    /// deterministic network-change signal that needs no failure counting.
+    pub fn note_egress_ip(&self, current: Option<IpAddr>) -> bool {
+        let mut last = self.last_egress_ip.lock();
+        if *last == current {
+            return false;
+        }
+        *last = current;
+        true
     }
 }
 

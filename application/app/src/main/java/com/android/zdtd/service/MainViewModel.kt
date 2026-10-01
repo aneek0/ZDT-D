@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.BatteryManager
 import android.util.Base64
 import android.util.Log
 import android.content.pm.PackageManager
@@ -53,11 +54,16 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.net.URLEncoder
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
@@ -114,6 +120,19 @@ data class SetupUiState(
   val updatePromptMandatory: Boolean = false,
   val updatePromptTitle: String = "",
   val updatePromptText: String = "",
+  /** Build identity embedded into the APK/module pair by GitHub Actions. */
+  val buildType: String = "",
+  val buildNumber: Long? = null,
+  val buildVersionName: String = "",
+  val buildVersionCode: Int? = null,
+  /** Active module identity read from /data/adb/modules/ZDT-D/module.prop. */
+  val installedVersionName: String = "",
+  val installedVersionCode: Int? = null,
+  val installedBuildNumber: Long? = null,
+  /** Bundled module build is newer than the currently installed module. */
+  val buildUpdateAvailable: Boolean = false,
+  /** Release builds expand the update question automatically on launcher cold start. */
+  val updatePromptAutoExpand: Boolean = false,
 
   // Pre-install warnings (forced update / tamper / unsupported)
   val preInstallWarning: String? = null,
@@ -170,12 +189,19 @@ data class StartupUiState(
   }
 }
 
+data class StatsPowerUiState(
+  val loading: Boolean = false,
+  val resolved: Boolean = false,
+  val milliAmps: Double? = null,
+)
+
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
   val remoteTargetName: String = "",
   val remoteTargetAddress: String = "",
-  val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
+val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
+  val statsPower: StatsPowerUiState = StatsPowerUiState(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,
@@ -189,6 +215,11 @@ data class UiState(
 )
 
 
+
+private data class StatsDeviceCpuSnapshot(
+  val totalTicks: Long,
+  val idleTicks: Long,
+)
 
 
 data class LogLine(
@@ -229,7 +260,10 @@ data class ProgramUpdateItemUi(
 )
 
 data class ProgramUpdatesUiState(
-  val stoppingService: Boolean = false,
+  val bulkChecking: Boolean = false,
+  val bulkUpdating: Boolean = false,
+  val bulkCheckCompleted: Boolean = false,
+  val bulkCheckHadFailures: Boolean = false,
   val zapret: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret_title),
   val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title),
   val mihomo: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title),
@@ -259,6 +293,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private val githubHttp = OkHttpClient.Builder()
     .retryOnConnectionFailure(true)
     .build()
+
+  @Volatile
+  private var githubPreferredProxy: ApiModels.ConstructionProxyEndpointCandidate? = null
+  private val githubProxyClientLock = Any()
+  private val githubProxyClients = LinkedHashMap<String, OkHttpClient>()
 
   private val ceh = CoroutineExceptionHandler { _, e ->
     // Prevent background coroutine crashes from killing the app.
@@ -412,12 +451,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
   private var appReleaseBuildPollJob: Job? = null
+  private var lastReleaseBuildApiFallbackAtMs: Long = 0L
+  private var lastReleaseReadyApiCheckAtMs: Long = 0L
+  private var lastReleaseReadyRunId: Long? = null
 
   private var pendingEnableDaemonNotification: Boolean = false
 
   private val moduleIdentifierFlagPath = "/data/adb/modules/ZDT-D/working_folder/flag.sha256"
 
   private var statusJob: Job? = null
+  private var statsPowerJob: Job? = null
+  private var statsPowerCalibrationMa: Double? = null
+  private var statsDeviceCpuPrevious: StatsDeviceCpuSnapshot? = null
+  @Volatile private var statsPowerStartedAtMs: Long = 0L
+  @Volatile private var statsPowerReady: Boolean = false
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
@@ -457,7 +504,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
               remoteTargetAddress = "",
             )
           }
+          if (activeMainTabHint == "STATS") startStatsPowerSampling()
         } else {
+          stopStatsPowerSampling()
           startupJob?.cancel()
           startupCompleted = true
           statusPollFailureCount = 0
@@ -522,6 +571,56 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       ?.substringAfter("version=")
       ?.trim()
       ?.takeIf { it.isNotBlank() }
+  }
+
+  private fun parseBuildType(modulePropText: String): String? {
+    val raw = modulePropText.lineSequence()
+      .map { it.trim() }
+      .firstOrNull { it.startsWith("buildType=") }
+      ?.substringAfter("buildType=")
+      ?.trim()
+      ?.lowercase()
+    return raw?.takeIf { it == "release" || it == "service" }
+  }
+
+  private fun parseBuildNumber(modulePropText: String): Long? {
+    return modulePropText.lineSequence()
+      .map { it.trim() }
+      .firstOrNull { it.startsWith("buildNumber=") }
+      ?.substringAfter("buildNumber=")
+      ?.trim()
+      ?.toLongOrNull()
+  }
+
+  private data class ModuleBuildInfo(
+    val versionName: String?,
+    val versionCode: Int?,
+    val buildType: String?,
+    val buildNumber: Long?,
+  )
+
+  private fun parseModuleBuildInfo(modulePropText: String): ModuleBuildInfo = ModuleBuildInfo(
+    versionName = parseVersion(modulePropText),
+    versionCode = parseVersionCode(modulePropText),
+    buildType = parseBuildType(modulePropText),
+    buildNumber = parseBuildNumber(modulePropText),
+  )
+
+  private fun readBundledModuleBuildInfo(): ModuleBuildInfo? {
+    val text = runCatching {
+      ctx.assets.open("module.prop").bufferedReader().use { it.readText() }
+    }.getOrNull() ?: return null
+    return parseModuleBuildInfo(text)
+  }
+
+  private fun isBundledModuleBuildNewer(installed: ModuleBuildInfo, bundled: ModuleBuildInfo): Boolean {
+    val installedCode = installed.versionCode ?: return false
+    val bundledCode = bundled.versionCode ?: return false
+    if (bundledCode != installedCode) return bundledCode > installedCode
+
+    val bundledBuild = bundled.buildNumber ?: return false
+    val installedBuild = installed.buildNumber
+    return installedBuild == null || bundledBuild > installedBuild
   }
 
   private fun readBundledModuleVersionCode(): Int? {
@@ -697,13 +796,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
   )
 
-  private suspend fun fetchModulePropCommitSha(): String? {
-    val body = httpGetText("https://api.github.com/repos/aneek0/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
-    val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
-    return arr.optJSONObject(0)?.optString("sha")?.takeIf { it.isNotBlank() }
+  private data class PublishedBuildStatus(
+    val overall: String,
+    val headSha: String?,
+    val versionCode: Int?,
+    val updatedAtMs: Long?,
+    val ui: AppReleaseBuildUi,
+  )
+
+  private fun parsePublishedStageStatus(value: String?): AppReleaseStageStatus = when (value?.lowercase(Locale.ROOT)) {
+    "running" -> AppReleaseStageStatus.RUNNING
+    "done" -> AppReleaseStageStatus.DONE
+    "failed" -> AppReleaseStageStatus.FAILED
+    else -> AppReleaseStageStatus.WAITING
   }
 
-  private suspend fun fetchRelevantBuildRun(expectedSha: String?, publishedSha: String?): WorkflowRunInfo? {
+  private suspend fun fetchPublishedBuildStatus(expectedVersionCode: Int?): PublishedBuildStatus? {
+    val cacheBust = System.currentTimeMillis()
+    val url = "https://github.com/aneek0/ZDT-D/releases/download/Technical_Assets/zdt-build-status.json?ts=$cacheBust"
+    val body = httpGetText(url) ?: return null
+    val js = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    if (js.optInt("schema", 0) != 1 || js.optString("workflow") != "build.yml") return null
+
+    val versionCode = js.optInt("versionCode", 0).takeIf { it > 0 }
+    if (expectedVersionCode != null && versionCode != expectedVersionCode) return null
+
+    val stagesJson = js.optJSONObject("stages") ?: return null
+    val stages = listOf(
+      AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, parsePublishedStageStatus(stagesJson.optString("binaries"))),
+      AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, parsePublishedStageStatus(stagesJson.optString("archives"))),
+      AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, parsePublishedStageStatus(stagesJson.optString("apk"))),
+      AppReleaseBuildStageUi("release", R.string.app_update_stage_release, parsePublishedStageStatus(stagesJson.optString("release"))),
+      AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, parsePublishedStageStatus(stagesJson.optString("ready"))),
+    )
+    val overall = js.optString("status").lowercase(Locale.ROOT)
+    if (overall !in setOf("preparing", "ready", "failed")) return null
+    val failed = overall == "failed" || stages.any { it.status == AppReleaseStageStatus.FAILED }
+    val runId = js.optLong("runId", 0L).takeIf { it > 0L }
+    val runUrl = js.optString("runUrl").takeIf { it.isNotBlank() }
+
+    return PublishedBuildStatus(
+      overall = overall,
+      headSha = js.optString("headSha").takeIf { it.isNotBlank() },
+      versionCode = versionCode,
+      updatedAtMs = js.optString("updatedAt").takeIf { it.isNotBlank() }?.let { raw ->
+        runCatching { Instant.parse(raw).toEpochMilli() }.getOrNull()
+      },
+      ui = AppReleaseBuildUi(
+        // "ready" in the workflow asset is only a signal to re-check stable release metadata.
+        // The update button is enabled only after the APK asset itself is confirmed.
+        status = if (failed) AppReleaseBuildStatus.FAILED else AppReleaseBuildStatus.PREPARING,
+        runId = runId,
+        runUrl = runUrl,
+        messageRes = if (failed) R.string.app_update_release_failed_body else R.string.app_update_release_preparing_body,
+        stages = stages,
+      ),
+    )
+  }
+
+  private suspend fun fetchRelevantBuildRun(publishedSha: String?): WorkflowRunInfo? {
     val body = httpGetText("https://api.github.com/repos/aneek0/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
     val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
     val runs = buildList {
@@ -718,8 +869,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ))
       }
     }.filter { it.id > 0L }
-    return runs.firstOrNull { expectedSha != null && it.headSha.equals(expectedSha, ignoreCase = true) }
-      ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
+
+    // Prefer the newest active run on main. Release rebuilds often do not touch module.prop,
+    // so the live workflow must not be tied to the commit that last changed module.prop.
+    return runs.firstOrNull {
+      it.status in setOf("queued", "in_progress", "waiting", "requested", "pending") &&
+        (publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true))
+    } ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
       ?: runs.firstOrNull()
   }
 
@@ -750,14 +906,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     return AppReleaseStageStatus.WAITING
   }
 
-  private suspend fun fetchReleaseBuildUi(expectedSha: String?, publishedSha: String?): AppReleaseBuildUi {
-    val run = fetchRelevantBuildRun(expectedSha, publishedSha)
-      ?: return AppReleaseBuildUi(
-        status = AppReleaseBuildStatus.PREPARING,
-        messageRes = R.string.app_update_release_preparing_body,
-        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
-      )
+  private suspend fun fetchReleaseBuildUi(publishedSha: String?): AppReleaseBuildUi? {
+    val run = fetchRelevantBuildRun(publishedSha) ?: return null
     val jobs = fetchWorkflowJobs(run.id)
+    // If the jobs endpoint is temporarily unavailable/rate-limited, preserve the last UI state.
+    if (jobs.isEmpty() && run.status != "queued") return null
 
     fun named(predicate: (String) -> Boolean): List<WorkflowJobInfo> = jobs.filter { predicate(it.name.lowercase(Locale.ROOT)) }
 
@@ -775,12 +928,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val apk = named { it.contains("build apk") }
     val release = named { it.contains("publish service") }
 
-    fun stageStatus(jobsForStage: List<WorkflowJobInfo>): AppReleaseStageStatus = stageStatusForJobs(jobsForStage)
-
-    var binariesStatus = stageStatus(binaries)
-    var archivesStatus = stageStatus(archives)
-    var apkStatus = stageStatus(apk)
-    var releaseStatus = stageStatus(release)
+    var binariesStatus = stageStatusForJobs(binaries)
+    var archivesStatus = stageStatusForJobs(archives)
+    var apkStatus = stageStatusForJobs(apk)
+    var releaseStatus = stageStatusForJobs(release)
     val readyStatus = AppReleaseStageStatus.WAITING
 
     fun promotePreviousStages() {
@@ -798,9 +949,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       }
     }
 
-    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) {
-      binariesStatus = AppReleaseStageStatus.RUNNING
-    }
+    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.RUNNING
     promotePreviousStages()
     if (run.status in setOf("queued", "in_progress") &&
       listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.RUNNING || it == AppReleaseStageStatus.FAILED }
@@ -846,12 +995,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     )
   }
 
+  private suspend fun refreshReleaseBuildStatus() {
+    val current = _appUpdate.value
+    val published = fetchPublishedBuildStatus(current.remoteVersionCode)
+    val now = System.currentTimeMillis()
+
+    if (published != null) {
+      _appUpdate.update { state ->
+        if (!state.bannerVisible || state.downloadUrl != null) state else state.copy(releaseBuild = published.ui)
+      }
+
+      if (published.overall == "ready") {
+        val shouldConfirmRelease = lastReleaseReadyRunId != published.ui.runId ||
+          now - lastReleaseReadyApiCheckAtMs >= 90_000L
+        if (shouldConfirmRelease) {
+          lastReleaseReadyRunId = published.ui.runId
+          lastReleaseReadyApiCheckAtMs = now
+          checkAppUpdateInternal(force = true, silent = true)
+        }
+      }
+
+      val ageMs = published.updatedAtMs?.let { now - it }
+      if (ageMs == null || ageMs in 0..180_000L) return
+      // A milestone can legitimately take several minutes. Once the published document
+      // becomes stale, use REST only as a slow fallback so a missed status upload cannot
+      // leave the UI stuck forever.
+    }
+
+    // REST is only a fallback. Unauthenticated GitHub REST requests have a low per-IP
+    // quota, so never poll workflow runs/jobs every few seconds.
+    if (now - lastReleaseBuildApiFallbackAtMs < 90_000L) return
+    lastReleaseBuildApiFallbackAtMs = now
+    val fallback = fetchReleaseBuildUi(publishedSha = null) ?: return
+    _appUpdate.update { state ->
+      if (!state.bannerVisible || state.downloadUrl != null) state else state.copy(releaseBuild = fallback)
+    }
+  }
+
   private fun startReleaseBuildPolling() {
     appReleaseBuildPollJob?.cancel()
     appReleaseBuildPollJob = viewModelScope.launch(Dispatchers.IO + ceh) {
       while (isActive && _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
-        delay(15_000L)
-        checkAppUpdateInternal(force = true, silent = true)
+        delay(20_000L)
+        refreshReleaseBuildStatus()
       }
     }
   }
@@ -1023,8 +1209,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     root.setCachedAppUpdateFoundTs(now)
 
     if (!releaseReady) {
-      val expectedSha = fetchModulePropCommitSha()
-      val buildUi = fetchReleaseBuildUi(expectedSha = expectedSha, publishedSha = releaseMeta?.commit)
+      val publishedStatus = fetchPublishedBuildStatus(rc)
+      val buildUi = publishedStatus?.ui
+        ?: fetchReleaseBuildUi(publishedSha = releaseMeta?.commit)
+        ?: _appUpdate.value.releaseBuild.takeIf { it.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED) }
+        ?: AppReleaseBuildUi(
+          status = AppReleaseBuildStatus.PREPARING,
+          messageRes = R.string.app_update_release_preparing_body,
+          stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+        )
       root.setCachedAppUpdateDownloadUrl(null)
       _appUpdate.update { it.copy(
         enabled = root.isAppUpdateCheckEnabled(),
@@ -1078,7 +1271,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  
+
 private fun restoreCachedAppUpdateState() {
   // If checks are disabled, hide banner and clear persisted "available" flag (to avoid surprises).
   if (!root.isAppUpdateCheckEnabled()) {
@@ -1154,8 +1347,14 @@ private fun restoreCachedAppUpdateState() {
 fun onAppResumed() {
   // Re-sync banner state first so cached preparing states immediately enter live polling.
   restoreCachedAppUpdateState()
-  // Re-check in background on resume if cooldown is over, or force when a release build is visible.
-  maybeCheckAppUpdate(force = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED))
+  val liveBuildVisible = _appUpdate.value.bannerVisible &&
+    _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)
+  if (liveBuildVisible) {
+    // Refresh the workflow-published HTTPS status immediately without spending REST API quota.
+    launchIO { refreshReleaseBuildStatus() }
+  } else {
+    maybeCheckAppUpdate(force = false)
+  }
 }
 
 private fun clearDownloadedUpdateApk() {
@@ -1375,11 +1574,19 @@ private fun clearDownloadedUpdateApk() {
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
 
       if (!installed) {
+        val bundledBuild = readBundledModuleBuildInfo()
         _setup.update { st ->
           st.copy(
             step = SetupStep.INSTALL,
             oldVersionDetected = oldVer,
             showUpdatePrompt = false,
+            buildType = bundledBuild?.buildType ?: "service",
+            buildNumber = bundledBuild?.buildNumber,
+            buildVersionName = bundledBuild?.versionName ?: BuildConfig.VERSION_NAME,
+            buildVersionCode = bundledBuild?.versionCode ?: BuildConfig.VERSION_CODE,
+            installedVersionName = "",
+            installedVersionCode = null,
+            installedBuildNumber = null,
             moduleReinstallRequired = false,
             tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
             explicitReinstallRequested = false,
@@ -1437,9 +1644,39 @@ private fun clearDownloadedUpdateApk() {
       }
       val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
 
-      // 5) Optional update prompt (shown only on a cold start from launcher).
-      val bundledCode = readBundledModuleVersionCode()
-      val showOptional = startedFromLauncher && installedCode != null && bundledCode != null && installedCode >= minSupported && installedCode < bundledCode
+      // 5) Build identity + optional bundled-module update prompt.
+      // A real module versionCode upgrade must always auto-expand on a launcher cold start,
+      // regardless of whether this workflow run is labelled release or service. A service-only
+      // buildNumber update within the same versionCode stays available through the compact card.
+      val installedBuild = parseModuleBuildInfo(installedText)
+      val bundledBuild = readBundledModuleBuildInfo()
+      val buildUpdateAvailable = bundledBuild != null &&
+        installedCode != null &&
+        installedCode >= minSupported &&
+        isBundledModuleBuildNewer(installedBuild, bundledBuild)
+      val buildType = bundledBuild?.buildType ?: "service"
+      val bundledCodeForPrompt = bundledBuild?.versionCode
+      val isVersionCodeUpgrade = installedCode != null &&
+        bundledCodeForPrompt != null &&
+        bundledCodeForPrompt > installedCode
+      val autoExpandUpdate = startedFromLauncher && buildUpdateAvailable && isVersionCodeUpgrade
+      val bundledVersionName = bundledBuild?.versionName ?: BuildConfig.VERSION_NAME
+      val bundledVersionCode = bundledBuild?.versionCode ?: BuildConfig.VERSION_CODE
+      val installedVersionName = installedBuild.versionName ?: "?"
+      val installedBuildNumber = installedBuild.buildNumber?.toString() ?: "?"
+      val bundledBuildNumber = bundledBuild?.buildNumber?.toString() ?: "?"
+      val promptText = if (buildUpdateAvailable) {
+        str(
+          R.string.mv_module_build_update_prompt_text,
+          installedVersionName,
+          installedCode?.toString() ?: "?",
+          installedBuildNumber,
+          buildType,
+          bundledVersionName,
+          bundledVersionCode.toString(),
+          bundledBuildNumber,
+        )
+      } else ""
 
       _setup.update { st ->
         st.copy(
@@ -1447,15 +1684,22 @@ private fun clearDownloadedUpdateApk() {
           oldVersionDetected = oldVer,
           preInstallWarning = null,
           rebootRequiredText = "",
-          showUpdatePrompt = showOptional,
+          showUpdatePrompt = autoExpandUpdate,
           explicitReinstallRequested = false,
           updatePromptMandatory = false,
-          updatePromptTitle = if (showOptional) str(R.string.mv_module_update_available) else "",
+          updatePromptTitle = if (buildUpdateAvailable) str(R.string.mv_module_update_available) else "",
+          updatePromptText = promptText,
+          buildType = buildType,
+          buildNumber = bundledBuild?.buildNumber,
+          buildVersionName = bundledVersionName,
+          buildVersionCode = bundledVersionCode,
+          installedVersionName = installedBuild.versionName.orEmpty(),
+          installedVersionCode = installedBuild.versionCode,
+          installedBuildNumber = installedBuild.buildNumber,
+          buildUpdateAvailable = buildUpdateAvailable,
+          updatePromptAutoExpand = autoExpandUpdate,
           moduleReinstallRequired = false,
           tamperReinstallPendingReboot = stickyTamperPending,
-          updatePromptText = if (showOptional) {
-            str(R.string.mv_module_update_prompt_text, installedCode ?: -1, bundledCode ?: -1)
-          } else "",
         )
       }
 
@@ -1473,6 +1717,7 @@ private fun clearDownloadedUpdateApk() {
     if (!visible) {
       startupJob?.cancel(); startupJob = null
       statusJob?.cancel(); statusJob = null
+      stopStatsPowerSampling()
       daemonLogJob?.cancel(); daemonLogJob = null
       return
     }
@@ -1489,6 +1734,7 @@ private fun clearDownloadedUpdateApk() {
     maybeCheckAppUpdate(force = false)
 
     if (startupCompleted) {
+      if (activeMainTabHint == "STATS") startStatsPowerSampling()
       startStatusPolling()
       startDaemonLogPolling()
       refreshPrograms()
@@ -1500,8 +1746,10 @@ private fun clearDownloadedUpdateApk() {
   }
 
   fun setActiveMainTab(tab: String) {
-    val wasHome = activeMainTabHint == "HOME"
+    val previousTab = activeMainTabHint
+    val wasHome = previousTab == "HOME"
     activeMainTabHint = tab
+
     if (!wasHome && tab == "HOME") {
       refreshDaemonLog()
       if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
@@ -1510,11 +1758,23 @@ private fun clearDownloadedUpdateApk() {
         startDaemonLogPolling()
       }
     }
+
+    if (tab == "STATS") {
+      if (previousTab != "STATS") startStatsPowerSampling()
+    } else if (previousTab == "STATS") {
+      stopStatsPowerSampling()
+    }
+
+    // Apply the new screen-aware status cadence immediately instead of waiting for
+    // the previous tab's delay to expire. Statistics gets a fresh sample on entry.
+    if (previousTab != tab && startupCompleted && appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+      startStatusPolling()
+    }
   }
 
   private fun currentStatusPollDelayMs(): Long = when (activeMainTabHint) {
     "HOME" -> 5_800L
-    "STATS" -> 7_500L
+    "STATS" -> 5_000L
     "APPS" -> 9_500L
     else -> 10_500L
   }
@@ -1562,6 +1822,7 @@ private fun clearDownloadedUpdateApk() {
         daemonUnavailableVisible = false,
       )
     }
+    if (activeMainTabHint == "STATS") startStatsPowerSampling()
     startStatusPolling()
     startDaemonLogPolling()
     refreshPrograms()
@@ -2733,13 +2994,20 @@ fi""".trimIndent()
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
   fun resetProgramUpdatesUi() {
+    githubPreferredProxy = null
     _programUpdates.update { st ->
       st.copy(
-        stoppingService = false,
+        bulkChecking = false,
+        bulkUpdating = false,
+        bulkCheckCompleted = false,
+        bulkCheckHadFailures = false,
         zapret = st.zapret.copy(
           checking = false,
           updating = false,
           progressPercent = 0,
+          latestVersion = null,
+          latestDownloadUrl = null,
+          updateAvailable = false,
           statusText = "",
           errorText = null,
           warningText = null,
@@ -2753,6 +3021,9 @@ fi""".trimIndent()
           checking = false,
           updating = false,
           progressPercent = 0,
+          latestVersion = null,
+          latestDownloadUrl = null,
+          updateAvailable = false,
           statusText = "",
           errorText = null,
           warningText = null,
@@ -2766,6 +3037,9 @@ fi""".trimIndent()
           checking = false,
           updating = false,
           progressPercent = 0,
+          latestVersion = null,
+          latestDownloadUrl = null,
+          updateAvailable = false,
           statusText = "",
           errorText = null,
           warningText = null,
@@ -2779,6 +3053,9 @@ fi""".trimIndent()
           checking = false,
           updating = false,
           progressPercent = 0,
+          latestVersion = null,
+          latestDownloadUrl = null,
+          updateAvailable = false,
           statusText = "",
           errorText = null,
           warningText = null,
@@ -2792,6 +3069,9 @@ fi""".trimIndent()
           checking = false,
           updating = false,
           progressPercent = 0,
+          latestVersion = null,
+          latestDownloadUrl = null,
+          updateAvailable = false,
           statusText = "",
           errorText = null,
           warningText = null,
@@ -2802,49 +3082,6 @@ fi""".trimIndent()
           releasesError = null,
         ),
       )
-    }
-  }
-
-  fun stopServiceForProgramUpdatesAndCheck() {
-    if (_rootState.value != RootState.GRANTED) return
-    if (_programUpdates.value.stoppingService) return
-    launchIO {
-      _programUpdates.update { it.copy(stoppingService = true) }
-      try {
-        // Send stop only once.
-        runCatching { api.stopService() }.getOrDefault(false)
-        // Poll status until OFF (or timeout).
-        val deadline = System.currentTimeMillis() + 25_000L
-        while (System.currentTimeMillis() < deadline) {
-          runCatching { fetchAndUpdateStatus() }
-          if (!ApiModels.isServiceOn(_uiState.value.status)) break
-          delay(800)
-        }
-        if (ApiModels.isServiceOn(_uiState.value.status)) {
-          toast(str(R.string.mv_auto_053))
-          _programUpdates.update { st ->
-            st.copy(
-              zapret = st.zapret.copy(errorText = str(R.string.program_updates_err_service_running)),
-              zapret2 = st.zapret2.copy(errorText = str(R.string.program_updates_err_service_running)),
-              mihomo = st.mihomo.copy(errorText = str(R.string.program_updates_err_service_running)),
-              mieru = st.mieru.copy(errorText = str(R.string.program_updates_err_service_running)),
-              operaProxy = st.operaProxy.copy(errorText = str(R.string.program_updates_err_service_running)),
-            )
-          }
-          return@launchIO
-        }
-        // Give the daemon a little extra time to restore system traffic/DNS
-        // before starting network-dependent update checks.
-        delay(5_000)
-        // Auto-check both after OFF + restore grace period.
-        checkZapretInternal()
-        checkZapret2Internal()
-        checkMihomoInternal()
-        checkMieruInternal()
-        checkOperaProxyInternal()
-      } finally {
-        _programUpdates.update { it.copy(stoppingService = false) }
-      }
     }
   }
 
@@ -2966,6 +3203,110 @@ fi""".trimIndent()
     }
   }
 
+
+  fun checkAllProgramUpdates() {
+    if (_rootState.value != RootState.GRANTED) return
+    val current = _programUpdates.value
+    if (current.bulkChecking || current.bulkUpdating) return
+    launchIO {
+      _programUpdates.update {
+        it.copy(
+          bulkChecking = true,
+          bulkCheckCompleted = false,
+          bulkCheckHadFailures = false,
+        )
+      }
+      try {
+        // Keep checks independent: a broken/changed repository or an unexpected failure
+        // in one tool must never prevent the remaining tools from being checked.
+        runProgramUpdateCheckSafely("zapret") { checkZapretInternal() }
+        runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
+        runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
+        runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
+        runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
+      } finally {
+        _programUpdates.update { st ->
+          val failed = listOf(st.zapret, st.zapret2, st.mihomo, st.mieru, st.operaProxy)
+            .any { it.errorText != null }
+          st.copy(
+            bulkChecking = false,
+            bulkCheckCompleted = true,
+            bulkCheckHadFailures = failed,
+          )
+        }
+      }
+    }
+  }
+
+  fun updateAllProgramUpdates() {
+    if (_rootState.value != RootState.GRANTED) return
+    val snapshot = _programUpdates.value
+    if (snapshot.bulkChecking || snapshot.bulkUpdating) return
+    val updateZapret = snapshot.zapret.updateAvailable
+    val updateZapret2 = snapshot.zapret2.updateAvailable
+    val updateMihomo = snapshot.mihomo.updateAvailable
+    val updateMieru = snapshot.mieru.updateAvailable
+    val updateOperaProxy = snapshot.operaProxy.updateAvailable
+    if (!listOf(updateZapret, updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return
+
+    launchIO {
+      _programUpdates.update { it.copy(bulkUpdating = true) }
+      try {
+        // Sequential updates keep disk/root operations predictable. A failure in one
+        // component does not prevent other already-discovered updates from installing.
+        if (updateZapret) runProgramUpdateInstallSafely("zapret") { updateZapretInternal() }
+        if (updateZapret2) runProgramUpdateInstallSafely("zapret2") { updateZapret2Internal() }
+        if (updateMihomo) runProgramUpdateInstallSafely("mihomo") { updateMihomoInternal() }
+        if (updateMieru) runProgramUpdateInstallSafely("mieru") { updateMieruInternal() }
+        if (updateOperaProxy) runProgramUpdateInstallSafely("operaproxy") { updateOperaProxyInternal() }
+      } finally {
+        _programUpdates.update { it.copy(bulkUpdating = false) }
+      }
+    }
+  }
+
+  private suspend fun runProgramUpdateCheckSafely(which: String, block: suspend () -> Unit) {
+    try {
+      block()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      log("WARN", "Updater: unexpected $which check failure: ${e.message ?: e}")
+      _programUpdates.update { st ->
+        val error = str(R.string.program_updates_err_check_latest)
+        when (which) {
+          "zapret" -> st.copy(zapret = st.zapret.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
+          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
+          "mihomo" -> st.copy(mihomo = st.mihomo.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
+          "mieru" -> st.copy(mieru = st.mieru.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
+          "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
+          else -> st
+        }
+      }
+    }
+  }
+
+  private suspend fun runProgramUpdateInstallSafely(which: String, block: suspend () -> Unit) {
+    try {
+      block()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      log("WARN", "Updater: unexpected $which install failure: ${e.message ?: e}")
+      _programUpdates.update { st ->
+        val error = str(R.string.prog_update_error_install_failed)
+        when (which) {
+          "zapret" -> st.copy(zapret = st.zapret.copy(updating = false, errorText = error, statusText = ""))
+          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = error, statusText = ""))
+          "mihomo" -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = error, statusText = ""))
+          "mieru" -> st.copy(mieru = st.mieru.copy(updating = false, errorText = error, statusText = ""))
+          "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(updating = false, errorText = error, statusText = ""))
+          else -> st
+        }
+      }
+    }
+  }
+
   fun checkZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkZapretInternal() }
@@ -3016,23 +3357,10 @@ fi""".trimIndent()
     launchIO { updateOperaProxyInternal() }
   }
 
-  private fun requireServiceStoppedForUpdates(): Boolean {
-    val on = ApiModels.isServiceOn(_uiState.value.status)
-    if (on) {
-      toast(str(R.string.mv_auto_054))
-    }
-    return !on
-  }
 
   private suspend fun checkZapretInternal() {
-    if (!requireServiceStoppedForUpdates()) return
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      return
-    }
-
     _programUpdates.update { st ->
-      st.copy(zapret = st.zapret.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+      st.copy(zapret = st.zapret.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -3046,7 +3374,7 @@ fi""".trimIndent()
     val latest = fetchLatestZapretAsset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -3074,14 +3402,8 @@ fi""".trimIndent()
   }
 
   private suspend fun checkZapret2Internal() {
-    if (!requireServiceStoppedForUpdates()) return
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      return
-    }
-
     _programUpdates.update { st ->
-      st.copy(zapret2 = st.zapret2.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+      st.copy(zapret2 = st.zapret2.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -3095,7 +3417,7 @@ fi""".trimIndent()
     val latest = fetchLatestZapret2Asset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -3123,14 +3445,8 @@ fi""".trimIndent()
   }
 
   private suspend fun checkMihomoInternal() {
-    if (!requireServiceStoppedForUpdates()) return
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      return
-    }
-
     _programUpdates.update { st ->
-      st.copy(mihomo = st.mihomo.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+      st.copy(mihomo = st.mihomo.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -3145,7 +3461,7 @@ fi""".trimIndent()
     val latest = fetchLatestMihomoAsset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(mihomo = st.mihomo.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+        st.copy(mihomo = st.mihomo.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -3172,14 +3488,8 @@ fi""".trimIndent()
   }
 
   private suspend fun checkMieruInternal() {
-    if (!requireServiceStoppedForUpdates()) return
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      return
-    }
-
     _programUpdates.update { st ->
-      st.copy(mieru = st.mieru.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+      st.copy(mieru = st.mieru.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -3194,7 +3504,7 @@ fi""".trimIndent()
     val latest = fetchLatestMieruAsset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(mieru = st.mieru.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+        st.copy(mieru = st.mieru.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -3221,21 +3531,15 @@ fi""".trimIndent()
   }
 
   private suspend fun checkOperaProxyInternal() {
-    if (!requireServiceStoppedForUpdates()) return
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      return
-    }
-
     _programUpdates.update { st ->
-      st.copy(operaProxy = st.operaProxy.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+      st.copy(operaProxy = st.operaProxy.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching { readInstalledOperaProxyVersion() }.getOrNull()
     val latest = fetchLatestOperaProxyAsset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(operaProxy = st.operaProxy.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+        st.copy(operaProxy = st.operaProxy.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -3262,7 +3566,6 @@ fi""".trimIndent()
   }
 
   private suspend fun updateZapretInternal() {
-    if (!requireServiceStoppedForUpdates()) return
     // Ensure we have target info (latest or selected).
     val stBefore = _programUpdates.value.zapret
     if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
@@ -3336,7 +3639,6 @@ fi""".trimIndent()
   }
 
   private suspend fun updateZapret2Internal() {
-    if (!requireServiceStoppedForUpdates()) return
     val stBefore = _programUpdates.value.zapret2
     if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
       checkZapret2Internal()
@@ -3372,7 +3674,10 @@ fi""".trimIndent()
     val luaOut = File(extractDir, "lua")
     val okExtractBin = extractZipSingle(zipFile, { name -> name.endsWith("/binaries/android-arm64/nfqws2") }, binOut)
     val okExtractLua = extractZipTree(zipFile, subDirSuffix = "/lua/", outDir = luaOut)
-    if (!okExtractBin || !okExtractLua) {
+    val requiredLuaOk = listOf("zapret-lib.lua", "zapret-antidpi.lua").all { name ->
+      File(luaOut, name).let { it.isFile && it.length() > 0L }
+    }
+    if (!okExtractBin || !okExtractLua || !requiredLuaOk) {
       _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { zipFile.delete() }
       runCatching { extractDir.deleteRecursively() }
@@ -3380,13 +3685,21 @@ fi""".trimIndent()
     }
 
     _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
-    val okInstall = installZapret2(binOut, luaOut)
-    runCatching { zipFile.delete() }
-    runCatching { extractDir.deleteRecursively() }
-    if (!okInstall) {
-      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
+    val installResult = installZapret2(binOut, luaOut)
+    if (!installResult.success) {
+      val detail = installResult.detail.trim().take(1200)
+      val message = if (detail.isBlank()) {
+        str(R.string.prog_update_error_install_failed)
+      } else {
+        str(R.string.prog_update_error_install_failed) + "\n" + detail
+      }
+      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = message, statusText = "")) }
+      // Keep the downloaded archive/extracted payload after a failed install for diagnostics.
+      // They are removed automatically at the start of the next nfqws2 update attempt.
       return
     }
+    runCatching { zipFile.delete() }
+    runCatching { extractDir.deleteRecursively() }
 
     val installed = runCatching {
       readInstalledVersionAny(
@@ -3413,7 +3726,6 @@ fi""".trimIndent()
   }
 
   private suspend fun updateMihomoInternal() {
-    if (!requireServiceStoppedForUpdates()) return
     val stBefore = _programUpdates.value.mihomo
     if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
       checkMihomoInternal()
@@ -3486,7 +3798,6 @@ fi""".trimIndent()
   }
 
   private suspend fun updateMieruInternal() {
-    if (!requireServiceStoppedForUpdates()) return
     val stBefore = _programUpdates.value.mieru
     if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
       checkMieruInternal()
@@ -3559,7 +3870,6 @@ fi""".trimIndent()
   }
 
   private suspend fun updateOperaProxyInternal() {
-    if (!requireServiceStoppedForUpdates()) return
     val stBefore = _programUpdates.value.operaProxy
     if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
       checkOperaProxyInternal()
@@ -3615,21 +3925,6 @@ fi""".trimIndent()
   }
 
   private suspend fun loadReleasesInternal(which: String) {
-    if (!isNetworkAvailable()) {
-      toast(str(R.string.mv_auto_002))
-      _programUpdates.update { st ->
-        when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
-          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
-          "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
-          "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
-          "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
-          else -> st
-        }
-      }
-      return
-    }
-
     _programUpdates.update { st ->
       when (which) {
         "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = true, releasesError = null))
@@ -3819,6 +4114,110 @@ fi""".trimIndent()
     return null
   }
 
+
+  private fun githubProxyClient(candidate: ApiModels.ConstructionProxyEndpointCandidate): OkHttpClient {
+    val key = "${candidate.host}:${candidate.port}:${candidate.kind}"
+    synchronized(githubProxyClientLock) {
+      githubProxyClients[key]?.let { return it }
+      // All endpoint kinds currently exported by the daemon (socks5, mixed, t2s)
+      // accept SOCKS5 connections. Using SOCKS keeps DNS resolution on the proxy side.
+      val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(candidate.host, candidate.port))
+      return githubHttp.newBuilder().proxy(proxy).build().also { githubProxyClients[key] = it }
+    }
+  }
+
+  private fun isGithubUpdateHost(host: String): Boolean {
+    val h = host.lowercase(Locale.US)
+    return h == "github.com" ||
+      h == "api.github.com" ||
+      h.endsWith(".github.com") ||
+      h == "githubusercontent.com" ||
+      h.endsWith(".githubusercontent.com")
+  }
+
+  private fun shouldRetryGithubRoute(request: Request, response: okhttp3.Response): Boolean {
+    if (response.code == 403 || response.code == 429 || response.code == 500 || response.code == 502 || response.code == 503 || response.code == 504) {
+      return true
+    }
+    if (response.isSuccessful && isGithubUpdateHost(request.url.host)) {
+      val finalHost = response.request.url.host
+      // A transparent block/captive page can return HTTP 200 after redirecting GitHub to
+      // an unrelated host. Treat that as a broken route so the hidden proxy fallback runs.
+      if (!isGithubUpdateHost(finalHost)) return true
+
+      if (request.url.host.equals("api.github.com", ignoreCase = true)) {
+        val contentType = response.header("Content-Type").orEmpty()
+        if (!finalHost.equals("api.github.com", ignoreCase = true) || !contentType.contains("json", ignoreCase = true)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  private fun loadGithubProxyCandidates(): List<ApiModels.ConstructionProxyEndpointCandidate> {
+    val candidates = runCatching { api.getConstructionProxyEndpoints() }
+      .onFailure { log("WARN", "Updater: module proxy discovery failed: ${it.message ?: it}") }
+      .getOrDefault(emptyList())
+
+    val byAddress = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
+    candidates.asSequence()
+      .filter { it.running && it.port in 1..65535 }
+      .filter { it.kind.equals("socks5", true) || it.kind.equals("mixed", true) || it.kind.equals("t2s", true) }
+      .sortedWith(
+        compareBy<ApiModels.ConstructionProxyEndpointCandidate> { if (it.kind.equals("t2s", true)) 0 else 1 }
+          .thenBy { it.programId }
+          .thenBy { it.port }
+      )
+      .forEach { candidate -> byAddress.putIfAbsent("${candidate.host}:${candidate.port}", candidate) }
+    return byAddress.values.toList()
+  }
+
+  /**
+   * Executes a GitHub request without changing device routing. Direct access is used normally.
+   * If it cannot reach GitHub, already-running module SOCKS/mixed/t2s endpoints are tried under
+   * the hood. Once one works it is preferred for the rest of this update session.
+   */
+  private fun executeGithubRequest(request: Request): okhttp3.Response? {
+    val preferred = githubPreferredProxy
+    if (preferred != null) {
+      try {
+        val response = githubProxyClient(preferred).newCall(request).execute()
+        if (!shouldRetryGithubRoute(request, response)) return response
+        log("WARN", "Updater: cached module proxy returned HTTP ${response.code}; rediscovering route")
+        response.close()
+      } catch (e: IOException) {
+        log("WARN", "Updater: cached module proxy failed: ${e.message ?: e}")
+      }
+      githubPreferredProxy = null
+    }
+
+    try {
+      val response = githubHttp.newCall(request).execute()
+      if (!shouldRetryGithubRoute(request, response)) return response
+      log("WARN", "Updater: direct GitHub request returned HTTP ${response.code}; trying module proxies")
+      response.close()
+    } catch (e: IOException) {
+      log("WARN", "Updater: direct GitHub request failed; trying module proxies: ${e.message ?: e}")
+    }
+
+    for (candidate in loadGithubProxyCandidates()) {
+      try {
+        val response = githubProxyClient(candidate).newCall(request).execute()
+        if (!shouldRetryGithubRoute(request, response)) {
+          githubPreferredProxy = candidate
+          log("OK", "Updater: GitHub reachable through module proxy ${candidate.programId} ${candidate.host}:${candidate.port}")
+          return response
+        }
+        log("WARN", "Updater: module proxy ${candidate.programId} ${candidate.host}:${candidate.port} returned HTTP ${response.code}")
+        response.close()
+      } catch (e: IOException) {
+        log("WARN", "Updater: module proxy ${candidate.programId} ${candidate.host}:${candidate.port} failed: ${e.message ?: e}")
+      }
+    }
+    return null
+  }
+
   private suspend fun fetchLatestZapretAsset(): Pair<String, String>? {
     return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip"))
   }
@@ -3852,7 +4251,8 @@ fi""".trimIndent()
       .url(url)
       .header("User-Agent", "ZDT-D-Android")
       .build()
-    githubHttp.newCall(req).execute().use { resp ->
+    val response = executeGithubRequest(req) ?: return null
+    response.use { resp ->
       if (resp.code != 200) return null
       val body = resp.body?.string() ?: return null
       val js = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return null
@@ -3884,7 +4284,8 @@ fi""".trimIndent()
         .header("User-Agent", "ZDT-D-Android")
         .build()
 
-      val body = githubHttp.newCall(req).execute().use { resp ->
+      val response = executeGithubRequest(req) ?: return out.values.toList()
+      val body = response.use { resp ->
         if (resp.code != 200) return out.values.toList()
         resp.body?.string() ?: return out.values.toList()
       }
@@ -3961,7 +4362,8 @@ fi""".trimIndent()
       .url(url)
       .header("User-Agent", "ZDT-D-Android")
       .build()
-    githubHttp.newCall(req).execute().use { resp ->
+    val response = executeGithubRequest(req) ?: return false
+    response.use { resp ->
       if (!resp.isSuccessful) return false
       val body = resp.body ?: return false
       val total = body.contentLength().takeIf { it > 0L } ?: -1L
@@ -4108,85 +4510,182 @@ fi""".trimIndent()
     return false
   }
 
-  private suspend fun installZapretBinary(src: File): Boolean {
-    val moduleRoot = "/data/adb/modules/ZDT-D"
-    val dst = "${moduleRoot}/bin/nfqws"
-    if (!rootPathExists(moduleRoot)) return false
+
+  private suspend fun installBinaryAtomically(src: File, dst: String): Boolean {
+    val dstDir = dst.substringBeforeLast('/')
+    val tmpPath = "${dst}.zdt-update.${System.nanoTime()}"
     val script = """
       set -e
-      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
-      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
-      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
+      mkdir -p ${shQuote(dstDir)} 2>/dev/null || true
+      tmp=${shQuote(tmpPath)}
+      trap 'rm -f "${'$'}tmp" 2>/dev/null || true' EXIT HUP INT TERM
+      cp -f ${shQuote(src.absolutePath)} "${'$'}tmp" 2>/dev/null || cat ${shQuote(src.absolutePath)} > "${'$'}tmp"
+      test -s "${'$'}tmp"
+      chmod 0755 "${'$'}tmp" 2>/dev/null || true
+      mv -f "${'$'}tmp" ${shQuote(dst)}
+      trap - EXIT HUP INT TERM
     """.trimIndent()
-    val r = root.execRootSh(script)
-    return r.isSuccess
+    return root.execRootSh(script).isSuccess
   }
 
-  private suspend fun installMihomoBinary(src: File): Boolean {
-    val moduleRoot = "/data/adb/modules/ZDT-D"
-    val dst = "${moduleRoot}/bin/mihomo"
-    if (!rootPathExists(moduleRoot)) return false
-    val script = """
-      set -e
-      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
-      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
-      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
-    """.trimIndent()
-    val r = root.execRootSh(script)
-    return r.isSuccess
-  }
+  private suspend fun installZapretBinary(src: File): Boolean =
+    installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/nfqws")
 
-  private suspend fun installMieruBinary(src: File): Boolean {
-    val moduleRoot = "/data/adb/modules/ZDT-D"
-    val dst = "${moduleRoot}/bin/mieru"
-    if (!rootPathExists(moduleRoot)) return false
-    val script = """
-      set -e
-      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
-      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
-      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
-    """.trimIndent()
-    val r = root.execRootSh(script)
-    return r.isSuccess
-  }
+  private suspend fun installMihomoBinary(src: File): Boolean =
+    installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/mihomo")
 
-  private suspend fun installOperaProxyBinary(src: File): Boolean {
-    val moduleRoot = "/data/adb/modules/ZDT-D"
-    val dst = "${moduleRoot}/bin/opera-proxy"
-    if (!rootPathExists(moduleRoot)) return false
-    val script = """
-      set -e
-      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
-      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
-      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
-    """.trimIndent()
-    val r = root.execRootSh(script)
-    return r.isSuccess
-  }
+  private suspend fun installMieruBinary(src: File): Boolean =
+    installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/mieru")
 
-  private suspend fun installZapret2(binSrc: File, luaSrcDir: File): Boolean {
-    val moduleRoot = "/data/adb/modules/ZDT-D"
+  private suspend fun installOperaProxyBinary(src: File): Boolean =
+    installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/opera-proxy")
+
+  private data class Zapret2InstallResult(
+    val success: Boolean,
+    val detail: String = "",
+  )
+
+  private suspend fun installZapret2(binSrc: File, luaSrcDir: File): Zapret2InstallResult {
+    val moduleRoot = when {
+      rootPathExists("/data/adb/modules/ZDT-D") -> "/data/adb/modules/ZDT-D"
+      rootPathExists("/data/adb/modules_update/ZDT-D") -> "/data/adb/modules_update/ZDT-D"
+      else -> return Zapret2InstallResult(false, "ZDT-D module directory was not found")
+    }
     val dstBin = "${moduleRoot}/bin/nfqws2"
-    val dstLua = "${moduleRoot}/strategic/lua"
-    if (!rootPathExists(moduleRoot)) return false
+    val luaParent = "${moduleRoot}/strategic"
+    val dstLua = "${luaParent}/lua"
+    val nonce = System.nanoTime()
+    val stagedBin = "${dstBin}.zdt-new.${nonce}"
+    val backupBin = "${dstBin}.zdt-old.${nonce}"
+    val stagedLua = "${luaParent}/.lua.zdt-new.${nonce}"
+    val backupLua = "${luaParent}/.lua.zdt-old.${nonce}"
+    val customLuaFiles = listOf("zapret-sni.lua", "zapret-wgobfs.lua")
+
+    if (!binSrc.isFile || binSrc.length() <= 0L) {
+      return Zapret2InstallResult(false, "Extracted nfqws2 binary is empty")
+    }
+    if (!File(luaSrcDir, "zapret-lib.lua").isFile || !File(luaSrcDir, "zapret-antidpi.lua").isFile) {
+      return Zapret2InstallResult(false, "Required zapret2 Lua files are missing")
+    }
+
+    val preserveCustomLua = customLuaFiles.joinToString("\n") { name ->
+      val src = "${dstLua}/${name}"
+      val dst = "${stagedLua}/${name}"
+      "if test -f ${shQuote(src)}; then cp -f ${shQuote(src)} ${shQuote(dst)} || { echo ${shQuote("Failed to preserve $name")} >&2; exit 1; }; fi"
+    }
+
     val script = """
       set -e
-      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
-      mkdir -p ${shQuote(dstLua)} 2>/dev/null || true
-      # replace lua contents to avoid stale files
-      rm -rf ${shQuote(dstLua)}/* 2>/dev/null || true
+      dst_bin=${shQuote(dstBin)}
+      dst_lua=${shQuote(dstLua)}
+      staged_bin=${shQuote(stagedBin)}
+      backup_bin=${shQuote(backupBin)}
+      staged_lua=${shQuote(stagedLua)}
+      backup_lua=${shQuote(backupLua)}
+      had_bin=0
+      had_lua=0
+      mutated=0
 
-      cp -f ${shQuote(binSrc.absolutePath)} ${shQuote(dstBin)} 2>/dev/null || cat ${shQuote(binSrc.absolutePath)} > ${shQuote(dstBin)}
-      chmod 0755 ${shQuote(dstBin)} 2>/dev/null || true
+      cleanup_stage() {
+        rm -f "${'$'}staged_bin" "${'$'}backup_bin" 2>/dev/null || true
+        rm -rf "${'$'}staged_lua" "${'$'}backup_lua" 2>/dev/null || true
+      }
 
-      if test -d ${shQuote(luaSrcDir.absolutePath)}; then
-        cp -r ${shQuote(luaSrcDir.absolutePath)}/* ${shQuote(dstLua + "/")} 2>/dev/null || true
+      rollback() {
+        if test "${'$'}mutated" != 1; then return; fi
+        echo "nfqws2 update: rolling back previous files" >&2
+        rm -f "${'$'}dst_bin" 2>/dev/null || true
+        rm -rf "${'$'}dst_lua" 2>/dev/null || true
+        if test "${'$'}had_bin" = 1 && test -s "${'$'}backup_bin"; then
+          cp -f "${'$'}backup_bin" "${'$'}dst_bin" 2>/dev/null || cat "${'$'}backup_bin" > "${'$'}dst_bin"
+          chmod 0755 "${'$'}dst_bin" 2>/dev/null || true
+        fi
+        if test "${'$'}had_lua" = 1 && test -d "${'$'}backup_lua"; then
+          mkdir -p "${'$'}dst_lua"
+          cp -r "${'$'}backup_lua"/. "${'$'}dst_lua"/ 2>/dev/null || true
+          find "${'$'}dst_lua" -type f -name '*.lua' -exec chmod 0644 {} \; 2>/dev/null || true
+        fi
+      }
+
+      fail_install() {
+        echo "nfqws2 update failed: ${'$'}1" >&2
+        rollback
+        cleanup_stage
+        exit 1
+      }
+
+      mkdir -p ${shQuote(moduleRoot + "/bin")} ${shQuote(luaParent)}
+      cleanup_stage
+
+      echo "nfqws2 update: staging binary"
+      if ! cp -f ${shQuote(binSrc.absolutePath)} "${'$'}staged_bin" 2>/dev/null; then
+        cat ${shQuote(binSrc.absolutePath)} > "${'$'}staged_bin" || fail_install "unable to stage nfqws2 binary"
       fi
-      find ${shQuote(dstLua)} -type f -exec chmod 0755 {} \\; 2>/dev/null || true
-      find ${shQuote(dstLua)} -type d -exec chmod 0755 {} \\; 2>/dev/null || true
+      test -s "${'$'}staged_bin" || fail_install "staged nfqws2 binary is empty"
+      chmod 0755 "${'$'}staged_bin" || fail_install "unable to mark nfqws2 executable"
+
+      echo "nfqws2 update: staging upstream Lua files"
+      mkdir -p "${'$'}staged_lua" || fail_install "unable to create Lua staging directory"
+      cp -r ${shQuote(luaSrcDir.absolutePath)}/. "${'$'}staged_lua"/ || fail_install "unable to stage zapret2 Lua files"
+      $preserveCustomLua
+      test -s "${'$'}staged_lua/zapret-lib.lua" || fail_install "zapret-lib.lua is missing after staging"
+      test -s "${'$'}staged_lua/zapret-antidpi.lua" || fail_install "zapret-antidpi.lua is missing after staging"
+      find "${'$'}staged_lua" -type f -name '*.lua' -exec chmod 0644 {} \; 2>/dev/null || true
+      find "${'$'}staged_lua" -type d -exec chmod 0755 {} \; 2>/dev/null || true
+
+      echo "nfqws2 update: creating rollback copy"
+      if test -e "${'$'}dst_bin"; then
+        cp -f "${'$'}dst_bin" "${'$'}backup_bin" 2>/dev/null || cat "${'$'}dst_bin" > "${'$'}backup_bin" || fail_install "unable to back up current nfqws2 binary"
+        test -s "${'$'}backup_bin" || fail_install "nfqws2 binary backup is empty"
+        had_bin=1
+      fi
+      if test -d "${'$'}dst_lua"; then
+        mkdir -p "${'$'}backup_lua" || fail_install "unable to create Lua backup directory"
+        cp -r "${'$'}dst_lua"/. "${'$'}backup_lua"/ || fail_install "unable to back up current Lua files"
+        had_lua=1
+      fi
+
+      mutated=1
+      echo "nfqws2 update: installing binary"
+      mv -f "${'$'}staged_bin" "${'$'}dst_bin" || fail_install "unable to replace nfqws2 binary"
+      chmod 0755 "${'$'}dst_bin" || fail_install "unable to set nfqws2 permissions"
+      test -x "${'$'}dst_bin" || fail_install "installed nfqws2 is not executable"
+      test -s "${'$'}dst_bin" || fail_install "installed nfqws2 is empty"
+
+      echo "nfqws2 update: installing Lua files"
+      rm -rf "${'$'}dst_lua" || fail_install "unable to replace Lua directory"
+      mkdir -p "${'$'}dst_lua" || fail_install "unable to create Lua directory"
+      cp -r "${'$'}staged_lua"/. "${'$'}dst_lua"/ || fail_install "unable to install zapret2 Lua files"
+      find "${'$'}dst_lua" -type f -name '*.lua' -exec chmod 0644 {} \; 2>/dev/null || true
+      find "${'$'}dst_lua" -type d -exec chmod 0755 {} \; 2>/dev/null || true
+      test -s "${'$'}dst_lua/zapret-lib.lua" || fail_install "installed zapret-lib.lua is missing"
+      test -s "${'$'}dst_lua/zapret-antidpi.lua" || fail_install "installed zapret-antidpi.lua is missing"
+
+      for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+        if test -f "${'$'}backup_lua/${'$'}custom_lua" && ! test -s "${'$'}dst_lua/${'$'}custom_lua"; then
+          fail_install "custom ${'$'}custom_lua was not preserved"
+        fi
+      done
+
+      mutated=0
+      cleanup_stage
+      echo "nfqws2 update: installation completed"
     """.trimIndent()
-    val r = root.execRootSh(script)
-    return r.isSuccess
+
+    val result = root.execRootSh(script)
+    val detail = (result.err + result.out)
+      .map { it.trim() }
+      .filter { it.isNotBlank() }
+      .takeLast(12)
+      .joinToString("\n")
+      .take(1200)
+    if (!result.isSuccess) {
+      android.util.Log.e(
+        "ZDTD-Updates",
+        "nfqws2 install failed (code=${result.code}, root=$moduleRoot): ${detail.ifBlank { "no shell output" }}",
+      )
+    }
+    return Zapret2InstallResult(result.isSuccess, detail)
   }
 
 
@@ -4214,13 +4713,18 @@ fi""".trimIndent()
     }
   }
 
+  fun showUpdatePrompt() {
+    _setup.update { st ->
+      if (!st.buildUpdateAvailable) st else st.copy(showUpdatePrompt = true)
+    }
+  }
+
   fun dismissUpdatePrompt() {
     _setup.update { st ->
       st.copy(
         showUpdatePrompt = false,
         updatePromptMandatory = false,
-        updatePromptTitle = "",
-        updatePromptText = "",
+        updatePromptAutoExpand = false,
       )
     }
   }
@@ -4401,7 +4905,7 @@ fi""".trimIndent()
     if (!verify.ok) return Triple(false, verify.message, "")
 
     val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
-      return Triple(false, "module zip compatibility patch failed: ${it.message ?: it}", "")
+      return Triple(false, str(R.string.module_zip_patch_failed, it.message ?: it.toString()), "")
     }
 
     val src = cacheZip.absolutePath
@@ -4432,10 +4936,10 @@ fi""".trimIndent()
 
     val normalizeLog = if (normalizeForStrictZipInstaller) {
       runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
-        return false to "module zip compatibility patch failed: ${it.message ?: it}"
+        return false to str(R.string.module_zip_patch_failed, it.message ?: it.toString())
       }
     } else {
-      "module zip protection kept for Magisk installer"
+      str(R.string.module_zip_patch_protection_kept_magisk)
     }
 
     val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
@@ -4942,6 +5446,20 @@ private fun shQuote(s: String): String {
   }
 
   private fun clearFakeEncryptedCentralDirectoryFlagsInPlace(zipFile: File): String {
+    return try {
+      clearFakeEncryptedCentralDirectoryFlagsInMemory(zipFile)
+    } catch (oom: OutOfMemoryError) {
+      val detail = oom.message ?: oom.toString()
+      val warning = str(R.string.module_zip_patch_oom_warning, detail)
+      log("WARN", warning)
+
+      val fallbackResult = clearFakeEncryptedCentralDirectoryFlagsLowMemory(zipFile)
+      log("OK", fallbackResult)
+      listOf(warning, fallbackResult).joinToString("\n")
+    }
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsInMemory(zipFile: File): String {
     val data = zipFile.readBytes()
     val eocd = findZipEocdOffset(data)
     val diskNo = readLe16(data, eocd + 4)
@@ -4990,9 +5508,88 @@ private fun shQuote(s: String): String {
     }
 
     return if (patched > 0) {
-      "module zip normalized for strict installer: cleared encrypted flag in $patched Central Directory entries"
+      str(R.string.module_zip_patch_normalized, patched)
     } else {
-      "module zip already compatible with strict installer"
+      str(R.string.module_zip_patch_compatible)
+    }
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsLowMemory(zipFile: File): String {
+    return RandomAccessFile(zipFile, "rw").use { raf ->
+      val fileSize = raf.length()
+      require(fileSize >= ZIP_EOCD_MIN_SIZE.toLong()) { "ZIP file is too small" }
+
+      val tailSize = minOf(fileSize, ZIP_EOCD_MAX_SEARCH.toLong()).toInt()
+      val tailOffset = fileSize - tailSize
+      val tail = ByteArray(tailSize)
+      raf.seek(tailOffset)
+      raf.readFully(tail)
+
+      val eocdInTail = findZipEocdOffset(tail)
+      val diskNo = readLe16(tail, eocdInTail + 4)
+      val cdDisk = readLe16(tail, eocdInTail + 6)
+      val entriesOnDisk = readLe16(tail, eocdInTail + 8)
+      val entriesTotal = readLe16(tail, eocdInTail + 10)
+      val cdSize = readLe32(tail, eocdInTail + 12)
+      val cdOffset = readLe32(tail, eocdInTail + 16)
+
+      require(diskNo == 0 && cdDisk == 0) { "multi-disk ZIP is not supported" }
+      require(entriesOnDisk == entriesTotal) { "split Central Directory is not supported" }
+      require(entriesTotal != 0xFFFF && cdSize != 0xFFFFFFFFL && cdOffset != 0xFFFFFFFFL) {
+        "ZIP64 Central Directory is not supported"
+      }
+      require(cdOffset >= 0 && cdSize >= 0 && cdOffset + cdSize <= fileSize) {
+        "invalid Central Directory bounds"
+      }
+
+      var pos = cdOffset
+      val end = cdOffset + cdSize
+      var entries = 0
+      var patched = 0
+      val header = ByteArray(46)
+
+      while (pos < end) {
+        require(pos + header.size <= end) {
+          "Central Directory entry header exceeds directory bounds at offset $pos"
+        }
+
+        raf.seek(pos)
+        raf.readFully(header)
+        require(hasZipSignature(header, 0, 0x02014b50)) {
+          "Central Directory entry signature not found at offset $pos"
+        }
+
+        val flags = readLe16(header, 8)
+        if ((flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG) != 0) {
+          val normalizedFlags = flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG.inv()
+          raf.seek(pos + 8)
+          raf.write(normalizedFlags and 0xff)
+          raf.write((normalizedFlags shr 8) and 0xff)
+          patched++
+        }
+
+        val nameLen = readLe16(header, 28)
+        val extraLen = readLe16(header, 30)
+        val commentLen = readLe16(header, 32)
+        val next = pos + 46L + nameLen + extraLen + commentLen
+        require(next > pos && next <= end) {
+          "Central Directory entry exceeds directory bounds at offset $pos"
+        }
+        pos = next
+        entries++
+      }
+
+      require(pos == end) { "Central Directory walk ended at unexpected offset" }
+      require(entries == entriesTotal) {
+        "Central Directory entry count mismatch: expected=$entriesTotal actual=$entries"
+      }
+
+      if (patched > 0) {
+        raf.fd.sync()
+        str(R.string.module_zip_patch_low_memory_normalized, patched)
+      } else {
+        str(R.string.module_zip_patch_low_memory_compatible)
+      }
     }
   }
 
@@ -5138,6 +5735,177 @@ private fun shQuote(s: String): String {
   }
 
 
+
+  private fun startStatsPowerSampling() {
+    if (activeMainTabHint != "STATS" || !appVisible || !startupCompleted || _rootState.value != RootState.GRANTED || !isSetupDone()) return
+    if (_uiState.value.remoteTargetAddress.isNotBlank()) {
+      stopStatsPowerSampling()
+      _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+      return
+    }
+
+    statsPowerJob?.cancel()
+    statsPowerReady = false
+    statsPowerStartedAtMs = System.currentTimeMillis()
+    statsDeviceCpuPrevious = null
+    _uiState.update { it.copy(statsPower = StatsPowerUiState(loading = true, resolved = false, milliAmps = null)) }
+
+    statsPowerJob = launchIO {
+      val startedAt = System.currentTimeMillis()
+      if (statsPowerCalibrationMa == null) {
+        statsPowerCalibrationMa = loadStatsCpuCalibrationMa()
+      }
+
+      val remaining = 5_000L - (System.currentTimeMillis() - startedAt)
+      if (remaining > 0L) delay(remaining)
+      ensureActive()
+      if (activeMainTabHint != "STATS" || !appVisible) return@launchIO
+
+      statsPowerReady = true
+      if (!_uiState.value.daemonOnline || _uiState.value.status == null) {
+        _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+      }
+    }
+  }
+
+  private fun stopStatsPowerSampling() {
+    statsPowerJob?.cancel()
+    statsPowerJob = null
+    statsPowerReady = false
+    statsPowerStartedAtMs = 0L
+    statsDeviceCpuPrevious = null
+    _uiState.update { state ->
+      if (state.statsPower == StatsPowerUiState()) state
+      else state.copy(statsPower = StatsPowerUiState())
+    }
+  }
+
+  private fun updateStatsPowerFromReport(report: ApiModels.StatusReport?) {
+    if (activeMainTabHint != "STATS" || !appVisible || statsPowerStartedAtMs <= 0L || report == null) return
+
+    // /proc/stat is read directly by the Android app (no root process is spawned). The snapshot
+    // cadence matches /api/status, so daemon process CPU and whole-device busy CPU refer to the
+    // same ~5 second interval. Nothing here runs while the Statistics tab is closed.
+    val cpuNow = readStatsDeviceCpuSnapshot()
+    val cpuPrevious = statsDeviceCpuPrevious
+    if (cpuNow != null) statsDeviceCpuPrevious = cpuNow
+
+    val elapsedMs = System.currentTimeMillis() - statsPowerStartedAtMs
+    if (!statsPowerReady && elapsedMs >= 4_500L) statsPowerReady = true
+    if (!statsPowerReady) return
+
+    val zdtCpuPercent = ApiModels.computeTotals(report).cpuPercent.coerceIn(0.0, 100.0)
+    val cpuWorkShare = if (cpuPrevious != null && cpuNow != null) {
+      val totalDelta = cpuNow.totalTicks - cpuPrevious.totalTicks
+      val idleDelta = cpuNow.idleTicks - cpuPrevious.idleTicks
+      val busyDelta = (totalDelta - idleDelta).coerceAtLeast(0L)
+      if (totalDelta > 0L && busyDelta > 0L) {
+        // zdtd reports process CPU normalized to the same whole-device /proc/stat scale:
+        //   cpuPercent = processDeltaTicks / totalDeltaTicks * 100.
+        // Reconstruct that process work for this interval and divide it by busy CPU ticks.
+        // This is the same quantity validated by the standalone probe:
+        //   Δticks(ZDT-D) / ΔbusyTicks(device).
+        val zdtDeltaTicks = (zdtCpuPercent / 100.0) * totalDelta.toDouble()
+        (zdtDeltaTicks / busyDelta.toDouble()).coerceIn(0.0, 1.0)
+      } else if (zdtCpuPercent <= 0.0) {
+        0.0
+      } else {
+        (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
+      }
+    } else if (zdtCpuPercent <= 0.0) {
+      0.0
+    } else {
+      (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
+    }
+
+    val calibrationMa = statsPowerCalibrationMa
+    val rawMa = when {
+      calibrationMa != null && calibrationMa.isFinite() && calibrationMa > 0.0 -> {
+        calibrationMa * cpuWorkShare
+      }
+      else -> {
+        val deviceCurrentMa = readDeviceBatteryCurrentMa()
+        if (deviceCurrentMa == null) {
+          _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+          return
+        }
+        deviceCurrentMa * cpuWorkShare
+      }
+    }.coerceIn(0.0, 10_000.0)
+
+    _uiState.update { state ->
+      val previous = state.statsPower.milliAmps
+      val smoothed = if (previous == null || !previous.isFinite()) rawMa else (previous * 0.70) + (rawMa * 0.30)
+      state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = smoothed))
+    }
+  }
+
+  private fun readStatsDeviceCpuSnapshot(): StatsDeviceCpuSnapshot? {
+    val line = runCatching {
+      File("/proc/stat").bufferedReader().use { reader -> reader.readLine() }
+    }.getOrNull()?.takeIf { it.startsWith("cpu ") } ?: return null
+
+    val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+    if (values.size < 5) return null
+    // Keep total accounting aligned with rust/zdtd/src/stats.rs, which sums every exposed field.
+    val total = values.fold(0L) { acc, value -> acc + value }
+    val idle = values.getOrElse(3) { 0L } + values.getOrElse(4) { 0L }
+    return StatsDeviceCpuSnapshot(totalTicks = total, idleTicks = idle)
+  }
+
+  private fun readDeviceBatteryCurrentMa(): Double? {
+    val manager = getApplication<Application>().getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return null
+    val microAmps = runCatching { manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrNull() ?: return null
+    if (microAmps == Long.MIN_VALUE || microAmps == 0L) return null
+    return kotlin.math.abs(microAmps.toDouble()) / 1000.0
+  }
+
+  private fun loadStatsCpuCalibrationMa(): Double? {
+    val result = runCatching { root.execRoot("dumpsys batterystats --charged") }.getOrNull() ?: return null
+    if (!result.isSuccess) return null
+    return parseStatsCpuCalibration(result.out.joinToString("\n"))
+  }
+
+  private fun parseStatsCpuCalibration(text: String): Double? {
+    var inEstimatedPower = false
+    var inGlobal = false
+    val cpuLineRegex = Regex("""^cpu:\s*([0-9.eE+\-]+).*duration:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    val durationTokenRegex = Regex("""([0-9]+(?:\.[0-9]+)?)(ms|h|m|s)""", RegexOption.IGNORE_CASE)
+
+    for (rawLine in text.lineSequence()) {
+      val line = rawLine.trim()
+      if (line.startsWith("Estimated power use (mAh):", ignoreCase = true)) {
+        inEstimatedPower = true
+        inGlobal = false
+        continue
+      }
+      if (!inEstimatedPower) continue
+      if (line.equals("Global", ignoreCase = true)) {
+        inGlobal = true
+        continue
+      }
+      if (inGlobal && line.startsWith("UID ", ignoreCase = true)) break
+      if (!inGlobal) continue
+
+      val match = cpuLineRegex.find(line) ?: continue
+      val energyMah = match.groupValues[1].toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+      var durationSeconds = 0.0
+      for (token in durationTokenRegex.findAll(match.groupValues[2])) {
+        val value = token.groupValues[1].toDoubleOrNull() ?: continue
+        durationSeconds += when (token.groupValues[2].lowercase(Locale.ROOT)) {
+          "h" -> value * 3600.0
+          "m" -> value * 60.0
+          "s" -> value
+          "ms" -> value / 1000.0
+          else -> 0.0
+        }
+      }
+      if (durationSeconds < 60.0) return null
+      return (energyMah / (durationSeconds / 3600.0)).takeIf { it.isFinite() && it in 0.1..10_000.0 }
+    }
+    return null
+  }
+
   private fun startStatusPolling() {
     statusJob?.cancel()
     statusJob = launchIO {
@@ -5213,7 +5981,17 @@ private fun shQuote(s: String): String {
     val now = System.currentTimeMillis()
     val cached = _uiState.value.status
     if (!force && cached != null && (now - lastStatusFetchAtMs) < statusFreshMs) return
-    if (statusRefreshInFlight) return
+    if (statusRefreshInFlight) {
+      if (!force) return
+      // A manual/toggle refresh must not silently reuse stale pre-operation
+      // state. Wait briefly for the current poll to finish, then fetch again.
+      var waitedMs = 0L
+      while (statusRefreshInFlight && waitedMs < 1_500L) {
+        delay(25L)
+        waitedMs += 25L
+      }
+      if (statusRefreshInFlight) return
+    }
     statusRefreshInFlight = true
     try {
       val rep = api.getStatus()
@@ -5221,6 +5999,7 @@ private fun shQuote(s: String): String {
       lastStatusFetchAtMs = okAt
       noteStatusPollSuccess(okAt)
       _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+      updateStatsPowerFromReport(rep)
       // Cache last-known state for the Quick Settings tile.
       root.setCachedServiceOn(ApiModels.isServiceOn(rep))
     } finally {
@@ -5229,11 +6008,15 @@ private fun shQuote(s: String): String {
   }
 
   fun toggleService() {
-    if (_uiState.value.busy) return
+    val snapshot = _uiState.value
+    if (snapshot.busy) return
+    val on = ApiModels.isServiceOn(snapshot.status)
+
+    // Publish the transition synchronously, before the IO coroutine is
+    // scheduled. Home can immediately animate STARTING/STOPPING on touch.
+    _uiState.update { it.copy(busy = true) }
     launchIO {
-      _uiState.update { it.copy(busy = true) }
       try {
-        val on = ApiModels.isServiceOn(_uiState.value.status)
         if (!on) {
           if (isNfqwsTesterLockActive()) {
             withContext(Dispatchers.Main.immediate) {
@@ -5255,13 +6038,21 @@ private fun shQuote(s: String): String {
         if (ok) root.setCachedServiceOn(!on)
         if (ok) {
           log("OK", str(if (on) R.string.log_service_stopped else R.string.log_service_started))
+        } else {
+          log("ERR", if (on) "/api/stop failed" else "/api/start failed")
         }
-        else log("ERR", if (on) "/api/stop failed" else "/api/start failed")
       } catch (e: Throwable) {
         log("ERR", "toggle failed: ${e.message ?: e}")
       } finally {
+        // Keep busy=true until an authoritative post-operation status has been
+        // read. This prevents STOPPING -> RUNNING -> STOPPED flicker caused by
+        // clearing busy while the old status report is still cached.
+        try {
+          fetchAndUpdateStatus(force = true)
+        } catch (e: Throwable) {
+          handleStatusPollFailure("toggle status refresh", e)
+        }
         _uiState.update { it.copy(busy = false) }
-        refreshStatus()
       }
     }
   }
@@ -5957,8 +6748,12 @@ private fun shQuote(s: String): String {
 
   fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit) {
     launchIO {
-      val obj = runCatching { api.getJsonData(path) }.getOrNull()
-      if (obj == null) log("ERR", "$path: load failed")
+      val result = runCatching { api.getJsonData(path) }
+      val obj = result.getOrNull()
+      if (obj == null) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: load failed" else "$path: load failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(obj) }
     }
   }
@@ -5997,9 +6792,50 @@ private fun shQuote(s: String): String {
 
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit = {}) {
     launchIO {
-      val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)
-      if (ok) log("OK", "$path: saved (apply after stop/start)")
-      else log("ERR", "$path: save failed")
+      val result = runCatching { api.putJsonData(path, obj) }
+      val ok = result.getOrDefault(false)
+      if (ok) {
+        log("OK", "$path: saved (apply after stop/start)")
+      } else {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: save failed" else "$path: save failed — $detail")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  fun postJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val result = runCatching { api.postJsonData(path, obj) }
+      val ok = result.getOrDefault(false)
+      if (!ok) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: POST failed" else "$path: POST failed — $detail")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  fun postJsonResult(path: String, obj: JSONObject, onDone: (JSONObject?) -> Unit) {
+    launchIO {
+      val result = runCatching { api.postJsonResult(path, obj) }
+      val value = result.getOrNull()
+      if (value == null) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: POST failed" else "$path: POST failed — $detail")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(value) }
+    }
+  }
+
+  fun deleteJsonPath(path: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val result = runCatching { api.deletePath(path) }
+      val ok = result.getOrDefault(false)
+      if (!ok) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: DELETE failed" else "$path: DELETE failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }

@@ -23,14 +23,17 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -65,15 +69,20 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -86,6 +95,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.LogLine
 import com.android.zdtd.service.AppUpdateUiState
@@ -104,9 +115,13 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import kotlin.math.sin
+import kotlin.random.Random
+import java.util.Calendar
 import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
@@ -133,10 +148,25 @@ fun ZdtdApp(
 ) {
   val setup by setupFlow.collectAsStateWithLifecycle()
 
-  Crossfade(
+  AnimatedContent(
     targetState = setup.step,
-    animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
-    label = "setup_step_crossfade",
+    transitionSpec = {
+      val forward = targetState.ordinal >= initialState.ordinal
+      (
+        fadeIn(tween(durationMillis = 300)) +
+          slideInHorizontally(
+            initialOffsetX = { width -> if (forward) width / 10 else -width / 10 },
+            animationSpec = tween(durationMillis = 460, easing = FastOutSlowInEasing),
+          )
+        ) togetherWith (
+          fadeOut(tween(durationMillis = 240)) +
+            slideOutHorizontally(
+              targetOffsetX = { width -> if (forward) -width / 12 else width / 12 },
+              animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+            )
+        )
+    },
+    label = "setup_step_transition",
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
@@ -175,15 +205,15 @@ fun ZdtdApp(
           RootState.CHECKING -> SplashScreen()
           RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
-            UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
+              setup = setup,
               uiStateFlow = uiStateFlow,
               logsFlow = logsFlow,
               appUpdateFlow = appUpdateFlow,
               backupFlow = backupFlow,
               programUpdatesFlow = programUpdatesFlow,
-      onOpenNfqwsTester = { },
-      onOpenBlockcheck = { },
+              onOpenNfqwsTester = { },
+              onOpenBlockcheck = { },
               actions = actions,
             )
           }
@@ -206,8 +236,12 @@ private fun SplashScreen() {
 @Composable
 private fun StartupDialogHost(
   uiState: UiState,
+  setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onExpandUpdate: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkipUpdate: () -> Unit,
   onFullyHidden: () -> Unit,
 ) {
   val startup = uiState.startup
@@ -219,16 +253,29 @@ private fun StartupDialogHost(
     }
   }
 
-  val exiting = !startup.visible && renderedStartup.visible
-  val cardAlpha by animateFloatAsState(
+  // Keep the startup scene on top while the release/service prompt is open.
+  // When it finally closes, dissolve the whole scene instead of hiding only
+  // the cards and abruptly dropping the opaque background.
+  val exiting = !startup.visible && renderedStartup.visible && !setup.showUpdatePrompt
+  val sceneAlpha by animateFloatAsState(
     targetValue = if (exiting) 0f else 1f,
-    animationSpec = tween(durationMillis = 260),
-    label = "startup_card_alpha",
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_alpha",
+  )
+  val sceneScale by animateFloatAsState(
+    targetValue = if (exiting) 0.985f else 1f,
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_scale",
+  )
+  val sceneBlur by animateDpAsState(
+    targetValue = if (exiting) 14.dp else 0.dp,
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_blur",
   )
 
   LaunchedEffect(exiting) {
     if (exiting) {
-      delay(260)
+      delay(650)
       renderedStartup = StartupUiState.hidden()
       onFullyHidden()
     }
@@ -238,18 +285,30 @@ private fun StartupDialogHost(
 
   StartupFullscreenContent(
     startup = renderedStartup,
+    setup = setup,
     onRetry = onRetry,
     onReinstall = onReinstall,
-    contentAlpha = cardAlpha,
+    onExpandUpdate = onExpandUpdate,
+    onUpdate = onUpdate,
+    onSkipUpdate = onSkipUpdate,
+    sceneAlpha = sceneAlpha,
+    sceneScale = sceneScale,
+    sceneBlur = sceneBlur,
   )
 }
 
 @Composable
 private fun StartupFullscreenContent(
   startup: com.android.zdtd.service.StartupUiState,
+  setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
-  contentAlpha: Float,
+  onExpandUpdate: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkipUpdate: () -> Unit,
+  sceneAlpha: Float,
+  sceneScale: Float,
+  sceneBlur: Dp,
 ) {
   val pulseAlpha by rememberInfiniteTransition(label = "startup_stage_pulse").animateFloat(
     initialValue = 0.58f,
@@ -291,6 +350,13 @@ private fun StartupFullscreenContent(
   Box(
     modifier = Modifier
       .fillMaxSize()
+      .graphicsLayer {
+        alpha = sceneAlpha
+        scaleX = sceneScale
+        scaleY = sceneScale
+        translationY = (1f - sceneAlpha) * -8f
+      }
+      .blur(sceneBlur)
       .zIndex(20f)
       .pointerInput(startup.stage) {
         awaitPointerEventScope {
@@ -319,11 +385,20 @@ private fun StartupFullscreenContent(
         .padding(horizontal = 24.dp, vertical = 20.dp),
       contentAlignment = Alignment.Center,
     ) {
+      StartupBuildUpdateCard(
+        setup = setup,
+        onExpand = onExpandUpdate,
+        onUpdate = onUpdate,
+        onSkip = onSkipUpdate,
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .zIndex(2f),
+      )
+
       Card(
         modifier = Modifier
           .fillMaxWidth()
-          .widthIn(max = 440.dp)
-          .alpha(contentAlpha),
+          .widthIn(max = 440.dp),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
           containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
@@ -406,10 +481,10 @@ private fun StartupFullscreenContent(
                 contentAlignment = Alignment.Center,
               ) {
                 Icon(
-                  imageVector = Icons.Filled.Power,
+                  painter = painterResource(R.drawable.ic_update_gear),
                   contentDescription = null,
                   tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(36.dp),
+                  modifier = Modifier.size(46.dp),
                 )
               }
 
@@ -612,111 +687,175 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
 }
 
 @Composable
-private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip: () -> Unit) {
-  var renderDialog by rememberSaveable { mutableStateOf(false) }
-  var contentVisible by remember { mutableStateOf(false) }
-  var dismissRequested by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope()
+private fun StartupBuildUpdateCard(
+  setup: SetupUiState,
+  onExpand: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkip: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val hasIdentity = setup.buildVersionName.isNotBlank() || setup.buildNumber != null
+  if (!hasIdentity) return
 
-  LaunchedEffect(setup.showUpdatePrompt) {
-    dismissRequested = false
+  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+  var cardExpanded by remember { mutableStateOf(false) }
+  var questionVisible by remember { mutableStateOf(false) }
+  var updateIconVisible by remember { mutableStateOf(setup.buildUpdateAvailable) }
+
+  LaunchedEffect(setup.showUpdatePrompt, setup.updatePromptAutoExpand, setup.buildUpdateAvailable) {
     if (setup.showUpdatePrompt) {
-      contentVisible = false
-      renderDialog = false
-      delay(760)
-      renderDialog = true
-      withFrameNanos { }
-      contentVisible = true
+      if (setup.updatePromptAutoExpand) delay(620)
+      updateIconVisible = false
+      delay(90)
+      cardExpanded = true
+      delay(170)
+      questionVisible = true
     } else {
-      contentVisible = false
-      delay(240)
-      renderDialog = false
+      questionVisible = false
+      delay(140)
+      cardExpanded = false
+      delay(170)
+      updateIconVisible = setup.buildUpdateAvailable
     }
   }
 
-  if (!renderDialog) return
-
-  val mandatory = setup.updatePromptMandatory
-  fun requestSkip() {
-    if (mandatory || dismissRequested) return
-    dismissRequested = true
-    contentVisible = false
-    scope.launch {
-      delay(240)
-      onSkip()
-    }
-  }
-
-  Dialog(
-    onDismissRequest = { requestSkip() },
-    properties = DialogProperties(
-      dismissOnBackPress = !mandatory,
-      dismissOnClickOutside = !mandatory,
-    )
+  AnimatedVisibility(
+    visible = hasIdentity,
+    enter = slideInVertically(
+      initialOffsetY = { it },
+      animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+    ) + fadeIn(animationSpec = tween(300)),
+    exit = slideOutVertically(
+      targetOffsetY = { it },
+      animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+    ) + fadeOut(animationSpec = tween(220)),
+    modifier = modifier,
   ) {
-    AnimatedVisibility(
-      visible = contentVisible,
-      enter = fadeIn(
-        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
-      ) + scaleIn(
-        initialScale = 0.94f,
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-      ) + slideInVertically(
-        initialOffsetY = { it / 7 },
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-      ),
-      exit = fadeOut(
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ) + scaleOut(
-        targetScale = 0.98f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ) + slideOutVertically(
-        targetOffsetY = { it / 12 },
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ),
+    BoxWithConstraints(
+      modifier = Modifier.fillMaxWidth(),
+      contentAlignment = Alignment.BottomEnd,
     ) {
-      Surface(
+      val compactWidth = 250.dp.coerceAtMost(maxWidth)
+      val expandedWidth = 390.dp.coerceAtMost(maxWidth)
+      val targetWidth by animateDpAsState(
+        targetValue = if (cardExpanded) expandedWidth else compactWidth,
+        animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
+        label = "startup_build_card_width",
+      )
+
+      Card(
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 24.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        tonalElevation = 6.dp,
-        shadowElevation = 12.dp,
-        color = MaterialTheme.colorScheme.surface,
+          .width(targetWidth)
+          .animateContentSize(animationSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing)),
+        shape = RoundedCornerShape(if (cardExpanded) 24.dp else 18.dp),
+        colors = CardDefaults.cardColors(
+          // Keep the light card fully opaque and flat. Material elevation shadows are
+          // visibly darker around rounded corners on a white startup background.
+          containerColor = if (lightTheme) {
+            MaterialTheme.colorScheme.surface
+          } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+          },
+        ),
+        elevation = CardDefaults.cardElevation(
+          defaultElevation = if (lightTheme) 0.dp else 10.dp,
+        ),
       ) {
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 22.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
+        Box(
+          modifier = if (lightTheme) {
+            Modifier.fillMaxWidth()
+          } else {
+            Modifier
+              .fillMaxWidth()
+              .background(
+                Brush.horizontalGradient(
+                  colors = listOf(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
+                    Color.Transparent,
+                  ),
+                ),
+              )
+          },
         ) {
-          Text(
-            text = if (setup.updatePromptTitle.isBlank()) {
-              stringResource(R.string.update_prompt_title_default)
-            } else {
-              setup.updatePromptTitle
-            },
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-          )
-          Text(
-            text = setup.updatePromptText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+          Column(
+            modifier = Modifier.padding(
+              horizontal = if (cardExpanded) 18.dp else 14.dp,
+              vertical = if (cardExpanded) 16.dp else 10.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            if (!mandatory) {
-              TextButton(onClick = { requestSkip() }) {
-                Text(stringResource(R.string.update_prompt_skip))
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              val type = setup.buildType.ifBlank { "service" }
+              val numberSuffix = setup.buildNumber?.let { " #$it" }.orEmpty()
+              Text(
+                text = "Build $type v${setup.buildVersionName}$numberSuffix",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+              )
+
+              AnimatedVisibility(
+                visible = updateIconVisible && !cardExpanded,
+                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.82f, animationSpec = tween(220)),
+                exit = fadeOut(tween(110)) + scaleOut(targetScale = 0.78f, animationSpec = tween(120)),
+              ) {
+                FilledTonalIconButton(
+                  onClick = onExpand,
+                  modifier = Modifier.size(38.dp),
+                  shape = CircleShape,
+                ) {
+                  Icon(
+                    painter = painterResource(R.drawable.ic_update_gear),
+                    contentDescription = stringResource(R.string.update_prompt_update),
+                    modifier = Modifier.size(23.dp),
+                  )
+                }
               }
-              Spacer(Modifier.width(8.dp))
             }
-            TextButton(onClick = onUpdate) {
-              Text(stringResource(R.string.update_prompt_update))
+
+            AnimatedVisibility(
+              visible = questionVisible,
+              enter = fadeIn(animationSpec = tween(durationMillis = 240)) +
+                expandVertically(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+              exit = fadeOut(animationSpec = tween(durationMillis = 150)) +
+                shrinkVertically(animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing)),
+            ) {
+              Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                  text = if (setup.updatePromptTitle.isBlank()) {
+                    stringResource(R.string.update_prompt_title_default)
+                  } else {
+                    setup.updatePromptTitle
+                  },
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                  text = setup.updatePromptText,
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.End,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  TextButton(onClick = onSkip) {
+                    Text(stringResource(R.string.update_prompt_skip))
+                  }
+                  Spacer(Modifier.width(8.dp))
+                  TextButton(onClick = onUpdate) {
+                    Text(stringResource(R.string.update_prompt_update))
+                  }
+                }
+              }
             }
           }
         }
@@ -726,6 +865,201 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
 }
 
 
+
+private data class ChristmasSnowflake(
+  val x: Float,
+  val startY: Float,
+  val radius: Float,
+  val speed: Float,
+  val drift: Float,
+  val driftSpeed: Float,
+  val phase: Float,
+  val rotationSpeed: Float,
+  val depth: Float,
+  val alpha: Float,
+)
+
+@Composable
+private fun rememberChristmasSeasonActive(): Boolean {
+  var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(15 * 60 * 1000L)
+      clock = System.currentTimeMillis()
+    }
+  }
+  return remember(clock) {
+    val calendar = Calendar.getInstance().apply { timeInMillis = clock }
+    val month = calendar.get(Calendar.MONTH)
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+    (month == Calendar.DECEMBER && day >= 26) ||
+      (month == Calendar.JANUARY && day <= 3)
+  }
+}
+
+@Composable
+private fun ChristmasSnowLayer(
+  visible: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val configuration = LocalConfiguration.current
+  val particleCount = if (configuration.screenWidthDp >= 600) 38 else 26
+  val particles = remember(particleCount) {
+    val random = Random(0x5A445444)
+    List(particleCount) { index ->
+      val depth = when (index % 3) {
+        0 -> 0.42f
+        1 -> 0.70f
+        else -> 1.0f
+      }
+      ChristmasSnowflake(
+        x = random.nextFloat(),
+        startY = random.nextFloat() * 1.18f - 0.16f,
+        radius = (3.0f + random.nextFloat() * 5.8f) * depth,
+        speed = (0.035f + random.nextFloat() * 0.055f) * (0.72f + depth * 0.45f),
+        drift = (0.010f + random.nextFloat() * 0.030f) * depth,
+        driftSpeed = 0.32f + random.nextFloat() * 0.72f,
+        phase = random.nextFloat() * (2f * PI.toFloat()),
+        rotationSpeed = (10f + random.nextFloat() * 28f) * if (random.nextBoolean()) 1f else -1f,
+        depth = depth,
+        alpha = 0.36f + random.nextFloat() * 0.46f,
+      )
+    }
+  }
+
+  val layerAlpha by animateFloatAsState(
+    targetValue = if (visible) 1f else 0f,
+    animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing),
+    label = "christmas_snow_visibility",
+  )
+  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+  val farColor = if (lightTheme) Color(0xFF5D86B7) else Color(0xFFCFE7FF)
+  val nearColor = if (lightTheme) Color(0xFF2F6FAF) else Color.White
+  var elapsedNanos by remember { mutableLongStateOf(0L) }
+
+  LaunchedEffect(visible) {
+    var previousFrame = 0L
+    val fadeOutDeadline = if (visible) Long.MAX_VALUE else System.nanoTime() + 620_000_000L
+    while (visible || System.nanoTime() < fadeOutDeadline) {
+      withFrameNanos { frame ->
+        if (previousFrame != 0L) {
+          elapsedNanos += frame - previousFrame
+        }
+        previousFrame = frame
+      }
+    }
+  }
+
+  Canvas(
+    modifier = modifier
+      .graphicsLayer { alpha = layerAlpha },
+  ) {
+    if (layerAlpha <= 0.001f) return@Canvas
+    val seconds = elapsedNanos / 1_000_000_000f
+    val travelHeight = size.height * 1.22f
+
+    particles.forEach { snow ->
+      val yNorm = ((snow.startY + seconds * snow.speed) % 1.22f + 1.22f) % 1.22f - 0.11f
+      val sway = sin(seconds * snow.driftSpeed + snow.phase) * snow.drift
+      var xNorm = snow.x + sway + seconds * 0.0035f * (snow.depth - 0.55f)
+      xNorm = ((xNorm % 1f) + 1f) % 1f
+      val center = Offset(xNorm * size.width, yNorm * travelHeight)
+      val rotation = snow.phase * 57.29578f + seconds * snow.rotationSpeed
+      val tilt = 0.38f + 0.62f * abs(cos(seconds * 0.76f + snow.phase))
+      val base = if (snow.depth < 0.7f) farColor else nearColor
+      val color = base.copy(alpha = snow.alpha)
+      drawChristmasSnowflake(
+        center = center,
+        radius = snow.radius * density,
+        rotationDegrees = rotation,
+        tilt = tilt,
+        color = color,
+        strokeWidth = (0.70f + snow.depth * 0.72f) * density,
+      )
+    }
+  }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChristmasSnowflake(
+  center: Offset,
+  radius: Float,
+  rotationDegrees: Float,
+  tilt: Float,
+  color: Color,
+  strokeWidth: Float,
+) {
+  val rotation = rotationDegrees * PI.toFloat() / 180f
+  repeat(6) { arm ->
+    val theta = rotation + arm * PI.toFloat() / 3f
+    val dx = cos(theta)
+    val dy = sin(theta) * tilt
+    val end = Offset(center.x + dx * radius, center.y + dy * radius)
+    drawLine(color, center, end, strokeWidth = strokeWidth, cap = StrokeCap.Round)
+
+    val branchBase = 0.58f
+    val branchLength = radius * 0.28f
+    val bx = center.x + dx * radius * branchBase
+    val by = center.y + dy * radius * branchBase
+    val branchAngleA = theta + PI.toFloat() / 4f
+    val branchAngleB = theta - PI.toFloat() / 4f
+    val a = Offset(
+      bx + cos(branchAngleA) * branchLength,
+      by + sin(branchAngleA) * tilt * branchLength,
+    )
+    val b = Offset(
+      bx + cos(branchAngleB) * branchLength,
+      by + sin(branchAngleB) * tilt * branchLength,
+    )
+    drawLine(color, Offset(bx, by), a, strokeWidth = strokeWidth * 0.78f, cap = StrokeCap.Round)
+    drawLine(color, Offset(bx, by), b, strokeWidth = strokeWidth * 0.78f, cap = StrokeCap.Round)
+  }
+}
+
+@Composable
+private fun SeasonalAppTitle(
+  title: String,
+  isHome: Boolean,
+  onTitleClick: () -> Unit,
+  compact: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val christmasActive = rememberChristmasSeasonActive()
+  val clickableModifier = if (isHome) {
+    Modifier.clickable(
+      interactionSource = remember { MutableInteractionSource() },
+      indication = null,
+    ) { onTitleClick() }
+  } else {
+    Modifier
+  }
+
+  Box(
+    modifier = modifier.then(clickableModifier),
+    contentAlignment = Alignment.CenterStart,
+  ) {
+    Box(modifier = Modifier.wrapContentSize()) {
+      Text(
+        text = title,
+        letterSpacing = if (compact) 1.5.sp else 1.6.sp,
+        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      if (isHome && christmasActive) {
+        Image(
+          painter = painterResource(R.drawable.ic_christmas_hat),
+          contentDescription = null,
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .offset(x = 8.dp, y = if (compact) (-8).dp else (-9).dp)
+            .size(if (compact) 24.dp else 27.dp)
+            .graphicsLayer { rotationZ = -11f },
+        )
+      }
+    }
+  }
+}
 
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
@@ -739,6 +1073,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
   is AppsRoute.Blockcheck -> AppsRoute.AnalysisTools
+  AppsRoute.Subscriptions -> AppsRoute.List
   is AppsRoute.Program -> AppsRoute.List
   is AppsRoute.Profile -> AppsRoute.Program(route.programId)
 }
@@ -746,6 +1081,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainShell(
+  setup: SetupUiState,
   uiStateFlow: StateFlow<UiState>,
   logsFlow: StateFlow<List<LogLine>>,
   appUpdateFlow: StateFlow<AppUpdateUiState>,
@@ -874,6 +1210,20 @@ private fun MainShell(
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
+  val christmasSeasonActive = rememberChristmasSeasonActive()
+  val christmasBaseScreen =
+    tab == Tab.HOME ||
+      tab == Tab.STATS ||
+      tab == Tab.SUPPORT ||
+      (tab == Tab.APPS && appsRoute == AppsRoute.List)
+  val christmasScreenVisible = christmasBaseScreen &&
+    !showLogs &&
+    !showBackup &&
+    !showProgramUpdates &&
+    !showSettings &&
+    !showDeleteModule &&
+    !showDeleteModuleNext &&
+    programLogsTarget == null
 
   DaemonUnavailableDialogHost(uiState = uiState)
 
@@ -994,7 +1344,6 @@ private fun MainShell(
     val pu by programUpdatesFlow.collectAsStateWithLifecycle()
     ProgramUpdatesDialog(
       state = pu,
-      serviceRunning = ApiModels.isServiceOn(uiState.status),
       onDismiss = { showProgramUpdates = false },
       actions = actions,
     )
@@ -1340,6 +1689,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Blockcheck -> stringResource(R.string.blockcheck_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.Subscriptions -> stringResource(R.string.subscriptions_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1368,6 +1718,7 @@ private fun MainShell(
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
         is AppsRoute.Blockcheck -> null
+        AppsRoute.Subscriptions -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
@@ -1433,6 +1784,20 @@ private fun MainShell(
           translationX = mainContentSlidePx
         }
     ) {
+      if (christmasSeasonActive) {
+        ChristmasSnowLayer(
+          visible = christmasScreenVisible,
+          modifier = Modifier
+            .fillMaxSize()
+            .zIndex(0f),
+        )
+      }
+
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .zIndex(1f),
+      ) {
       if (landscapeControl) {
         LandscapeShellContent(
           tab = tab,
@@ -1479,6 +1844,7 @@ private fun MainShell(
           onOpenDpiDetector = internalOnOpenDpiDetector,
           onOpenNfqwsTester = internalOnOpenNfqwsTester,
           onOpenBlockcheck = internalOnOpenBlockcheck,
+          onOpenSubscriptions = { appsRoute = AppsRoute.Subscriptions },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1510,6 +1876,7 @@ private fun MainShell(
               onOpenDpiDetector = internalOnOpenDpiDetector,
               onOpenNfqwsTester = internalOnOpenNfqwsTester,
               onOpenBlockcheck = internalOnOpenBlockcheck,
+              onOpenSubscriptions = { appsRoute = AppsRoute.Subscriptions },
               actions = actions,
               snackHost = snackHost,
               tproxyEnabled = appUpdate.tproxyEnabled,
@@ -1602,11 +1969,17 @@ private fun MainShell(
       )
     }
 
+    }
+
     if (startupHostVisible) {
       StartupDialogHost(
         uiState = uiState,
+        setup = setup,
         onRetry = actions::retryDaemonStartup,
         onReinstall = actions::openModuleInstaller,
+        onExpandUpdate = actions::showUpdatePrompt,
+        onUpdate = actions::openModuleInstaller,
+        onSkipUpdate = actions::dismissUpdatePrompt,
         onFullyHidden = { startupHostVisible = false },
       )
     }
@@ -1650,6 +2023,7 @@ private fun LandscapeShellContent(
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   onOpenBlockcheck: () -> Unit,
+  onOpenSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -1694,6 +2068,7 @@ private fun LandscapeShellContent(
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
           onOpenBlockcheck = onOpenBlockcheck,
+          onOpenSubscriptions = onOpenSubscriptions,
           actions = actions,
           snackHost = snackHost,
           tproxyEnabled = appUpdate.tproxyEnabled,
@@ -1752,23 +2127,12 @@ private fun LandscapeContentHeader(
         Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
       }
     }
-    Text(
-      text = title,
-      letterSpacing = 1.6.sp,
-      style = MaterialTheme.typography.titleLarge,
-      fontWeight = FontWeight.SemiBold,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-      modifier = if (isHome) {
-        Modifier
-          .weight(1f)
-          .clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-          ) { onTitleClick() }
-      } else {
-        Modifier.weight(1f)
-      },
+    SeasonalAppTitle(
+      title = title,
+      isHome = isHome,
+      onTitleClick = onTitleClick,
+      compact = false,
+      modifier = Modifier.weight(1f),
     )
   }
 }
@@ -2065,23 +2429,12 @@ private fun FloatingTopBarCard(
               Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
             }
           }
-          Text(
-            text = title,
-            letterSpacing = 1.5.sp,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = if (isHome) {
-              Modifier
-                .weight(1f)
-                .clickable(
-                  interactionSource = remember { MutableInteractionSource() },
-                  indication = null,
-                ) { onTitleClick() }
-            } else {
-              Modifier.weight(1f)
-            },
+          SeasonalAppTitle(
+            title = title,
+            isHome = isHome,
+            onTitleClick = onTitleClick,
+            compact = true,
+            modifier = Modifier.weight(1f),
           )
           TopBarActionCluster(
             programLogTarget = programLogTarget,
@@ -2667,6 +3020,7 @@ private fun TabBody(
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   onOpenBlockcheck: () -> Unit,
+  onOpenSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
@@ -2714,6 +3068,7 @@ private fun TabBody(
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,
             onOpenBlockcheck = onOpenBlockcheck,
+            onOpenSubscriptions = onOpenSubscriptions,
             actions = actions,
             snackHost = snackHost,
             tproxyEnabled = tproxyEnabled,

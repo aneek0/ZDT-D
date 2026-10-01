@@ -57,6 +57,7 @@ fun AppsHost(
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   onOpenBlockcheck: () -> Unit,
+  onOpenSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
@@ -97,6 +98,7 @@ fun AppsHost(
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
     is AppsRoute.Blockcheck -> 2
+    AppsRoute.Subscriptions -> 1
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -126,6 +128,7 @@ fun AppsHost(
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
         onOpenVpsServers = onOpenVpsServers,
+        onOpenSubscriptions = onOpenSubscriptions,
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
@@ -211,6 +214,12 @@ fun AppsHost(
         profile = r.profile,
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
         onClose = onOpenAnalysisTools,
+        actions = actions,
+        snackHost = snackHost,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.Subscriptions -> SubscriptionsScreen(
         actions = actions,
         snackHost = snackHost,
         topContentPadding = topContentPadding,

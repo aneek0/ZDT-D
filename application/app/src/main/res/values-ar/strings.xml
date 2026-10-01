@@ -52,6 +52,10 @@
 المضمّن مع التطبيق: versionCode=%2$d.
 
 يوصى بالتحديث للحصول على أفضل توافق. يمكنك التخطي، لكن قد لا تتوفر بعض الميزات وقد تحدث أخطاء بسبب عدم تطابق API.</string>
+    <string name="mv_module_build_update_prompt_text">الوحدة المثبتة: v%1$s (versionCode=%2$s، البناء #%3$s).
+البناء المتاح: %4$s v%5$s (versionCode=%6$s، البناء #%7$s).
+
+هل تريد تحديث الوحدة إلى البناء المضمّن مع هذا التطبيق؟</string>
     <string name="mv_module_version_unsupported">لم يعد إصدار الوحدة المثبتة مدعومًا (versionCode=%1$d). لمواصلة استخدام ZDT-D، حدّث الوحدة.</string>
     <string name="mv_backup_list_read_error">تعذرت قراءة قائمة النسخ الاحتياطية: %1$s</string>
     <string name="mv_backup_settings_folder_missing">لم يتم العثور على مجلد الإعدادات: %1$s.</string>
@@ -228,6 +232,8 @@
     <string name="home_power_stopped">متوقفة</string>
     <string name="home_power_starting">جارٍ البدء…</string>
     <string name="home_power_stopping">جارٍ الإيقاف…</string>
+    <string name="home_action_start_service">تشغيل الخدمة</string>
+    <string name="home_action_stop_service">إيقاف الخدمة</string>
     <string name="home_service_active_hint">الخدمة قيد التشغيل. اضغط على الزر لإيقافها.</string>
     <string name="home_service_stopped_hint">الخدمة متوقفة. اضغط على الزر لبدئها.</string>
     <string name="home_no_log_data">(لا توجد بيانات سجل)</string>
@@ -426,6 +432,7 @@ APatch: ‏10700+</string>
     <string name="stats_unknown_cpu">معالج غير معروف</string>
     <string name="stats_clamped_from">تم التقييد من %1$s%%</string>
     <string name="stats_memory_title">الذاكرة</string>
+    <string name="stats_power_title">البطارية</string>
     <string name="stats_total_fmt">الإجمالي: %1$s</string>
     <string name="stats_total_unknown">الإجمالي: —</string>
     <string name="stats_free_fmt">المتاح: %1$s</string>
@@ -539,6 +546,15 @@ APatch: ‏10700+</string>
     <string name="program_updates_title">تحديثات أدوات/مكوّنات وحدة ZDT-D</string>
     <string name="program_updates_reset_cd">إعادة ضبط</string>
     <string name="program_updates_desc">يحدّث أدوات ومكوّنات وحدة ZDT-D مباشرةً من إصدارات GitHub. لا يُجرى التحقق إلا عند الضغط على الزر.</string>
+    <string name="program_updates_bulk_title">تحديث جميع الأدوات</string>
+    <string name="program_updates_bulk_desc">يفحص جميع الأدوات ويثبّت التحديثات المتاحة دون إيقاف الخدمة قيد التشغيل.</string>
+    <string name="program_updates_check_all">فحص الكل</string>
+    <string name="program_updates_checking_all">جارٍ فحص الكل…</string>
+    <string name="program_updates_update_all">تحديث الكل</string>
+    <string name="program_updates_updating_all">جارٍ تحديث الكل…</string>
+    <string name="program_updates_all_current">كل شيء محدّث</string>
+    <string name="program_updates_retry_check">إعادة الفحص</string>
+    <string name="program_updates_available_count_fmt">يتوفر %1$d من التحديثات</string>
     <string name="program_updates_service_running_title">الخدمة قيد التشغيل</string>
     <string name="program_updates_service_running_desc">أوقف الخدمة قبل التحقق/التحديث. هذا مطلوب كي لا تستخدم القواعد والعمليات الملفات أثناء الاستبدال.</string>
     <string name="program_updates_stopping">جارٍ الإيقاف…</string>
@@ -649,7 +665,7 @@ APatch: ‏10700+</string>
     <string name="program_updates_err_service_running">لا تزال الخدمة قيد التشغيل. أوقفها وحاول مجددًا.</string>
     <string name="program_updates_err_detect_installed">فشل اكتشاف الإصدار المثبّت</string>
     <string name="program_updates_warn_installed_unknown">تعذّر اكتشاف الإصدار المثبّت. لا يزال بإمكانك تثبيت الإصدار المحدّد.</string>
-    <string name="program_updates_err_check_latest">فشل التحقق من أحدث إصدار</string>
+    <string name="program_updates_err_check_latest">تعذر الحصول على المعلومات</string>
     <string name="program_updates_err_no_internet">لا يوجد اتصال بالإنترنت</string>
     <string name="program_updates_err_load_releases">فشل تحميل الإصدارات</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ APatch: ‏10700+</string>
     <string name="action_edit">تحرير</string>
     <string name="singbox_profile_settings_title">إعدادات الملف الشخصي</string>
     <string name="singbox_profile_settings_desc">لكل ملف sing-box شخصي منافذ t2s وقائمة تطبيقات ومجموعة خوادم خاصة به.</string>
+    <string name="singbox_endpoint_resolve_label">حل نطاقات الخوادم</string>
+    <string name="singbox_endpoint_resolve_hint">حل أسماء النطاقات في حقول server للاتصالات الصادرة إلى IPv4 قبل تشغيل sing-box.</string>
     <string name="singbox_profile_add_server">إنشاء</string>
     <string name="singbox_profile_no_servers">لم تُنشأ خوادم لهذا الملف الشخصي بعد.</string>
     <string name="singbox_profile_ports_must_differ">يجب أن يختلف t2s_port عن t2s_web_port</string>
@@ -1340,6 +1358,8 @@ APatch: ‏10700+</string>
     <string name="openvpn_dns_label">خوادم DNS</string>
     <string name="openvpn_dns_hint">أدخل من 1 إلى 8 خوادم DNS بنظام IPv4 مفصولة بمسافات أو فواصل. لا يُسمح بـ IPv6 أو النطاقات أو عناوين https/tls.</string>
     <string name="openvpn_dns_invalid">أدخل من 1 إلى 8 عناوين IPv4 صالحة فقط.</string>
+    <string name="openvpn_endpoint_resolve_label">حل نطاقات remote</string>
+    <string name="openvpn_endpoint_resolve_hint">حل أسماء النطاقات في توجيهات remote قبل تشغيل OpenVPN.</string>
     <string name="openvpn_config_title">إعداد OpenVPN</string>
     <string name="openvpn_config_desc">الصق محتوى client.ovpn أو حمّله من ملف. يُحفظ باسم profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">لا يمكن أن يكون client.ovpn فارغًا.</string>
@@ -2183,4 +2203,218 @@ APatch: ‏10700+</string>
     <string name="dpi_detector_share_failed">تعذرت مشاركة أرشيف التقرير.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">إعداد مجموعة خوادم SOCKS5 وفحوصات التوفر والاتصال المباشر الاحتياطي الذي يستخدمه DNSCrypt.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">جارٍ تحميل إعدادات D2S</string>
+    <string name="d2s_loading_desc">تتم قراءة الإعدادات المنظمة من الخدمة.</string>
+    <string name="d2s_load_failed_title">إعدادات D2S غير متاحة</string>
+    <string name="d2s_load_failed_desc">تعذرت قراءة الإعدادات. تحقق من تثبيت الوحدة ثم أعد المحاولة.</string>
+    <string name="d2s_overview_title">توجيه D2S</string>
+    <string name="d2s_overview_desc">يوزع اتصالات DNSCrypt بين خوادم SOCKS5 المحلية ويستخدم اتصالاً مباشراً عند الحاجة.</string>
+    <string name="d2s_listener_label">مستمع D2S المحلي</string>
+    <string name="d2s_listener_unavailable">غير مضبوط</string>
+    <string name="d2s_listener_desc">يُقرأ من إدخال proxy النشط في dnscrypt-proxy.toml.</string>
+    <string name="d2s_backends_title">خوادم SOCKS5</string>
+    <string name="d2s_backends_desc">أضف منافذ خدمات SOCKS5 المحلية. يستخدم D2S الخوادم التي تنجح في الفحص فقط.</string>
+    <string name="d2s_backends_empty">لا توجد منافذ SOCKS5. سيستخدم D2S احتياط DIRECT.</string>
+    <string name="d2s_backend_port_label">منفذ SOCKS5</string>
+    <string name="d2s_backend_port_desc">منفذ محلي من 1 إلى 65535</string>
+    <string name="d2s_add_backend">إضافة منفذ</string>
+    <string name="d2s_remove_backend">إزالة منفذ SOCKS5</string>
+    <string name="d2s_direct_title">احتياط DIRECT</string>
+    <string name="d2s_direct_desc">الاتصال مباشرة عند عدم توفر خادم SOCKS5 سليم.</string>
+    <string name="d2s_health_title">فحوصات الحالة</string>
+    <string name="d2s_health_desc">يتحكم في اكتشاف الأعطال وإعادة الخوادم المتعافية إلى التناوب.</string>
+    <string name="d2s_healthy_interval">فاصل فحص الخادم السليم</string>
+    <string name="d2s_recovery_interval">إعادة فحص الخادم المعطل</string>
+    <string name="d2s_failure_threshold">عدد الإخفاقات قبل عدم التوفر</string>
+    <string name="d2s_failure_threshold_desc">عدد الإخفاقات المتتالية</string>
+    <string name="d2s_runtime_cooldown">انتظار بعد فشل الاتصال</string>
+    <string name="d2s_seconds_desc">ثوانٍ؛ يجب أن تكون أكبر من صفر</string>
+    <string name="d2s_milliseconds_desc">مللي ثانية؛ يجب أن تكون أكبر من صفر</string>
+    <string name="d2s_probe_targets_label">أهداف الفحص</string>
+    <string name="d2s_probe_targets_desc">يتصل D2S بهذه الأهداف HOST:PORT عبر كل خادم SOCKS5.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">إضافة هدف</string>
+    <string name="d2s_remove_probe_target">إزالة هدف الفحص</string>
+    <string name="d2s_timeouts_title">مهلات الاتصال</string>
+    <string name="d2s_timeouts_desc">حدود الاتصال وتفاوض SOCKS5 وطلبات العميل والفحوصات.</string>
+    <string name="d2s_connect_timeout">مهلة اتصال SOCKS5</string>
+    <string name="d2s_upstream_handshake_timeout">مهلة مصافحة SOCKS5</string>
+    <string name="d2s_backend_attempt_timeout">مهلة محاولة الخادم</string>
+    <string name="d2s_direct_connect_timeout">مهلة اتصال DIRECT</string>
+    <string name="d2s_client_handshake_timeout">مهلة مصافحة العميل</string>
+    <string name="d2s_probe_timeout">مهلة فحص الحالة</string>
+    <string name="d2s_performance_title">الأداء والسجل</string>
+    <string name="d2s_performance_desc">حدود الاتصال وسلوك TCP وتفاصيل السجل والإيقاف الآمن.</string>
+    <string name="d2s_max_connections">الحد الأقصى للاتصالات المتزامنة</string>
+    <string name="d2s_max_connections_desc">يجب أن يكون أكبر من صفر</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">إرسال الحزم الصغيرة دون تأخير Nagle.</string>
+    <string name="d2s_log_level">مستوى السجل</string>
+    <string name="d2s_log_level_desc">يتحكم في التفاصيل المكتوبة إلى dnscrypt/log/d2s.log.</string>
+    <string name="d2s_shutdown_grace">مهلة الإيقاف الآمن</string>
+    <string name="d2s_save">حفظ إعدادات D2S</string>
+    <string name="d2s_saving">جارٍ الحفظ…</string>
+    <string name="d2s_saved">تم حفظ إعدادات D2S. ستُطبق بعد الإيقاف والتشغيل.</string>
+    <string name="d2s_error_port_required">أدخل منفذ SOCKS5.</string>
+    <string name="d2s_error_port_range">يجب أن يكون منفذ SOCKS5 بين 1 و65535.</string>
+    <string name="d2s_error_duplicate_port">يجب ألا تتكرر منافذ SOCKS5.</string>
+    <string name="d2s_error_listener_port">لا يمكن للخادم استخدام منفذ مستمع D2S.</string>
+    <string name="d2s_error_direct_required">يلزم احتياط DIRECT عندما تكون قائمة SOCKS5 فارغة.</string>
+    <string name="d2s_error_positive_number">يجب أن تكون كل القيم الرقمية أكبر من صفر.</string>
+    <string name="d2s_error_probe_required">أضف هدف فحص واحداً على الأقل عند ضبط خوادم SOCKS5.</string>
+    <string name="d2s_error_probe_target">يجب أن يستخدم كل هدف صيغة HOST:PORT.</string>
+    <string name="d2s_log_level_error">خطأ</string>
+    <string name="d2s_log_level_warn">تحذير</string>
+    <string name="d2s_log_level_info">معلومات</string>
+    <string name="d2s_log_level_debug">تصحيح الأخطاء</string>
+    <string name="d2s_log_level_trace">تتبّع</string>
+
+    <string name="d2s_route_timeout">مهلة التحويل الإجمالية لـ SOCKS5</string>
+    <string name="d2s_route_timeout_desc">الوقت الإجمالي الأقصى بالمللي ثانية لمحاولات خوادم SOCKS5 قبل المسار البديل.</string>
+    <string name="d2s_max_backend_attempts">الحد الأقصى لمحاولات الخوادم</string>
+    <string name="d2s_max_backend_attempts_desc">الحد الأقصى لخوادم SOCKS5 التي تتم تجربتها لاتصال عميل واحد.</string>
+    <string name="d2s_max_connecting">الحد الأقصى لمحاولات الاتصال المتزامنة</string>
+    <string name="d2s_max_connecting_desc">يحد من الاتصالات الصادرة ومصافحات SOCKS5 المتزامنة.</string>
+    <string name="d2s_idle_after">إيقاف فحوصات الصحة عند الخمول</string>
+    <string name="d2s_idle_after_desc">ثوانٍ بدون حركة عميل قبل إيقاف الفحوصات الخلفية. القيمة 0 تعطل وضع السكون.</string>
+    <string name="d2s_error_non_negative_number">يجب أن تكون مهلة الخمول صفرًا أو أكبر.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">فشل تصحيح توافق ZIP للوحدة: %1$s</string>
+    <string name="module_zip_patch_oom_warning">تحذير: نفدت ذاكرة التطبيق أثناء تصحيح توافق ZIP داخل الذاكرة: %1$s. جارٍ التبديل إلى وضع تصحيح ZIP منخفض استهلاك الذاكرة.</string>
+    <string name="module_zip_patch_low_memory_normalized">اكتمل تصحيح توافق ZIP منخفض استهلاك الذاكرة: تمت إزالة علامة التشفير من %1$d من إدخالات Central Directory. جارٍ المتابعة.</string>
+    <string name="module_zip_patch_low_memory_compatible">اكتمل فحص توافق ZIP منخفض استهلاك الذاكرة: الأرشيف متوافق بالفعل مع أدوات التثبيت الصارمة. جارٍ المتابعة.</string>
+    <string name="module_zip_patch_normalized">تمت تهيئة ZIP للوحدة لأداة تثبيت صارمة: أزيلت علامة التشفير من %1$d من إدخالات Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP للوحدة متوافق بالفعل مع أدوات التثبيت الصارمة.</string>
+    <string name="module_zip_patch_protection_kept_magisk">تم الإبقاء على حماية ZIP للوحدة من أجل أداة تثبيت Magisk.</string>
+
+    <string name="vps_reboot_server">إعادة تشغيل الخادم</string>
+    <string name="vps_reboot_confirm_title">إعادة تشغيل الخادم؟</string>
+    <string name="vps_reboot_confirm_message">هل تريد إعادة تشغيل %1$s؟ سينقطع اتصال SSH مؤقتًا أثناء إعادة تشغيل الخادم.</string>
+    <string name="vps_rebooting">جارٍ إعادة تشغيل الخادم…</string>
+    <string name="vps_reboot_failed">تعذر جدولة إعادة تشغيل الخادم</string>
+    <string name="vps_reboot_scheduled">تمت جدولة إعادة التشغيل</string>
+    <string name="vps_waiting_for_server">بانتظار عودة الخادم…</string>
+    <string name="vps_server_online_again">الخادم متصل مجددًا</string>
+    <string name="vps_reboot_timeout">لم يعد الخادم قبل انتهاء المهلة</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">إضافة SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">المصادقة</string>
+    <string name="vps_auth_password">كلمة المرور</string>
+    <string name="vps_auth_private_key">مفتاح SSH</string>
+    <string name="vps_private_key">مفتاح SSH خاص</string>
+    <string name="vps_choose_private_key_file">اختيار ملف المفتاح الخاص</string>
+    <string name="vps_private_key_file_selected">ملف المفتاح: %1$s</string>
+    <string name="vps_private_key_passphrase">عبارة مرور المفتاح (اختياري)</string>
+    <string name="vps_private_key_storage_hint">يتم تشفير المفتاح الخاص وعبارة مروره باستخدام Android Keystore ويظلان ضمن بيانات التطبيق فقط.</string>
+    <string name="vps_private_key_read_error">تعذرت قراءة ملف المفتاح الخاص المحدد.</string>
+    <string name="vps_private_key_too_large">الملف المحدد كبير جدًا. اختر مفتاح SSH أصغر من 512 كيلوبايت.</string>
+    <string name="vps_public_key_error">يبدو أن هذا مفتاح SSH عام. يلزم مفتاح خاص للمصادقة.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S غير متصل</string>
+    <string name="d2s_not_connected_desc">هذا البرنامج غير متصل للاستخدام مع DNSCrypt. هل تريد توصيله؟</string>
+    <string name="d2s_not_connected_port_desc">سيختار ZDT-D أول منفذ SOCKS5 محلي متاح بدءًا من 11990 ويحفظه في dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">اتصال</string>
+    <string name="d2s_connecting">جارٍ الاتصال…</string>
+    <string name="d2s_connect_failed">تعذر توصيل D2S</string>
+    <string name="d2s_connected_fmt">تم توصيل D2S: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">الاشتراكات</string>
+    <string name="mihomo_subscriptions_summary">%1$d مصادر · %2$d مفعّلة · %3$d خوادم</string>
+    <string name="mihomo_sub_add">إضافة اشتراك</string>
+    <string name="mihomo_sub_refresh_all">تحديث الكل</string>
+    <string name="mihomo_sub_empty_title">لا توجد اشتراكات بعد</string>
+    <string name="mihomo_sub_empty_desc">أضف مصدر اشتراك واستخدمه في ملف Mihomo واحد أو أكثر.</string>
+    <string name="mihomo_sub_saved">تم حفظ الاشتراك</string>
+    <string name="mihomo_sub_delete_title">حذف الاشتراك</string>
+    <string name="mihomo_sub_delete_message">هل تريد حذف الاشتراك «%1$s»؟ سيتم فصل الملفات التي تستخدمه عن هذا المصدر.</string>
+    <string name="mihomo_sub_state_disabled">معطّل</string>
+    <string name="mihomo_sub_state_error">خطأ في التحديث</string>
+    <string name="mihomo_sub_state_ready">جاهز</string>
+    <string name="mihomo_sub_state_waiting">بانتظار أول تحديث</string>
+    <string name="mihomo_sub_servers">الخوادم</string>
+    <string name="mihomo_sub_profiles">الملفات</string>
+    <string name="mihomo_sub_interval">الفاصل</string>
+    <string name="mihomo_sub_traffic_value">حركة البيانات: %1$s</string>
+    <string name="mihomo_sub_expire_value">ينتهي: %1$s</string>
+    <string name="mihomo_sub_used_by">الملفات: %1$s</string>
+    <string name="mihomo_sub_updated_value">آخر تحديث: %1$s</string>
+    <string name="mihomo_sub_refresh">تحديث</string>
+    <string name="mihomo_sub_add_title">اشتراك جديد</string>
+    <string name="mihomo_sub_edit_title">تعديل الاشتراك</string>
+    <string name="mihomo_sub_name">الاسم</string>
+    <string name="mihomo_sub_url">رابط الاشتراك</string>
+    <string name="mihomo_sub_basic_auth">مصادقة Basic</string>
+    <string name="mihomo_sub_basic_auth_desc">إرسال اسم المستخدم وكلمة مرور HTTP Basic مع طلبات الاشتراك.</string>
+    <string name="mihomo_sub_username">اسم المستخدم</string>
+    <string name="mihomo_sub_password">كلمة المرور</string>
+    <string name="mihomo_sub_hwid">مصادقة HWID</string>
+    <string name="mihomo_sub_hwid_desc">إرسال معرّف الجهاز الذي يطلبه مزود الاشتراك.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">استخدام معرّف هذا الجهاز</string>
+    <string name="mihomo_sub_device_headers">ترويسات الجهاز</string>
+    <string name="mihomo_sub_device_headers_desc">إرسال ترويسات متوافقة مع Happ للغة وإصدار Android وطراز الجهاز.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">اتركه فارغًا لإنشاء User-Agent متوافق مع Happ تلقائيًا.</string>
+    <string name="mihomo_sub_locale">اللغة</string>
+    <string name="mihomo_sub_os_version">إصدار Android</string>
+    <string name="mihomo_sub_device_model">طراز الجهاز</string>
+    <string name="mihomo_sub_custom_headers">ترويسات HTTP إضافية</string>
+    <string name="mihomo_sub_custom_headers_hint">ترويسة واحدة في كل سطر: Header-Name: القيمة</string>
+    <string name="mihomo_sub_remote_interval">استخدام فترة تحديث المزود</string>
+    <string name="mihomo_sub_remote_interval_desc">استخدام profile-update-interval عندما يرسله المزود.</string>
+    <string name="mihomo_sub_fallback_interval">الفترة الاحتياطية بالدقائق</string>
+    <string name="mihomo_sub_interval_hint">من 15 إلى 10080 دقيقة؛ تُستخدم عندما لا يحدد المزود فترة.</string>
+    <string name="mihomo_tab_subscriptions">الاشتراكات</string>
+    <string name="mihomo_tab_desc_subscriptions">اختر مصادر الاشتراك المُدارة لهذا الملف.</string>
+    <string name="mihomo_profile_subscriptions_title">الاشتراكات</string>
+    <string name="mihomo_profile_subscriptions_desc">اختر الاشتراكات العامة التي سيضيفها ZDT-D إلى هذا الملف وقت التشغيل.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d محددة ومتاحة · %2$d إجمالاً</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">يبقى config.yaml الأصلي دون تغيير. يضيف ZDT-D المزودات فقط إلى config.runtime.yaml ويربطها بمجموعة Proxy.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">أنشئ الاشتراكات أولاً من شاشة اشتراكات Mihomo.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d خوادم</string>
+    <string name="mihomo_profile_subscription_disabled_hint">هذا الاشتراك معطّل على مستوى التطبيق.</string>
+    <string name="subscriptions_title">الاشتراكات</string>
+    <string name="subscriptions_entry_desc">إدارة مصادر الاشتراك المشتركة واستيراد خوادم منفردة.</string>
+    <string name="subscriptions_badge">المكتبة</string>
+    <string name="subscription_view_servers">عرض الخوادم</string>
+    <string name="subscription_servers_count">%1$d خوادم</string>
+    <string name="subscription_missing_title">لم يعد الخادم موجودًا في الاشتراك</string>
+    <string name="subscription_local_copy_saved">تم الاحتفاظ بالنسخة المحلية.</string>
+    <string name="subscription_detach">فصل عن الاشتراك</string>
+    <string name="subscription_nodes_empty">لا توجد خوادم محللة بعد. حدّث الاشتراك.</string>
+    <string name="subscription_linked_to">مرتبط بـ %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">إضافة إلى %1$s</string>
+    <string name="subscription_unsupported_node">نوع الخادم هذا غير مدعوم للاستيراد بعد.</string>
+    <string name="subscription_import_title">استيراد إلى %1$s</string>
+    <string name="subscription_choose_profile">اختر ملفًا شخصيًا</string>
+    <string name="subscription_no_target_profiles">أنشئ ملف الوجهة أولاً.</string>
+    <string name="subscription_local_server_name">اسم الخادم المحلي</string>
+    <string name="subscription_server_name_hint">أحرف إنجليزية وأرقام وشرطة سفلية وواصلة</string>
+    <string name="subscription_import_action">استيراد</string>
+    <string name="subscription_import_success">تم استيراد الخادم وربطه بالاشتراك</string>
+    <string name="subscription_import_failed">تعذر استيراد الخادم</string>
+    <string name="subscription_detach_failed">تعذر فصل الخادم</string>
+    <string name="subscription_link_active">مرتبط باشتراك وتتم مزامنته تلقائيًا</string>
+    <string name="subscription_manual_import">استيراد الإعداد</string>
+    <string name="subscription_manual_import_desc">الصق رابط خادم واحد أو JSON لـ sing-box/Hysteria2 أو إعداد WireGuard. سيُنشأ الخادم محليًا من دون ارتباط باشتراك.</string>
+    <string name="subscription_manual_source">الرابط أو الإعداد</string>
+    <string name="subscription_paste">لصق</string>
+    <string name="subscription_recognize">تعرّف</string>
+    <string name="subscription_manual_unrecognized">لم يتم التعرف على الإعداد أو لا تدعمه الواجهة الخلفية المثبتة.</string>
+    <string name="subscription_manual_target">الوجهة: %1$s</string>
+    <string name="subscription_copy_config">نسخ الإعداد</string>
+    <string name="subscription_copy_failed">تعذر تجهيز الإعداد للنسخ.</string>
 </resources>

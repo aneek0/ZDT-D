@@ -327,6 +327,80 @@ Each active connection is tracked with metadata such as connection ID, target,
 backend, state and traffic counters. The web UI/API uses this registry to display
 runtime state and kill selected connections.
 
+## Multiple t2s instances sharing one backend
+
+Several ZDT-D profiles can run their own t2s instance while all of them forward
+to the same local SOCKS5 proxy. Some such proxies cannot accept two clients at
+the same moment: two overlapping TCP+SOCKS handshakes break the requests. t2s
+instances now coordinate through the metadata they already publish under
+`<api-dir>/t2s`:
+
+### Shared backend health
+
+Instances whose backend sets intersect form a coordination group (discovered
+via `instances/*.json` and each peer's authenticated `/api/v1/backends`). The
+group leader is deterministic — the lowest `instance_id` — and keeps running
+its normal health loop. Followers suspend their own backend probing and import
+the leader's backend snapshot every scan (10s when peers are active, 30s when
+quiet), so all instances agree on GREEN/YELLOW/RED and a fragile proxy is
+probed by one instance instead of N. Observations newer than the imported ones
+(such as a follower's own runtime suspect recheck) always win. If the leader
+disappears, followers resume their own probing automatically; a solo instance
+behaves exactly as before.
+
+### Serialized backend handshakes
+
+Every dial to a backend (client CONNECT, health probe, wrapped-remote
+handshake, UDP ASSOCIATE) takes a per-backend cross-process `flock` on
+`<api-dir>/t2s/locks/backend-<ip>-<port>.lock` for the duration of the TCP
+connect + SOCKS handshake, then optionally holds it for
+`--connect-stagger-ms` (default 100) after success. Concurrent handshakes to
+the same backend — from peers or from a burst inside one instance — therefore
+never overlap, while established relays and different backends stay fully
+parallel. The lock is released by the kernel if a process dies, and every
+coordination failure fails open (dials proceed unsynchronized) so coordination
+can never cause an outage.
+
+### Accelerated recovery after network changes
+
+A network switch (Wi-Fi <-> mobile) can leave most of a 10-backend pool
+suddenly dead while the states are still stale-GREEN: the no-GREEN recovery
+ladder does not trigger, and the normal health cadence under traffic is
+45-60s, which is why a full API-poked recheck used to be needed. t2s now
+detects the switch deterministically and reacts in seconds:
+
+- **Egress-IP detection**: the kernel-chosen source IP for outbound traffic is
+  sampled with a UDP `connect` (no packet is sent) on every accepted
+  connection and on every health-loop pass. A changed IP - or the route
+  disappearing and reappearing - is an unambiguous network change, even when
+  local proxy engines keep answering and no failure signature would assemble.
+- **Mass-failure signature**: at least 3 distinct backends reporting failures
+  of ANY class within 15s starts the same sweep (dead upstreams trickle
+  failures slowly, so the window matches real timings).
+- **Accelerated parallel sweep**: on either signal one immediate full sweep
+  runs (throttled to once per 10s), full-probing every backend in parallel
+  with a concurrency cap of 3 - different backends hold different dial locks,
+  so a fragile proxy still never sees two simultaneous handshakes, but 10
+  backends cost ~3-4 probe rounds instead of 10 sequential ones. The total
+  probe volume per event is one sweep, so rare network changes add no
+  background energy; idle cadences are unchanged.
+- **Internet re-verification for non-GREEN backends**: Light probes only prove
+  the local engine is alive. A Yellow backend whose upstream recovered is now
+  re-verified with a full Internet probe as soon as the probe backoff allows
+  (30s -> 900s escalation), instead of waiting for the 15-minute full-probe
+  cycle that used to leave it unusable for many minutes.
+
+Coordination followers first delegate the sweep to the health leader
+(`POST /api/v1/backends/recheck`) and import its snapshot; if the leader does
+not confirm working backends, the follower fails open and sweeps locally -
+cross-process dial locks make concurrent probing safe, only the double-probe
+energy saving is lost.
+
+Flags: `--no-peer-coordination`, `--no-serialize-backend-connects`,
+`--connect-stagger-ms <MS>`. Coordination assumes instances sharing a backend
+also share its credentials; when the shared API token file is missing, peer
+health sharing is disabled and each instance keeps probing independently.
+
 ## Limitations
 
 - TCP proxying is always available;

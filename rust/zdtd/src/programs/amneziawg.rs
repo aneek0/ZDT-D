@@ -16,6 +16,7 @@ use std::{
 
 use crate::{
     android::pkg_uid,
+    android_dns,
     shell::{self, Capture},
     vpn_netd::VpnNetdProfile,
     vpn_tether::VpnTetherProfile,
@@ -44,7 +45,6 @@ const LINK_WAIT: Duration = Duration::from_secs(15);
 const TUN_WAIT: Duration = Duration::from_secs(25);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const AWG_TIMEOUT: Duration = Duration::from_secs(10);
-const DNS_TIMEOUT: Duration = Duration::from_secs(4);
 const HEALTH_IDLE_SLEEP: Duration = Duration::from_secs(2);
 const HEALTH_INTERVAL_SEC: u64 = 30;
 const HEALTH_LIFETIME_SEC: u64 = 180;
@@ -313,8 +313,7 @@ pub fn import_config(profile: &str, raw: &str) -> Result<()> {
         Some(&imported.setting),
         None,
     )?;
-    write_text_atomic(&root.join("client.conf"), &imported.config)?;
-    write_json_pretty(&root.join("setting.json"), &imported.setting)?;
+    write_import_pair(&root, &imported.config, &imported.setting)?;
     Ok(())
 }
 
@@ -323,8 +322,7 @@ pub fn normalize_config_in_place(profile: &str) -> Result<()> {
     ensure_profile_layout(profile)?;
     let root = profile_root(profile);
     let config_path = root.join("client.conf");
-    let raw = fs::read_to_string(&config_path)
-        .with_context(|| format!("read {}", config_path.display()))?;
+    let raw = read_amneziawg_config_text(&config_path)?;
     if raw.trim().is_empty() {
         bail!("client.conf is empty: {}", config_path.display());
     }
@@ -552,8 +550,7 @@ pub fn validate_start_plan() -> Result<()> {
                 seen_cidrs.push((name.clone(), cidr));
             }
             let config_path = profile_dir.join("client.conf");
-            let cfg = fs::read_to_string(&config_path)
-                .with_context(|| format!("read {}", config_path.display()))?;
+            let cfg = read_amneziawg_config_text(&config_path)?;
             if cfg.trim().is_empty() {
                 bail!("client.conf is empty: {}", config_path.display());
             }
@@ -823,7 +820,7 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
     if !config_path.is_file() {
         bail!("client.conf missing: {}", config_path.display());
     }
-    let cfg = fs::read_to_string(&config_path).unwrap_or_default();
+    let cfg = read_amneziawg_config_text(&config_path)?;
     if cfg.trim().is_empty() {
         bail!("client.conf is empty: {}", config_path.display());
     }
@@ -1080,8 +1077,7 @@ fn prepare_setconf_config(plan: &ProfilePlan) -> Result<PathBuf> {
     if !plan.setting.endpoint_resolve {
         return Ok(plan.config_path.clone());
     }
-    let raw = fs::read_to_string(&plan.config_path)
-        .with_context(|| format!("read {}", plan.config_path.display()))?;
+    let raw = read_amneziawg_config_text(&plan.config_path)?;
     let resolved = resolve_endpoint_lines(&raw)
         .with_context(|| format!("resolve Endpoint for {}", plan.config_path.display()))?;
     let tmp = plan.profile_dir.join("tmp/client.resolved.conf");
@@ -1106,7 +1102,7 @@ fn resolve_endpoint_lines(raw: &str) -> Result<String> {
                     out.push(line.to_string());
                     continue;
                 }
-                let ip = resolve_host_ipv4(&host)
+                let ip = android_dns::resolve_ipv4(&host)
                     .ok_or_else(|| anyhow::anyhow!("cannot resolve Endpoint host {host} to IPv4"))?;
                 out.push(format!("Endpoint = {ip}:{port}"));
                 continue;
@@ -1121,7 +1117,7 @@ fn resolve_endpoint_lines(raw: &str) -> Result<String> {
 }
 
 fn collect_endpoint_escape_ips(plan: &ProfilePlan) -> Vec<String> {
-    let raw = match fs::read_to_string(&plan.config_path) {
+    let raw = match read_amneziawg_config_text(&plan.config_path) {
         Ok(raw) => raw,
         Err(e) => {
             warn!(
@@ -1150,7 +1146,7 @@ fn collect_endpoint_escape_ips(plan: &ProfilePlan) -> Vec<String> {
         if is_ipv4(&host) {
             ips.push(host);
         } else if plan.setting.endpoint_resolve {
-            match resolve_host_ipv4(&host) {
+            match android_dns::resolve_ipv4(&host) {
                 Some(ip) => ips.push(ip),
                 None => warn!(
                     "amneziawg: profile={} cannot resolve Endpoint host for endpoint escape: {}",
@@ -1195,48 +1191,6 @@ fn parse_host_port(s: &str) -> Option<(String, String)> {
     Some((host.to_string(), port.to_string()))
 }
 
-fn resolve_host_ipv4(host: &str) -> Option<String> {
-    let attempts: [(&str, Vec<&str>); 4] = [
-        ("toybox", vec!["nslookup", host, "1.1.1.1"]),
-        ("nslookup", vec![host, "1.1.1.1"]),
-        ("toybox", vec!["nslookup", host]),
-        ("nslookup", vec![host]),
-    ];
-    for (cmd, args) in attempts {
-        let Ok((code, out)) = shell::run_timeout(cmd, &args, Capture::Both, DNS_TIMEOUT) else { continue; };
-        if code != 0 { continue; }
-        if let Some(ip) = first_resolved_ipv4_from_text(&out) {
-            return Some(ip);
-        }
-    }
-
-    if let Ok((code, out)) = shell::run_timeout("ping", &["-c", "1", "-W", "2", host], Capture::Both, DNS_TIMEOUT) {
-        if code == 0 {
-            return first_ipv4_from_text(&out);
-        }
-    }
-    None
-}
-
-fn first_ipv4_from_text(text: &str) -> Option<String> {
-    for raw in text.split(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '#')) {
-        let token = raw.trim();
-        if is_ipv4(token) {
-            return Some(token.to_string());
-        }
-    }
-    None
-}
-
-fn first_resolved_ipv4_from_text(text: &str) -> Option<String> {
-    for raw in text.split(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '#')) {
-        let token = raw.trim();
-        if is_ipv4(token) && !matches!(token, "0.0.0.0" | "1.1.1.1" | "8.8.8.8" | "127.0.0.1") {
-            return Some(token.to_string());
-        }
-    }
-    None
-}
 
 fn run_command_timeout_with_env(
     cmd: &str,
@@ -1503,6 +1457,92 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     crate::jsonfs::read_json_short_ctx(path)
+}
+
+fn read_amneziawg_config_text(path: &Path) -> Result<String> {
+    let data = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let text = crate::external_text::decode_external_text(&data)
+        .with_context(|| format!("decode {}", path.display()))?;
+    if data.as_slice() != text.as_bytes() {
+        let tmp = path.with_file_name("client.conf.encoding.tmp");
+        fs::write(&tmp, text.as_bytes())
+            .with_context(|| format!("write {}", tmp.display()))?;
+        fs::rename(&tmp, path)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    }
+    Ok(text)
+}
+
+fn write_import_pair(root: &Path, config: &str, setting: &ProfileSetting) -> Result<()> {
+    let config_path = root.join("client.conf");
+    let setting_path = root.join("setting.json");
+    let config_tmp = root.join("client.conf.import.tmp");
+    let setting_tmp = root.join("setting.json.import.tmp");
+    let config_backup = root.join("client.conf.import.bak");
+    let setting_backup = root.join("setting.json.import.bak");
+
+    let setting_text = serde_json::to_string_pretty(setting)?;
+    fs::write(&config_tmp, config.as_bytes())
+        .with_context(|| format!("write {}", config_tmp.display()))?;
+    if let Err(e) = fs::write(&setting_tmp, setting_text.as_bytes()) {
+        let _ = fs::remove_file(&config_tmp);
+        return Err(anyhow::anyhow!("write {}: {e}", setting_tmp.display()));
+    }
+
+    // Recover a pair left in backup state by an interrupted older import.
+    if config_backup.exists() {
+        if !config_path.exists() {
+            fs::rename(&config_backup, &config_path)
+                .with_context(|| format!("recover {}", config_path.display()))?;
+        } else {
+            let _ = fs::remove_file(&config_backup);
+        }
+    }
+    if setting_backup.exists() {
+        if !setting_path.exists() {
+            fs::rename(&setting_backup, &setting_path)
+                .with_context(|| format!("recover {}", setting_path.display()))?;
+        } else {
+            let _ = fs::remove_file(&setting_backup);
+        }
+    }
+
+    let had_config = config_path.exists();
+    let had_setting = setting_path.exists();
+    if had_config {
+        fs::rename(&config_path, &config_backup)
+            .with_context(|| format!("backup {}", config_path.display()))?;
+    }
+    if had_setting {
+        if let Err(e) = fs::rename(&setting_path, &setting_backup) {
+            if had_config { let _ = fs::rename(&config_backup, &config_path); }
+            let _ = fs::remove_file(&config_tmp);
+            let _ = fs::remove_file(&setting_tmp);
+            return Err(anyhow::anyhow!("backup {}: {e}", setting_path.display()));
+        }
+    }
+
+    let install_result = (|| -> Result<()> {
+        fs::rename(&config_tmp, &config_path)
+            .with_context(|| format!("install {}", config_path.display()))?;
+        fs::rename(&setting_tmp, &setting_path)
+            .with_context(|| format!("install {}", setting_path.display()))?;
+        Ok(())
+    })();
+
+    if let Err(e) = install_result {
+        let _ = fs::remove_file(&config_path);
+        let _ = fs::remove_file(&setting_path);
+        if had_config { let _ = fs::rename(&config_backup, &config_path); }
+        if had_setting { let _ = fs::rename(&setting_backup, &setting_path); }
+        let _ = fs::remove_file(&config_tmp);
+        let _ = fs::remove_file(&setting_tmp);
+        return Err(e);
+    }
+
+    let _ = fs::remove_file(&config_backup);
+    let _ = fs::remove_file(&setting_backup);
+    Ok(())
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {

@@ -51,6 +51,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -142,6 +144,7 @@ private data class SingBoxProfileSettingUi(
   val dns: List<String> = listOf("8.8.8.8"),
   val tun2socksLogLevel: String = "info",
   val protoMode: String = "tcp_udp",
+  val endpointResolve: Boolean = true,
 ) {
   val isVpn: Boolean get() = mode == SINGBOX_MODE_VPN
   val isT2s: Boolean get() = mode != SINGBOX_MODE_VPN
@@ -153,6 +156,9 @@ private data class SingBoxServerUi(
   val name: String,
   val enabled: Boolean,
   val port: Int?,
+  val selectedSni: String? = null,
+  val sniOptions: List<String> = emptyList(),
+  val subscriptionLink: SubscriptionServerLinkUi? = null,
 )
 
 private data class ServerConfigPortPlan(
@@ -193,6 +199,7 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
     dns = normalizeSingBoxDns(rawDns),
     tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(obj?.optString("tun2socks_loglevel", "info")),
     protoMode = normalizeSingBoxProtoMode(obj?.optString("proto_mode", "tcp_udp")),
+    endpointResolve = obj?.optBoolean("endpoint_resolve", true) ?: true,
   )
 }
 
@@ -205,6 +212,7 @@ private fun SingBoxProfileSettingUi.toJson(): JSONObject {
     .put("dns", JSONArray().also { arr -> normalizeSingBoxDns(dns).forEach { arr.put(it) } })
     .put("tun2socks_loglevel", normalizeSingBoxTun2socksLogLevel(tun2socksLogLevel))
     .put("proto_mode", normalizeSingBoxProtoMode(protoMode))
+    .put("endpoint_resolve", endpointResolve)
 }
 
 private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
@@ -321,15 +329,43 @@ private fun parseSingBoxServersUi(obj: JSONObject?): List<SingBoxServerUi> {
       val name = item.optString("name", "").trim()
       if (name.isBlank()) continue
       val setting = item.optJSONObject("setting")
+      val sniOptions = buildList {
+        val values = setting?.optJSONArray("sni_options") ?: JSONArray()
+        for (index in 0 until values.length()) {
+          val value = values.optString(index, "").trim()
+          if (value.isNotBlank() && value !in this) add(value)
+        }
+      }
+      val selectedSni = setting?.optString("sni", "")?.trim()?.takeIf { it.isNotBlank() && (sniOptions.isEmpty() || it in sniOptions) }
+        ?: sniOptions.firstOrNull()
       add(
         SingBoxServerUi(
           name = name,
           enabled = setting?.optBoolean("enabled", false) ?: false,
           port = setting?.optInt("port", 0)?.takeIf { it in 1..65535 },
+          selectedSni = selectedSni,
+          sniOptions = sniOptions,
+          subscriptionLink = parseSubscriptionServerLinkUi(item.optJSONObject("subscription_link")),
         )
       )
     }
   }.sortedBy { it.name.lowercase() }
+}
+
+private fun rewriteSingBoxRealityServerName(configText: String, sni: String): String? {
+  val selected = sni.trim()
+  if (selected.isBlank()) return null
+  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
+  val outbounds = root.optJSONArray("outbounds") ?: return null
+  for (index in 0 until outbounds.length()) {
+    val outbound = outbounds.optJSONObject(index) ?: continue
+    val tls = outbound.optJSONObject("tls") ?: continue
+    val reality = tls.optJSONObject("reality") ?: continue
+    if (!reality.optBoolean("enabled", true)) continue
+    tls.put("server_name", selected)
+    return root.toString(2)
+  }
+  return null
 }
 
 private fun normalizeSingBoxServerName(input: String): String {
@@ -1249,6 +1285,13 @@ fun SingBoxProfileScreen(
       onSwitchMode = ::switchSingBoxMode,
     )
 
+    SingBoxEndpointResolveCard(
+      enabled = activeSetting.endpointResolve,
+      loading = settingLoading,
+      saving = settingSaving,
+      onToggle = { value -> saveProfileSetting(activeSetting.copy(endpointResolve = value)) },
+    )
+
     AnimatedVisibility(
       visible = activeSetting.isT2s,
       enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
@@ -1338,6 +1381,41 @@ fun SingBoxProfileScreen(
     )
 
     Spacer(Modifier.height(effectiveBottomContentPadding))
+  }
+}
+
+@Composable
+private fun SingBoxEndpointResolveCard(
+  enabled: Boolean,
+  loading: Boolean,
+  saving: Boolean,
+  onToggle: (Boolean) -> Unit,
+) {
+  val accent = Color(0xFF0EA5E9)
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_endpoint_resolve_label),
+    desc = stringResource(R.string.singbox_endpoint_resolve_hint),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    StableLinearProgressIndicator(visible = loading || saving)
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "IPv4",
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+      )
+      Switch(
+        checked = enabled,
+        enabled = !loading && !saving,
+        onCheckedChange = onToggle,
+      )
+    }
   }
 }
 
@@ -1829,12 +1907,11 @@ private fun SingBoxServerCard(
   showPort: Boolean = true,
 ) {
   val context = LocalContext.current
-  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
-  val dialogScrollState = rememberScrollState()
-  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   var enabled by remember(server.name, server.enabled) { mutableStateOf(server.enabled) }
   var portText by remember(server.name, server.port) { mutableStateOf((server.port ?: 0).toString()) }
+  var selectedSni by remember(server.name, server.selectedSni, server.sniOptions) { mutableStateOf(server.selectedSni ?: server.sniOptions.firstOrNull()) }
+  var sniMenu by remember(server.name) { mutableStateOf(false) }
   var saving by remember(server.name) { mutableStateOf(false) }
   var askDelete by remember(server.name) { mutableStateOf(false) }
 
@@ -1842,18 +1919,74 @@ private fun SingBoxServerCard(
     scope.launch { snackHost.showSnackbar(msg) }
   }
 
+  fun buildSettingPayload(port: Int, sni: String? = selectedSni): JSONObject {
+    val payload = JSONObject().put("enabled", enabled).put("port", port)
+    if (server.sniOptions.isNotEmpty()) {
+      payload.put("sni_options", JSONArray().also { array -> server.sniOptions.forEach { option -> array.put(option) } })
+      sni?.takeIf(String::isNotBlank)?.let { payload.put("sni", it) }
+    }
+    return payload
+  }
+
   fun autoSave() {
     val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
-    if (port !in 1..65535) return
+    val validPort = port?.takeIf { it in 1..65535 } ?: return
     saving = true
     val encodedServer = URLEncoder.encode(server.name, "UTF-8")
-    val payload = JSONObject().put("enabled", enabled).put("port", port)
-    actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
+    actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(validPort)) { ok ->
       saving = false
       if (ok) {
-        onServerSaved(server.copy(enabled = enabled, port = port))
+        onServerSaved(server.copy(enabled = enabled, port = validPort, selectedSni = selectedSni))
       } else {
         showSnack(context.getString(R.string.singbox_auto_save_failed))
+      }
+    }
+  }
+
+  fun saveSelectedSni(nextSni: String) {
+    val next = nextSni.trim()
+    if (next.isBlank() || next == selectedSni || next !in server.sniOptions) {
+      sniMenu = false
+      return
+    }
+    val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
+    val validPort = port?.takeIf { it in 1..65535 }
+    if (validPort == null) {
+      sniMenu = false
+      showSnack(context.getString(R.string.singbox_auto_save_failed))
+      return
+    }
+    val encodedServer = URLEncoder.encode(server.name, "UTF-8")
+    val configPath = "$basePath/servers/$encodedServer/config"
+    sniMenu = false
+    saving = true
+    actions.loadText(configPath) load@ { original ->
+      val source = original?.takeIf { it.trim().isNotBlank() }
+      val rewritten = source?.let { rewriteSingBoxRealityServerName(it, next) }
+      if (source == null || rewritten == null) {
+        saving = false
+        showSnack(context.getString(R.string.singbox_auto_save_failed))
+        return@load
+      }
+      actions.saveText(configPath, rewritten) configSave@ { configOk ->
+        if (!configOk) {
+          saving = false
+          showSnack(context.getString(R.string.singbox_auto_save_failed))
+          return@configSave
+        }
+        actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(validPort, next)) { settingOk ->
+          if (settingOk) {
+            selectedSni = next
+            saving = false
+            onServerSaved(server.copy(enabled = enabled, port = validPort, selectedSni = next))
+          } else {
+            // Keep config.json and setting.json consistent if metadata saving fails.
+            actions.saveText(configPath, source) {
+              saving = false
+              showSnack(context.getString(R.string.singbox_auto_save_failed))
+            }
+          }
+        }
       }
     }
   }
@@ -1939,6 +2072,14 @@ private fun SingBoxServerCard(
           Switch(checked = enabled, onCheckedChange = { enabled = it })
         }
 
+        server.subscriptionLink?.let { link ->
+          SubscriptionServerLinkCard(link = link, onDetach = {
+            actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+              if (ok) onRefresh() else showSnack(context.getString(R.string.subscription_detach_failed))
+            }
+          })
+        }
+
         AnimatedVisibility(
           visible = showPort,
           enter = fadeIn() + expandVertically(),
@@ -1953,6 +2094,42 @@ private fun SingBoxServerCard(
             label = { Text(stringResource(R.string.singbox_server_port_label)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           )
+        }
+
+        if (server.sniOptions.size > 1) {
+          Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+              stringResource(R.string.singbox_server_sni_label),
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+            )
+            Box(Modifier.fillMaxWidth()) {
+              OutlinedButton(
+                enabled = !saving,
+                onClick = { sniMenu = true },
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Text(
+                  selectedSni ?: server.sniOptions.first(),
+                  modifier = Modifier.weight(1f),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+              DropdownMenu(
+                expanded = sniMenu,
+                onDismissRequest = { sniMenu = false },
+                modifier = Modifier.heightIn(max = 280.dp),
+              ) {
+                server.sniOptions.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = { saveSelectedSni(option) },
+                  )
+                }
+              }
+            }
+          }
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

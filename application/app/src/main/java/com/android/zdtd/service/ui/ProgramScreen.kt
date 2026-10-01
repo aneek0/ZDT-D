@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -90,6 +91,7 @@ fun ProgramScreen(
 
   val hasStrategicFiles = program.id == "nfqws" || program.id == "nfqws2"
   var programTab by remember(program.id) { mutableStateOf(0) }
+  var dnscryptTab by remember(program.id) { mutableStateOf(0) }
 
   var showCreateProfile by remember { mutableStateOf(false) }
   var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
@@ -185,6 +187,21 @@ fun ProgramScreen(
           onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
         )
       }
+      item {
+        StrategicProfileTabs(
+          tabs = listOf(
+            0 to stringResource(R.string.dnscrypt_tab_dnscrypt),
+            1 to stringResource(R.string.dnscrypt_tab_d2s),
+          ),
+          selected = dnscryptTab,
+          onSelect = { dnscryptTab = it },
+          activeTextColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+            Color.Black
+          } else {
+            Color(0xFF7DD3FC)
+          },
+        )
+      }
     } else if (program.id == "operaproxy") {
       item(key = "operaproxy_global_controls", contentType = "operaproxy_global_controls") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -278,18 +295,27 @@ isProfileProgramType(program.type) -> {
       }
 
       program.id == "dnscrypt" -> {
-        item {
-          TextEditorCard(
-            title = "dnscrypt-proxy.toml",
-            desc = stringResource(R.string.dnscrypt_main_config_desc),
-            path = "/api/programs/dnscrypt/config",
-            actions = actions,
-            snackHost = snackHost,
-          )
-        }
-        item {
-          Spacer(Modifier.height(10.dp))
-          DnscryptSettingFilesSection(actions = actions, snackHost = snackHost)
+        if (dnscryptTab == 0) {
+          item {
+            TextEditorCard(
+              title = "dnscrypt-proxy.toml",
+              desc = stringResource(R.string.dnscrypt_main_config_desc),
+              path = "/api/programs/dnscrypt/config",
+              actions = actions,
+              snackHost = snackHost,
+            )
+          }
+          item {
+            Spacer(Modifier.height(10.dp))
+            DnscryptSettingFilesSection(actions = actions, snackHost = snackHost)
+          }
+        } else {
+          item {
+            D2sSettingsSection(
+              actions = actions,
+              snackHost = snackHost,
+            )
+          }
         }
       }
 

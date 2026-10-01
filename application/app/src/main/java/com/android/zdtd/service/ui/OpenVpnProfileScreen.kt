@@ -2,7 +2,6 @@ package com.android.zdtd.service.ui
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -72,6 +71,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.io.ExternalTextImport
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,6 +91,7 @@ private data class OpenVpnProfileInfo(
 private data class OpenVpnSettingUi(
   val tun: String = "tun1",
   val dns: List<String> = listOf("94.140.14.14", "94.140.15.15"),
+  val endpointResolve: Boolean = true,
 )
 
 private val openVpnProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
@@ -116,15 +117,17 @@ private fun parseOpenVpnSetting(obj: JSONObject?): OpenVpnSettingUi {
   return OpenVpnSettingUi(
     tun = data?.optString("tun", "tun1")?.trim().orEmpty().ifBlank { "tun1" },
     dns = dns.takeIf { it.isNotEmpty() } ?: listOf("94.140.14.14", "94.140.15.15"),
+    endpointResolve = data?.optBoolean("endpoint_resolve", true) ?: true,
   )
 }
 
-private fun buildOpenVpnSettingJson(tun: String, dns: List<String>): JSONObject {
+private fun buildOpenVpnSettingJson(tun: String, dns: List<String>, endpointResolve: Boolean): JSONObject {
   val arr = JSONArray()
   dns.forEach { arr.put(it) }
   return JSONObject()
     .put("tun", tun.trim())
     .put("dns", arr)
+    .put("endpoint_resolve", endpointResolve)
 }
 
 private fun parseOpenVpnDnsInput(raw: String): List<String>? {
@@ -162,17 +165,8 @@ private fun openVpnConfigWarnings(config: String): List<String> {
   return if (missing.isEmpty()) emptyList() else listOf("client.ovpn: ${missing.joinToString(", ")} not found")
 }
 
-private fun openVpnUriDisplayName(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-    if (c.moveToFirst()) c.getString(0) else null
-  }
-}.getOrNull()
-
-private fun readOpenVpnTextFromUri(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.openInputStream(uri)?.use { input ->
-    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-  }
-}.getOrNull()
+private fun readOpenVpnTextFromUri(context: Context, uri: Uri): String? =
+  ExternalTextImport.readText(context, uri).getOrNull()
 
 private fun openVpnProfileIndex(name: String): Int {
   val n = name.trim()
@@ -181,20 +175,6 @@ private fun openVpnProfileIndex(name: String): Int {
     return n.drop(7).toIntOrNull() ?: Int.MIN_VALUE
   }
   return Int.MIN_VALUE
-}
-
-private fun copyOpenVpnUriToTempFile(context: Context, uri: Uri, displayName: String): File? {
-  val suffix = displayName.substringAfterLast('.', "ovpn").let { ".${it.take(16).ifBlank { "ovpn" }}" }
-  val tmp = runCatching { File.createTempFile("openvpn_config_", suffix, context.cacheDir) }.getOrNull() ?: return null
-  return try {
-    context.contentResolver.openInputStream(uri)?.use { input ->
-      tmp.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
-    } ?: return null
-    tmp
-  } catch (_: Throwable) {
-    runCatching { tmp.delete() }
-    null
-  }
 }
 
 @Composable
@@ -360,6 +340,7 @@ fun OpenVpnProfileScreen(
   var uploading by remember(profile) { mutableStateOf(false) }
   var tunText by remember(profile) { mutableStateOf("tun1") }
   var dnsText by remember(profile) { mutableStateOf("94.140.14.14 94.140.15.15") }
+  var endpointResolve by remember(profile) { mutableStateOf(true) }
   var configText by remember(profile) { mutableStateOf("") }
   var syncedSetting by remember(profile) { mutableStateOf(OpenVpnSettingUi()) }
   var syncedConfig by remember(profile) { mutableStateOf("") }
@@ -389,6 +370,7 @@ fun OpenVpnProfileScreen(
       syncedSetting = loaded
       tunText = setting.tun
       dnsText = setting.dns.joinToString(" ")
+      endpointResolve = setting.endpointResolve
       settingInitialized = true
 
       syncedConfig = loadedConfig
@@ -406,9 +388,10 @@ fun OpenVpnProfileScreen(
     contract = ActivityResultContracts.OpenDocument(),
     onResult = { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
-      val fileName = openVpnUriDisplayName(context, uri) ?: "client.ovpn"
       val localText = readOpenVpnTextFromUri(context, uri)
-      val tmp = copyOpenVpnUriToTempFile(context, uri, fileName)
+      val tmp = localText?.let {
+        ExternalTextImport.writeUtf8Temp(context, "openvpn_config_", ".ovpn", it).getOrNull()
+      }
       if (localText == null || tmp == null) {
         showSnack(context.getString(R.string.common_upload_failed))
         return@rememberLauncherForActivityResult
@@ -417,7 +400,7 @@ fun OpenVpnProfileScreen(
       uploading = true
       scope.launch {
         val ok = try {
-          awaitUploadOpenVpnConfig(actions, profile, fileName, tmp)
+          awaitUploadOpenVpnConfig(actions, profile, "client.ovpn", tmp)
         } finally {
           runCatching { tmp.delete() }
         }
@@ -439,14 +422,14 @@ fun OpenVpnProfileScreen(
   val configWarnings = remember(configText) { if (configBlank) emptyList() else openVpnConfigWarnings(configText) }
   val configLineCount = remember(configText) { configText.lines().count { it.isNotBlank() } }
 
-  LaunchedEffect(tunText, dnsText, settingInitialized) {
+  LaunchedEffect(tunText, dnsText, endpointResolve, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(OPENVPN_AUTOSAVE_DELAY_MS)
     val dns = parseOpenVpnDnsInput(dnsText) ?: return@LaunchedEffect
     if (!isValidOpenVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
-    val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns)
+    val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns, endpointResolve = endpointResolve)
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = actions.awaitSaveJson("$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns))
+val ok = actions.awaitSaveJson("$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns, current.endpointResolve))
     if (ok) {
       syncedSetting = current
     } else {
@@ -557,6 +540,21 @@ fun OpenVpnProfileScreen(
         )
         if (dnsText.isNotBlank() && dnsParsed == null) {
           Text(stringResource(R.string.openvpn_dns_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.openvpn_endpoint_resolve_label), fontWeight = FontWeight.SemiBold)
+            Text(
+              stringResource(R.string.openvpn_endpoint_resolve_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Switch(checked = endpointResolve, onCheckedChange = { endpointResolve = it })
         }
     }
 

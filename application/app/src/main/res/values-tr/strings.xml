@@ -52,6 +52,10 @@ Magisk’in değişiklikleri uygulayabilmesi için cihazı yeniden başlatın.</
 Uygulamayla birlikte gelen: versionCode=%2$d.
 
 En iyi uyumluluk için güncelleme önerilir. Atlayabilirsiniz, ancak bazı özellikler kullanılamayabilir ve API uyumsuzluğu hataları oluşabilir.</string>
+    <string name="mv_module_build_update_prompt_text">Yüklü modül: v%1$s (versionCode=%2$s, derleme #%3$s).
+Kullanılabilir derleme: %4$s v%5$s (versionCode=%6$s, derleme #%7$s).
+
+Modül bu uygulamayla birlikte gelen derlemeye güncellensin mi?</string>
     <string name="mv_module_version_unsupported">Yüklü modül sürümü artık desteklenmiyor (versionCode=%1$d). ZDT-D’yi kullanmaya devam etmek için modülü güncelleyin.</string>
     <string name="mv_backup_list_read_error">Yedek listesi okunamadı: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Ayarlar klasörü bulunamadı: %1$s.</string>
@@ -228,6 +232,8 @@ En iyi uyumluluk için güncelleme önerilir. Atlayabilirsiniz, ancak bazı öze
     <string name="home_power_stopped">Durduruldu</string>
     <string name="home_power_starting">Başlatılıyor…</string>
     <string name="home_power_stopping">Durduruluyor…</string>
+    <string name="home_action_start_service">Hizmeti başlat</string>
+    <string name="home_action_stop_service">Hizmeti durdur</string>
     <string name="home_service_active_hint">Hizmet çalışıyor. Durdurmak için düğmeye dokunun.</string>
     <string name="home_service_stopped_hint">Hizmet durduruldu. Başlatmak için düğmeye dokunun.</string>
     <string name="home_no_log_data">(günlük verisi yok)</string>
@@ -426,6 +432,7 @@ ZDT-D’nin doğru kurulması için metamodule düzgün çalışmalı veya tamam
     <string name="stats_unknown_cpu">Bilinmeyen CPU</string>
     <string name="stats_clamped_from">%1$s%% değerinden sınırlandı</string>
     <string name="stats_memory_title">Bellek</string>
+    <string name="stats_power_title">Pil</string>
     <string name="stats_total_fmt">Toplam: %1$s</string>
     <string name="stats_total_unknown">Toplam: —</string>
     <string name="stats_free_fmt">Boş: %1$s</string>
@@ -539,6 +546,15 @@ Geçerli ayarlar tamamen değiştirilecek ve geri yükleme sırasında hizmet du
     <string name="program_updates_title">ZDT-D modül araçları/bileşenleri güncellemeleri</string>
     <string name="program_updates_reset_cd">Sıfırla</string>
     <string name="program_updates_desc">ZDT-D modül araçlarını ve bileşenlerini doğrudan GitHub sürümlerinden günceller. Kontroller yalnızca düğmeye dokunduğunuzda yapılır.</string>
+    <string name="program_updates_bulk_title">Tüm araçları güncelle</string>
+    <string name="program_updates_bulk_desc">Tüm araçları kontrol eder ve çalışan hizmeti durdurmadan kullanılabilir güncellemeleri yükler.</string>
+    <string name="program_updates_check_all">Tümünü kontrol et</string>
+    <string name="program_updates_checking_all">Tümü kontrol ediliyor…</string>
+    <string name="program_updates_update_all">Tümünü güncelle</string>
+    <string name="program_updates_updating_all">Tümü güncelleniyor…</string>
+    <string name="program_updates_all_current">Her şey güncel</string>
+    <string name="program_updates_retry_check">Kontrolü tekrarla</string>
+    <string name="program_updates_available_count_fmt">%1$d güncelleme mevcut</string>
     <string name="program_updates_service_running_title">Hizmet çalışıyor</string>
     <string name="program_updates_service_running_desc">Kontrol/güncelleme öncesinde hizmeti durdurun. Değiştirme sırasında kuralların ve işlemlerin dosyaları kullanmaması için bu gereklidir.</string>
     <string name="program_updates_stopping">Durduruluyor…</string>
@@ -649,7 +665,7 @@ Değiştirmek için başka bir düzenleyici kullanın.</string>
     <string name="program_updates_err_service_running">Hizmet hâlâ çalışıyor. Durdurup yeniden deneyin.</string>
     <string name="program_updates_err_detect_installed">Yüklü sürüm algılanamadı</string>
     <string name="program_updates_warn_installed_unknown">Yüklü sürüm algılanamadı. Seçilen sürümü yine de yükleyebilirsiniz.</string>
-    <string name="program_updates_err_check_latest">En son sürüm kontrol edilemedi</string>
+    <string name="program_updates_err_check_latest">Bilgi alınamadı</string>
     <string name="program_updates_err_no_internet">İnternet bağlantısı yok</string>
     <string name="program_updates_err_load_releases">Sürümler yüklenemedi</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="action_edit">Düzenle</string>
     <string name="singbox_profile_settings_title">Profil ayarları</string>
     <string name="singbox_profile_settings_desc">Her sing-box profilinin kendi t2s bağlantı noktaları, uygulama listesi ve sunucu kümesi vardır.</string>
+    <string name="singbox_endpoint_resolve_label">Sunucu alan adlarını çöz</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box başlatılmadan önce outbound server alanlarındaki alan adlarını IPv4 olarak çözümle.</string>
     <string name="singbox_profile_add_server">Oluştur</string>
     <string name="singbox_profile_no_servers">Bu profil için henüz sunucu oluşturulmadı.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port ve t2s_web_port farklı olmalıdır</string>
@@ -1335,6 +1353,8 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="openvpn_dns_label">DNS sunucuları</string>
     <string name="openvpn_dns_hint">Boşluk veya virgülle ayrılmış 1–8 IPv4 DNS sunucusu girin. IPv6, alan adları ve https/tls URL’lerine izin verilmez.</string>
     <string name="openvpn_dns_invalid">Yalnızca 1–8 geçerli IPv4 adresi girin.</string>
+    <string name="openvpn_endpoint_resolve_label">Uzak alan adlarını çöz</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN başlatılmadan önce remote yönergelerindeki alan adlarını çözümle.</string>
     <string name="openvpn_config_title">OpenVPN yapılandırması</string>
     <string name="openvpn_config_desc">client.ovpn içeriğini yapıştırın veya bir dosyadan yükleyin. profile/name/client.ovpn olarak kaydedilir.</string>
     <string name="openvpn_config_empty">client.ovpn boş olamaz.</string>
@@ -2178,4 +2198,218 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="dpi_detector_share_failed">Rapor arşivi paylaşılamadı.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt tarafından kullanılan SOCKS5 sunucu havuzunu, erişilebilirlik kontrollerini ve DIRECT yedek bağlantısını yapılandırın.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">D2S ayarları yükleniyor</string>
+    <string name="d2s_loading_desc">Yapılandırılmış ayarlar daemon üzerinden okunuyor.</string>
+    <string name="d2s_load_failed_title">D2S ayarları kullanılamıyor</string>
+    <string name="d2s_load_failed_desc">Yapılandırma okunamadı. Modül kurulumunu kontrol edip yeniden deneyin.</string>
+    <string name="d2s_overview_title">D2S yönlendirmesi</string>
+    <string name="d2s_overview_desc">DNSCrypt bağlantılarını yerel SOCKS5 sunucuları arasında dağıtır ve gerektiğinde doğrudan bağlantı kullanır.</string>
+    <string name="d2s_listener_label">Yerel D2S dinleyicisi</string>
+    <string name="d2s_listener_unavailable">Yapılandırılmadı</string>
+    <string name="d2s_listener_desc">dnscrypt-proxy.toml içindeki etkin proxy girdisinden okunur.</string>
+    <string name="d2s_backends_title">SOCKS5 sunucuları</string>
+    <string name="d2s_backends_desc">Yerel SOCKS5 hizmetlerinin portlarını ekleyin. D2S yalnızca sağlık kontrolünü geçen sunucuları kullanır.</string>
+    <string name="d2s_backends_empty">SOCKS5 portu yapılandırılmadı. D2S DIRECT yedeğini kullanacak.</string>
+    <string name="d2s_backend_port_label">SOCKS5 portu</string>
+    <string name="d2s_backend_port_desc">1 ile 65535 arasında yerel port</string>
+    <string name="d2s_add_backend">Port ekle</string>
+    <string name="d2s_remove_backend">SOCKS5 portunu kaldır</string>
+    <string name="d2s_direct_title">DIRECT yedeği</string>
+    <string name="d2s_direct_desc">Sağlıklı SOCKS5 sunucusu yoksa doğrudan bağlan.</string>
+    <string name="d2s_health_title">Sağlık kontrolleri</string>
+    <string name="d2s_health_desc">D2S’nin arızaları algılama ve kurtarılan sunucuları rotasyona döndürme biçimini belirler.</string>
+    <string name="d2s_healthy_interval">Sağlıklı sunucu kontrol aralığı</string>
+    <string name="d2s_recovery_interval">Arızalı sunucu yeniden kontrol aralığı</string>
+    <string name="d2s_failure_threshold">Kullanılamaz durumundan önceki hata sayısı</string>
+    <string name="d2s_failure_threshold_desc">Ardışık hata sayısı</string>
+    <string name="d2s_runtime_cooldown">Bağlantı hatasından sonra bekleme</string>
+    <string name="d2s_seconds_desc">Saniye; sıfırdan büyük olmalı</string>
+    <string name="d2s_milliseconds_desc">Milisaniye; sıfırdan büyük olmalı</string>
+    <string name="d2s_probe_targets_label">Kontrol hedefleri</string>
+    <string name="d2s_probe_targets_desc">D2S her SOCKS5 sunucusu üzerinden bu HOST:PORT hedeflerine bağlanır.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">Hedef ekle</string>
+    <string name="d2s_remove_probe_target">Kontrol hedefini kaldır</string>
+    <string name="d2s_timeouts_title">Bağlantı zaman aşımları</string>
+    <string name="d2s_timeouts_desc">Bağlantı, SOCKS5 anlaşması, istemci istekleri ve kontroller için sınırlar.</string>
+    <string name="d2s_connect_timeout">SOCKS5 bağlantı zaman aşımı</string>
+    <string name="d2s_upstream_handshake_timeout">SOCKS5 anlaşma zaman aşımı</string>
+    <string name="d2s_backend_attempt_timeout">Sunucu denemesi zaman aşımı</string>
+    <string name="d2s_direct_connect_timeout">DIRECT bağlantı zaman aşımı</string>
+    <string name="d2s_client_handshake_timeout">İstemci anlaşma zaman aşımı</string>
+    <string name="d2s_probe_timeout">Sağlık kontrolü zaman aşımı</string>
+    <string name="d2s_performance_title">Performans ve günlük</string>
+    <string name="d2s_performance_desc">Bağlantı sınırları, TCP davranışı, günlük ayrıntısı ve düzgün kapatma.</string>
+    <string name="d2s_max_connections">Azami eşzamanlı bağlantı</string>
+    <string name="d2s_max_connections_desc">Sıfırdan büyük olmalı</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Küçük paketleri Nagle gecikmesi olmadan gönder.</string>
+    <string name="d2s_log_level">Günlük düzeyi</string>
+    <string name="d2s_log_level_desc">dnscrypt/log/d2s.log dosyasına yazılan ayrıntıyı belirler.</string>
+    <string name="d2s_shutdown_grace">Kapatma bekleme süresi</string>
+    <string name="d2s_save">D2S ayarlarını kaydet</string>
+    <string name="d2s_saving">Kaydediliyor…</string>
+    <string name="d2s_saved">D2S ayarları kaydedildi. Durdurup başlattıktan sonra uygulanır.</string>
+    <string name="d2s_error_port_required">Bir SOCKS5 portu girin.</string>
+    <string name="d2s_error_port_range">SOCKS5 portu 1 ile 65535 arasında olmalı.</string>
+    <string name="d2s_error_duplicate_port">SOCKS5 portları yinelenmemeli.</string>
+    <string name="d2s_error_listener_port">Bir sunucu D2S dinleyici portunu kullanamaz.</string>
+    <string name="d2s_error_direct_required">SOCKS5 listesi boşken DIRECT yedeği gereklidir.</string>
+    <string name="d2s_error_positive_number">Tüm sayısal değerler sıfırdan büyük olmalı.</string>
+    <string name="d2s_error_probe_required">SOCKS5 sunucuları yapılandırıldığında en az bir kontrol hedefi ekleyin.</string>
+    <string name="d2s_error_probe_target">Her kontrol hedefi HOST:PORT biçiminde olmalı.</string>
+    <string name="d2s_log_level_error">Hata</string>
+    <string name="d2s_log_level_warn">Uyarı</string>
+    <string name="d2s_log_level_info">Bilgi</string>
+    <string name="d2s_log_level_debug">Hata ayıklama</string>
+    <string name="d2s_log_level_trace">İzleme</string>
+
+    <string name="d2s_route_timeout">Toplam SOCKS5 geçiş zaman aşımı</string>
+    <string name="d2s_route_timeout_desc">Yedek yola geçmeden önce SOCKS5 sunucularını denemek için toplam azami süre (ms).</string>
+    <string name="d2s_max_backend_attempts">Azami sunucu denemesi</string>
+    <string name="d2s_max_backend_attempts_desc">Bir istemci bağlantısı için denenecek azami SOCKS5 sunucusu sayısı.</string>
+    <string name="d2s_max_connecting">Azami eşzamanlı bağlantı denemesi</string>
+    <string name="d2s_max_connecting_desc">Eşzamanlı giden bağlantıları ve SOCKS5 el sıkışmalarını sınırlar.</string>
+    <string name="d2s_idle_after">Boşta sağlık kontrollerini uyut</string>
+    <string name="d2s_idle_after_desc">İstemci trafiği olmadan kontrollerin uykuya geçeceği saniye. 0 uyku modunu kapatır.</string>
+    <string name="d2s_error_non_negative_number">Boşta kalma süresi sıfır veya daha büyük olmalıdır.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Modül ZIP uyumluluk düzeltmesi başarısız oldu: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Uyarı: Bellek içi ZIP uyumluluk düzeltmesi için uygulama belleği yetersiz kaldı: %1$s. Düşük bellek kullanan ZIP düzeltme moduna geçiliyor.</string>
+    <string name="module_zip_patch_low_memory_normalized">Düşük bellek kullanan ZIP uyumluluk düzeltmesi tamamlandı: %1$d Central Directory kaydındaki şifreleme bayrağı kaldırıldı. Devam ediliyor.</string>
+    <string name="module_zip_patch_low_memory_compatible">Düşük bellek kullanan ZIP uyumluluk denetimi tamamlandı: arşiv zaten katı yükleyicilerle uyumlu. Devam ediliyor.</string>
+    <string name="module_zip_patch_normalized">Modül ZIP’i katı yükleyici için normalleştirildi: %1$d Central Directory kaydındaki şifreleme bayrağı kaldırıldı.</string>
+    <string name="module_zip_patch_compatible">Modül ZIP’i zaten katı yükleyicilerle uyumlu.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Modül ZIP koruması Magisk yükleyicisi için korundu.</string>
+
+    <string name="vps_reboot_server">Sunucuyu yeniden başlat</string>
+    <string name="vps_reboot_confirm_title">Sunucu yeniden başlatılsın mı?</string>
+    <string name="vps_reboot_confirm_message">%1$s yeniden başlatılsın mı? Yeniden başlatma sırasında SSH bağlantısı kısa süreliğine kesilir.</string>
+    <string name="vps_rebooting">Sunucu yeniden başlatılıyor…</string>
+    <string name="vps_reboot_failed">Sunucu yeniden başlatması planlanamadı</string>
+    <string name="vps_reboot_scheduled">Yeniden başlatma planlandı</string>
+    <string name="vps_waiting_for_server">Sunucunun geri dönmesi bekleniyor…</string>
+    <string name="vps_server_online_again">Sunucu yeniden çevrimiçi</string>
+    <string name="vps_reboot_timeout">Sunucu zaman aşımından önce geri dönmedi</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI ekle</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Kimlik doğrulama</string>
+    <string name="vps_auth_password">Parola</string>
+    <string name="vps_auth_private_key">SSH anahtarı</string>
+    <string name="vps_private_key">Özel SSH anahtarı</string>
+    <string name="vps_choose_private_key_file">Özel anahtar dosyası seç</string>
+    <string name="vps_private_key_file_selected">Anahtar dosyası: %1$s</string>
+    <string name="vps_private_key_passphrase">Anahtar parolası (isteğe bağlı)</string>
+    <string name="vps_private_key_storage_hint">Özel anahtar ve parolası Android Keystore ile şifrelenir ve yalnızca uygulama verilerinde tutulur.</string>
+    <string name="vps_private_key_read_error">Seçilen özel anahtar dosyası okunamadı.</string>
+    <string name="vps_private_key_too_large">Seçilen dosya çok büyük. 512 KB’tan küçük bir SSH anahtarı seçin.</string>
+    <string name="vps_public_key_error">Bu bir genel SSH anahtarı gibi görünüyor. Kimlik doğrulama için özel anahtar gerekir.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S bağlı değil</string>
+    <string name="d2s_not_connected_desc">Bu program DNSCrypt ile kullanılmak üzere bağlı değil. Bağlamak ister misiniz?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D, 11990’dan başlayarak ilk boş yerel SOCKS5 bağlantı noktasını seçip dnscrypt-proxy.toml dosyasına kaydeder.</string>
+    <string name="d2s_connect">Bağla</string>
+    <string name="d2s_connecting">Bağlanıyor…</string>
+    <string name="d2s_connect_failed">D2S bağlanamadı</string>
+    <string name="d2s_connected_fmt">D2S bağlandı: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">Abonelikler</string>
+    <string name="mihomo_subscriptions_summary">%1$d kaynak · %2$d etkin · %3$d sunucu</string>
+    <string name="mihomo_sub_add">Abonelik ekle</string>
+    <string name="mihomo_sub_refresh_all">Tümünü yenile</string>
+    <string name="mihomo_sub_empty_title">Henüz abonelik yok</string>
+    <string name="mihomo_sub_empty_desc">Bir abonelik kaynağı ekleyin ve bir veya daha fazla Mihomo profilinde kullanın.</string>
+    <string name="mihomo_sub_saved">Abonelik kaydedildi</string>
+    <string name="mihomo_sub_delete_title">Aboneliği sil</string>
+    <string name="mihomo_sub_delete_message">“%1$s” aboneliği silinsin mi? Bu aboneliği kullanan profiller bu kaynaktan ayrılacak.</string>
+    <string name="mihomo_sub_state_disabled">Devre dışı</string>
+    <string name="mihomo_sub_state_error">Güncelleme hatası</string>
+    <string name="mihomo_sub_state_ready">Hazır</string>
+    <string name="mihomo_sub_state_waiting">İlk güncelleme bekleniyor</string>
+    <string name="mihomo_sub_servers">Sunucular</string>
+    <string name="mihomo_sub_profiles">Profiller</string>
+    <string name="mihomo_sub_interval">Aralık</string>
+    <string name="mihomo_sub_traffic_value">Trafik: %1$s</string>
+    <string name="mihomo_sub_expire_value">Bitiş: %1$s</string>
+    <string name="mihomo_sub_used_by">Profiller: %1$s</string>
+    <string name="mihomo_sub_updated_value">Güncellendi: %1$s</string>
+    <string name="mihomo_sub_refresh">Yenile</string>
+    <string name="mihomo_sub_add_title">Yeni abonelik</string>
+    <string name="mihomo_sub_edit_title">Aboneliği düzenle</string>
+    <string name="mihomo_sub_name">Ad</string>
+    <string name="mihomo_sub_url">Abonelik URL’si</string>
+    <string name="mihomo_sub_basic_auth">Basic kimlik doğrulama</string>
+    <string name="mihomo_sub_basic_auth_desc">Abonelik istekleriyle HTTP Basic kullanıcı adı ve parolasını gönder.</string>
+    <string name="mihomo_sub_username">Kullanıcı adı</string>
+    <string name="mihomo_sub_password">Parola</string>
+    <string name="mihomo_sub_hwid">HWID kimlik doğrulama</string>
+    <string name="mihomo_sub_hwid_desc">Abonelik sağlayıcısının istediği donanım kimliğini gönder.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">Bu cihazın kimliğini kullan</string>
+    <string name="mihomo_sub_device_headers">Cihaz başlıkları</string>
+    <string name="mihomo_sub_device_headers_desc">Happ uyumlu dil, Android sürümü ve cihaz modeli başlıklarını gönder.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">Happ ile uyumlu bir User-Agent otomatik oluşturmak için boş bırakın.</string>
+    <string name="mihomo_sub_locale">Dil</string>
+    <string name="mihomo_sub_os_version">Android sürümü</string>
+    <string name="mihomo_sub_device_model">Cihaz modeli</string>
+    <string name="mihomo_sub_custom_headers">Ek HTTP başlıkları</string>
+    <string name="mihomo_sub_custom_headers_hint">Her satıra bir başlık: Header-Name: değer</string>
+    <string name="mihomo_sub_remote_interval">Sağlayıcının güncelleme aralığını kullan</string>
+    <string name="mihomo_sub_remote_interval_desc">Sağlayıcı gönderirse profile-update-interval değerini kullan.</string>
+    <string name="mihomo_sub_fallback_interval">Yedek aralık, dakika</string>
+    <string name="mihomo_sub_interval_hint">15–10080 dakika; sağlayıcı bir aralık belirtmezse kullanılır.</string>
+    <string name="mihomo_tab_subscriptions">Abonelikler</string>
+    <string name="mihomo_tab_desc_subscriptions">Bu profil için yönetilen abonelik kaynaklarını seçin.</string>
+    <string name="mihomo_profile_subscriptions_title">Abonelikler</string>
+    <string name="mihomo_profile_subscriptions_desc">ZDT-D’nin çalışma zamanında bu profile ekleyeceği genel abonelikleri seçin.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d seçili ve kullanılabilir · toplam %2$d</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">Orijinal config.yaml değişmeden kalır. ZDT-D sağlayıcıları yalnızca config.runtime.yaml dosyasına ekler ve Proxy grubuna bağlar.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">Önce Mihomo abonelikleri ekranından abonelik oluşturun.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d sunucu</string>
+    <string name="mihomo_profile_subscription_disabled_hint">Bu abonelik genel olarak devre dışı.</string>
+    <string name="subscriptions_title">Abonelikler</string>
+    <string name="subscriptions_entry_desc">Paylaşılan abonelik kaynaklarını yönetin ve tek tek sunucuları içe aktarın.</string>
+    <string name="subscriptions_badge">Kitaplık</string>
+    <string name="subscription_view_servers">Sunucuları göster</string>
+    <string name="subscription_servers_count">%1$d sunucu</string>
+    <string name="subscription_missing_title">Sunucu artık abonelikte bulunmuyor</string>
+    <string name="subscription_local_copy_saved">Yerel kopya korundu.</string>
+    <string name="subscription_detach">Abonelikten ayır</string>
+    <string name="subscription_nodes_empty">Henüz ayrıştırılmış sunucu yok. Aboneliği yenileyin.</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s ile bağlantılı</string>
+    <string name="subscription_add_to_target">%1$s hedefine ekle</string>
+    <string name="subscription_unsupported_node">Bu sunucu türü henüz içe aktarmayı desteklemiyor.</string>
+    <string name="subscription_import_title">%1$s içine aktar</string>
+    <string name="subscription_choose_profile">Profil seçin</string>
+    <string name="subscription_no_target_profiles">Önce bir hedef profil oluşturun.</string>
+    <string name="subscription_local_server_name">Yerel sunucu adı</string>
+    <string name="subscription_server_name_hint">İngilizce harfler, rakamlar, alt çizgi ve kısa çizgi</string>
+    <string name="subscription_import_action">İçe aktar</string>
+    <string name="subscription_import_success">Sunucu içe aktarıldı ve aboneliğe bağlandı</string>
+    <string name="subscription_import_failed">Sunucu içe aktarılamadı</string>
+    <string name="subscription_detach_failed">Sunucu abonelikten ayrılamadı</string>
+    <string name="subscription_link_active">Aboneliğe bağlı ve otomatik olarak eşitleniyor</string>
+    <string name="subscription_manual_import">Yapılandırmayı içe aktar</string>
+    <string name="subscription_manual_import_desc">Tek bir sunucu bağlantısı, sing-box/Hysteria2 JSON veya WireGuard yapılandırması yapıştırın. Sunucu abonelik bağlantısı olmadan yerel olarak oluşturulur.</string>
+    <string name="subscription_manual_source">Bağlantı veya yapılandırma</string>
+    <string name="subscription_paste">Yapıştır</string>
+    <string name="subscription_recognize">Tanı</string>
+    <string name="subscription_manual_unrecognized">Yapılandırma tanınmadı veya yüklü arka uç tarafından desteklenmiyor.</string>
+    <string name="subscription_manual_target">Hedef: %1$s</string>
+    <string name="subscription_copy_config">Yapılandırmayı kopyala</string>
+    <string name="subscription_copy_failed">Yapılandırma kopyalama için hazırlanamadı.</string>
 </resources>

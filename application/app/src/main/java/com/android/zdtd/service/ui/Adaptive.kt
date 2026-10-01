@@ -27,6 +27,20 @@ internal fun rememberIsNarrowWidth(): Boolean {
 }
 
 @Composable
+internal fun rememberIsTabletLayout(): Boolean {
+  val configuration = LocalConfiguration.current
+  val smallestWidth = configuration.smallestScreenWidthDp
+  val width = configuration.screenWidthDp
+  val height = configuration.screenHeightDp
+  return remember(smallestWidth, width, height) {
+    // Some tablets/custom-DPI devices report smallestScreenWidthDp below 600 in
+    // landscape even though there is ample horizontal space. Setup screens are
+    // better served by the dashboard layout in that case as well.
+    smallestWidth >= 600 || (width >= 600 && width > height)
+  }
+}
+
+@Composable
 internal fun rememberIsShortHeight(): Boolean {
   val configuration = LocalConfiguration.current
   return remember(configuration.screenHeightDp) { configuration.screenHeightDp < 760 }

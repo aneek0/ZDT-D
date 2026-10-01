@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.AlertDialog
@@ -92,6 +93,7 @@ private data class MihomoSettingUi(
   val mixedPort: Int = 17890,
   val logLevel: String = "info",
   val tun2socksLogLevel: String = "info",
+  val subscriptions: List<String> = emptyList(),
 )
 
 private data class MihomoPendingChange(
@@ -121,11 +123,16 @@ private fun parseMihomoSetting(obj: JSONObject?): MihomoSettingUi {
   val data = mihomoDataObject(obj)
   val log = data?.optString("log_level", "info")?.trim()?.lowercase(Locale.ROOT).orEmpty()
   val t2sLog = data?.optString("tun2socks_loglevel", "info")?.trim()?.lowercase(Locale.ROOT).orEmpty()
+  val subsArray = data?.optJSONArray("subscriptions")
+  val subscriptions = if (subsArray == null) emptyList() else (0 until subsArray.length())
+    .mapNotNull { i -> subsArray.optString(i).trim().takeIf(String::isNotBlank) }
+    .distinct()
   return MihomoSettingUi(
     tun = data?.optString("tun", "tun20")?.trim().orEmpty().ifBlank { "tun20" },
     mixedPort = data?.optInt("mixed_port", 17890)?.takeIf { it in 1..65535 } ?: 17890,
     logLevel = log.takeIf { it in mihomoLogLevels } ?: "info",
     tun2socksLogLevel = t2sLog.takeIf { it in mihomoTun2SocksLogLevels } ?: "info",
+    subscriptions = subscriptions,
   )
 }
 
@@ -134,6 +141,7 @@ private fun buildMihomoSettingJson(setting: MihomoSettingUi): JSONObject = JSONO
   .put("mixed_port", setting.mixedPort)
   .put("log_level", setting.logLevel.trim().lowercase(Locale.ROOT))
   .put("tun2socks_loglevel", setting.tun2socksLogLevel.trim().lowercase(Locale.ROOT))
+  .put("subscriptions", org.json.JSONArray(setting.subscriptions.distinct()))
 
 private fun isValidMihomoTun(value: String): Boolean {
   val v = value.trim()
@@ -225,7 +233,7 @@ private suspend fun isLocalWebPanelPortOpen(port: Int): Boolean = withContext(Di
 }
 
 @Composable
-private fun MihomoSectionCard(
+internal fun MihomoSectionCard(
   title: String,
   desc: String? = null,
   accent: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
@@ -236,9 +244,9 @@ private fun MihomoSectionCard(
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = MaterialTheme.shapes.extraLarge,
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-    tonalElevation = 2.dp,
-    shadowElevation = 1.dp,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
     border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
   ) {
     Column(
@@ -2379,6 +2387,7 @@ fun MihomoProfileScreen(
   var pendingChanges by remember(profile) { mutableStateOf(emptyList<MihomoPendingChange>()) }
   var pendingExpanded by remember(profile) { mutableStateOf(false) }
   var mihomoWebPanelChecking by remember(profile) { mutableStateOf(false) }
+  var selectedSubscriptionIds by remember(profile) { mutableStateOf(emptySet<String>()) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -2409,6 +2418,7 @@ fun MihomoProfileScreen(
       mixedPortText = setting.mixedPort.toString()
       logLevel = setting.logLevel
       tun2socksLogLevel = setting.tun2socksLogLevel
+      selectedSubscriptionIds = setting.subscriptions.toSet()
       settingInitialized = true
       selectedApps = apps
       appCount = apps.size
@@ -2433,7 +2443,7 @@ fun MihomoProfileScreen(
   val webPanelUrl = remember(controllerPort) { controllerPort?.let { mihomoWebPanelUrl(it) } }
   val webPanelVisible = prof?.enabled == true && controllerPort != null
 
-  LaunchedEffect(tunText, mixedPortText, logLevel, tun2socksLogLevel, settingInitialized) {
+  LaunchedEffect(tunText, mixedPortText, logLevel, tun2socksLogLevel, selectedSubscriptionIds, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(MIHOMO_AUTOSAVE_DELAY_MS)
     if (!isValidMihomoTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
@@ -2446,6 +2456,7 @@ fun MihomoProfileScreen(
       mixedPort = port,
       logLevel = safeLog,
       tun2socksLogLevel = safeT2sLog,
+      subscriptions = selectedSubscriptionIds.toList().sorted(),
     )
     if (current == syncedSetting) return@LaunchedEffect
     val ok = actions.awaitSaveJson("$basePath/setting", buildMihomoSettingJson(current))
@@ -2626,6 +2637,7 @@ fun MihomoProfileScreen(
       stringResource(R.string.mihomo_tab_groups),
       stringResource(R.string.mihomo_tab_rules),
       stringResource(R.string.mihomo_tab_providers),
+      stringResource(R.string.mihomo_tab_subscriptions),
       stringResource(R.string.mihomo_tab_apps),
       stringResource(R.string.mihomo_tab_advanced),
     )
@@ -2638,6 +2650,7 @@ fun MihomoProfileScreen(
       stringResource(R.string.mihomo_tab_desc_groups),
       stringResource(R.string.mihomo_tab_desc_rules),
       stringResource(R.string.mihomo_tab_desc_providers),
+      stringResource(R.string.mihomo_tab_desc_subscriptions),
       stringResource(R.string.mihomo_tab_desc_apps),
       stringResource(R.string.mihomo_tab_desc_advanced),
     )
@@ -2757,7 +2770,12 @@ fun MihomoProfileScreen(
         yamlText = yamlText,
         onSaveYaml = { updated -> saveYaml(updated, notify = false, skipValidation = true) },
       )
-      8 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      8 -> MihomoProfileSubscriptionsTab(
+        selectedIds = selectedSubscriptionIds,
+        actions = actions,
+        onSelectionChange = { selectedSubscriptionIds = it },
+      )
+      9 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AppListPickerCard(
           title = stringResource(R.string.mihomo_apps_title),
           desc = stringResource(R.string.mihomo_apps_desc),

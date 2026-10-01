@@ -52,6 +52,10 @@
 نسخه همراه برنامه: versionCode=%2$d.
 
 برای بهترین سازگاری، به‌روزرسانی توصیه می‌شود. می‌توانید رد کنید، اما ممکن است برخی قابلیت‌ها در دسترس نباشند و خطاهای عدم تطابق API رخ دهند.</string>
+    <string name="mv_module_build_update_prompt_text">ماژول نصب‌شده: v%1$s (versionCode=%2$s، بیلد #%3$s).
+بیلد موجود: %4$s v%5$s (versionCode=%6$s، بیلد #%7$s).
+
+ماژول به بیلد همراه این برنامه به‌روزرسانی شود؟</string>
     <string name="mv_module_version_unsupported">نسخه ماژول نصب‌شده دیگر پشتیبانی نمی‌شود (versionCode=%1$d). برای ادامه استفاده از ZDT-D، ماژول را به‌روزرسانی کنید.</string>
     <string name="mv_backup_list_read_error">فهرست نسخه‌های پشتیبان خوانده نشد: %1$s</string>
     <string name="mv_backup_settings_folder_missing">پوشه تنظیمات پیدا نشد: %1$s.</string>
@@ -228,6 +232,8 @@
     <string name="home_power_stopped">متوقف</string>
     <string name="home_power_starting">در حال شروع…</string>
     <string name="home_power_stopping">در حال توقف…</string>
+    <string name="home_action_start_service">شروع سرویس</string>
+    <string name="home_action_stop_service">توقف سرویس</string>
     <string name="home_service_active_hint">سرویس در حال اجراست. برای توقف روی دکمه بزنید.</string>
     <string name="home_service_stopped_hint">سرویس متوقف است. برای شروع روی دکمه بزنید.</string>
     <string name="home_no_log_data">(داده‌ای در گزارش نیست)</string>
@@ -426,6 +432,7 @@ APatch: 10700+</string>
     <string name="stats_unknown_cpu">CPU ناشناخته</string>
     <string name="stats_clamped_from">از %1$s%% محدود شد</string>
     <string name="stats_memory_title">حافظه</string>
+    <string name="stats_power_title">باتری</string>
     <string name="stats_total_fmt">کل: %1$s</string>
     <string name="stats_total_unknown">کل: —</string>
     <string name="stats_free_fmt">آزاد: %1$s</string>
@@ -539,6 +546,15 @@ APatch: 10700+</string>
     <string name="program_updates_title">به‌روزرسانی ابزارها/اجزای ماژول ZDT-D</string>
     <string name="program_updates_reset_cd">بازنشانی</string>
     <string name="program_updates_desc">ابزارها و اجزای ماژول ZDT-D را مستقیماً از نسخه‌های GitHub به‌روزرسانی می‌کند. بررسی فقط هنگام فشردن دکمه انجام می‌شود.</string>
+    <string name="program_updates_bulk_title">به‌روزرسانی همه ابزارها</string>
+    <string name="program_updates_bulk_desc">همه ابزارها را بررسی می‌کند و به‌روزرسانی‌های موجود را بدون توقف سرویس در حال اجرا نصب می‌کند.</string>
+    <string name="program_updates_check_all">بررسی همه</string>
+    <string name="program_updates_checking_all">در حال بررسی همه…</string>
+    <string name="program_updates_update_all">به‌روزرسانی همه</string>
+    <string name="program_updates_updating_all">در حال به‌روزرسانی همه…</string>
+    <string name="program_updates_all_current">همه‌چیز به‌روز است</string>
+    <string name="program_updates_retry_check">بررسی دوباره</string>
+    <string name="program_updates_available_count_fmt">%1$d به‌روزرسانی موجود است</string>
     <string name="program_updates_service_running_title">سرویس در حال اجرا است</string>
     <string name="program_updates_service_running_desc">پیش از بررسی/به‌روزرسانی سرویس را متوقف کنید. این کار لازم است تا قوانین و فرایندها هنگام جایگزینی از فایل‌ها استفاده نکنند.</string>
     <string name="program_updates_stopping">در حال توقف…</string>
@@ -649,7 +665,7 @@ APatch: 10700+</string>
     <string name="program_updates_err_service_running">سرویس هنوز در حال اجراست. آن را متوقف کنید و دوباره امتحان کنید.</string>
     <string name="program_updates_err_detect_installed">تشخیص نسخه نصب‌شده ناموفق بود</string>
     <string name="program_updates_warn_installed_unknown">نسخه نصب‌شده قابل تشخیص نبود. همچنان می‌توانید نسخه انتخاب‌شده را نصب کنید.</string>
-    <string name="program_updates_err_check_latest">بررسی جدیدترین نسخه ناموفق بود</string>
+    <string name="program_updates_err_check_latest">دریافت اطلاعات ممکن نشد</string>
     <string name="program_updates_err_no_internet">اتصال اینترنت وجود ندارد</string>
     <string name="program_updates_err_load_releases">بارگیری نسخه‌ها ناموفق بود</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ APatch: 10700+</string>
     <string name="action_edit">ویرایش</string>
     <string name="singbox_profile_settings_title">تنظیمات پروفایل</string>
     <string name="singbox_profile_settings_desc">هر پروفایل sing-box پورت‌های t2s، فهرست برنامه‌ها و مجموعه سرورهای خاص خود را دارد.</string>
+    <string name="singbox_endpoint_resolve_label">حل دامنه‌های سرور</string>
+    <string name="singbox_endpoint_resolve_hint">نام دامنه‌های فیلد server در outboundها را پیش از اجرای sing-box به IPv4 تبدیل کن.</string>
     <string name="singbox_profile_add_server">ایجاد</string>
     <string name="singbox_profile_no_servers">هنوز هیچ سروری برای این پروفایل ایجاد نشده است.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port و t2s_web_port باید متفاوت باشند</string>
@@ -1336,6 +1354,8 @@ APatch: 10700+</string>
     <string name="openvpn_dns_label">سرورهای DNS</string>
     <string name="openvpn_dns_hint">از 1 تا 8 سرور DNS با IPv4 وارد کنید که با فاصله یا ویرگول جدا شده‌اند. IPv6، دامنه و نشانی‌های https/tls مجاز نیستند.</string>
     <string name="openvpn_dns_invalid">فقط از 1 تا 8 نشانی IPv4 معتبر وارد کنید.</string>
+    <string name="openvpn_endpoint_resolve_label">تفکیک دامنه‌های remote</string>
+    <string name="openvpn_endpoint_resolve_hint">نام دامنه‌ها را در دستورهای remote پیش از اجرای OpenVPN تفکیک کن.</string>
     <string name="openvpn_config_title">پیکربندی OpenVPN</string>
     <string name="openvpn_config_desc">محتوای client.ovpn را جای‌گذاری یا از فایل بارگذاری کنید. با نام profile/name/client.ovpn ذخیره می‌شود.</string>
     <string name="openvpn_config_empty">client.ovpn نمی‌تواند خالی باشد.</string>
@@ -2179,4 +2199,218 @@ APatch: 10700+</string>
     <string name="dpi_detector_share_failed">اشتراک‌گذاری فایل گزارش ممکن نشد.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">پیکربندی مجموعه سرورهای SOCKS5، بررسی دسترس‌پذیری و مسیر پشتیبان DIRECT برای DNSCrypt.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">در حال بارگذاری تنظیمات D2S</string>
+    <string name="d2s_loading_desc">پیکربندی ساختاریافته از سرویس خوانده می‌شود.</string>
+    <string name="d2s_load_failed_title">تنظیمات D2S در دسترس نیست</string>
+    <string name="d2s_load_failed_desc">پیکربندی خوانده نشد. نصب ماژول را بررسی و دوباره تلاش کنید.</string>
+    <string name="d2s_overview_title">مسیریابی D2S</string>
+    <string name="d2s_overview_desc">اتصال‌های DNSCrypt را بین سرورهای محلی SOCKS5 توزیع می‌کند و در صورت نیاز اتصال مستقیم به کار می‌برد.</string>
+    <string name="d2s_listener_label">شنونده محلی D2S</string>
+    <string name="d2s_listener_unavailable">پیکربندی نشده</string>
+    <string name="d2s_listener_desc">از گزینه فعال proxy در dnscrypt-proxy.toml خوانده می‌شود.</string>
+    <string name="d2s_backends_title">سرورهای SOCKS5</string>
+    <string name="d2s_backends_desc">پورت سرویس‌های محلی SOCKS5 را اضافه کنید. D2S فقط سرورهای سالم را استفاده می‌کند.</string>
+    <string name="d2s_backends_empty">هیچ پورت SOCKS5 تنظیم نشده است. D2S از DIRECT استفاده می‌کند.</string>
+    <string name="d2s_backend_port_label">پورت SOCKS5</string>
+    <string name="d2s_backend_port_desc">پورت محلی از 1 تا 65535</string>
+    <string name="d2s_add_backend">افزودن پورت</string>
+    <string name="d2s_remove_backend">حذف پورت SOCKS5</string>
+    <string name="d2s_direct_title">پشتیبان DIRECT</string>
+    <string name="d2s_direct_desc">اگر سرور سالم SOCKS5 موجود نبود، مستقیم متصل شود.</string>
+    <string name="d2s_health_title">بررسی سلامت</string>
+    <string name="d2s_health_desc">تشخیص خرابی و بازگرداندن سرورهای بازیابی‌شده به چرخه را کنترل می‌کند.</string>
+    <string name="d2s_healthy_interval">فاصله بررسی سرور سالم</string>
+    <string name="d2s_recovery_interval">فاصله بررسی دوباره سرور خراب</string>
+    <string name="d2s_failure_threshold">تعداد خطا تا وضعیت غیرفعال</string>
+    <string name="d2s_failure_threshold_desc">تعداد خطاهای پیاپی</string>
+    <string name="d2s_runtime_cooldown">مکث پس از خطای اتصال</string>
+    <string name="d2s_seconds_desc">ثانیه؛ باید بیشتر از صفر باشد</string>
+    <string name="d2s_milliseconds_desc">میلی‌ثانیه؛ باید بیشتر از صفر باشد</string>
+    <string name="d2s_probe_targets_label">هدف‌های بررسی</string>
+    <string name="d2s_probe_targets_desc">D2S از طریق هر سرور SOCKS5 به این هدف‌های HOST:PORT متصل می‌شود.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">افزودن هدف</string>
+    <string name="d2s_remove_probe_target">حذف هدف بررسی</string>
+    <string name="d2s_timeouts_title">مهلت‌های اتصال</string>
+    <string name="d2s_timeouts_desc">محدودیت اتصال، مذاکره SOCKS5، درخواست مشتری و بررسی سلامت.</string>
+    <string name="d2s_connect_timeout">مهلت اتصال SOCKS5</string>
+    <string name="d2s_upstream_handshake_timeout">مهلت دست‌دهی SOCKS5</string>
+    <string name="d2s_backend_attempt_timeout">مهلت تلاش سرور</string>
+    <string name="d2s_direct_connect_timeout">مهلت اتصال DIRECT</string>
+    <string name="d2s_client_handshake_timeout">مهلت دست‌دهی مشتری</string>
+    <string name="d2s_probe_timeout">مهلت بررسی سلامت</string>
+    <string name="d2s_performance_title">کارایی و گزارش</string>
+    <string name="d2s_performance_desc">محدودیت اتصال، رفتار TCP، جزئیات گزارش و خاموشی امن.</string>
+    <string name="d2s_max_connections">حداکثر اتصال هم‌زمان</string>
+    <string name="d2s_max_connections_desc">باید بیشتر از صفر باشد</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">بسته‌های کوچک بدون تأخیر Nagle ارسال شوند.</string>
+    <string name="d2s_log_level">سطح گزارش</string>
+    <string name="d2s_log_level_desc">جزئیات نوشته‌شده در dnscrypt/log/d2s.log را کنترل می‌کند.</string>
+    <string name="d2s_shutdown_grace">مهلت خاموشی امن</string>
+    <string name="d2s_save">ذخیره تنظیمات D2S</string>
+    <string name="d2s_saving">در حال ذخیره…</string>
+    <string name="d2s_saved">تنظیمات D2S ذخیره شد و پس از توقف و شروع اعمال می‌شود.</string>
+    <string name="d2s_error_port_required">یک پورت SOCKS5 وارد کنید.</string>
+    <string name="d2s_error_port_range">پورت SOCKS5 باید بین 1 و 65535 باشد.</string>
+    <string name="d2s_error_duplicate_port">پورت‌های SOCKS5 نباید تکراری باشند.</string>
+    <string name="d2s_error_listener_port">سرور نمی‌تواند از پورت شنونده D2S استفاده کند.</string>
+    <string name="d2s_error_direct_required">وقتی فهرست SOCKS5 خالی است، DIRECT لازم است.</string>
+    <string name="d2s_error_positive_number">همه مقادیر عددی باید بیشتر از صفر باشند.</string>
+    <string name="d2s_error_probe_required">با وجود سرور SOCKS5 حداقل یک هدف بررسی اضافه کنید.</string>
+    <string name="d2s_error_probe_target">هر هدف باید قالب HOST:PORT داشته باشد.</string>
+    <string name="d2s_log_level_error">خطا</string>
+    <string name="d2s_log_level_warn">هشدار</string>
+    <string name="d2s_log_level_info">اطلاعات</string>
+    <string name="d2s_log_level_debug">اشکال‌زدایی</string>
+    <string name="d2s_log_level_trace">ردیابی</string>
+
+    <string name="d2s_route_timeout">مهلت کلی جابه‌جایی SOCKS5</string>
+    <string name="d2s_route_timeout_desc">حداکثر زمان کل بر حسب میلی‌ثانیه برای تلاش با سرورهای SOCKS5 پیش از مسیر جایگزین.</string>
+    <string name="d2s_max_backend_attempts">حداکثر تلاش برای سرورها</string>
+    <string name="d2s_max_backend_attempts_desc">حداکثر تعداد سرورهای SOCKS5 برای یک اتصال کلاینت.</string>
+    <string name="d2s_max_connecting">حداکثر تلاش اتصال هم‌زمان</string>
+    <string name="d2s_max_connecting_desc">تعداد اتصال‌های خروجی و دست‌دهی‌های SOCKS5 هم‌زمان را محدود می‌کند.</string>
+    <string name="d2s_idle_after">خواب بررسی‌ها در حالت بیکار</string>
+    <string name="d2s_idle_after_desc">ثانیه بدون ترافیک کلاینت تا توقف بررسی‌های پس‌زمینه. 0 خواب را غیرفعال می‌کند.</string>
+    <string name="d2s_error_non_negative_number">زمان بیکاری باید صفر یا بیشتر باشد.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">اصلاح سازگاری ZIP ماژول ناموفق بود: %1$s</string>
+    <string name="module_zip_patch_oom_warning">هشدار: حافظهٔ برنامه برای اصلاح سازگاری ZIP در حافظه کافی نبود: %1$s. در حال تغییر به حالت اصلاح ZIP با مصرف کم حافظه.</string>
+    <string name="module_zip_patch_low_memory_normalized">اصلاح سازگاری ZIP با مصرف کم حافظه تکمیل شد: پرچم رمزگذاری از %1$d ورودی Central Directory پاک شد. ادامه می‌دهیم.</string>
+    <string name="module_zip_patch_low_memory_compatible">بررسی سازگاری ZIP با مصرف کم حافظه تکمیل شد: آرشیو از قبل با نصب‌کننده‌های سخت‌گیر سازگار است. ادامه می‌دهیم.</string>
+    <string name="module_zip_patch_normalized">ZIP ماژول برای نصب‌کنندهٔ سخت‌گیر نرمال‌سازی شد: پرچم رمزگذاری از %1$d ورودی Central Directory پاک شد.</string>
+    <string name="module_zip_patch_compatible">ZIP ماژول از قبل با نصب‌کننده‌های سخت‌گیر سازگار است.</string>
+    <string name="module_zip_patch_protection_kept_magisk">محافظت ZIP ماژول برای نصب‌کنندهٔ Magisk حفظ شد.</string>
+
+    <string name="vps_reboot_server">راه‌اندازی مجدد سرور</string>
+    <string name="vps_reboot_confirm_title">سرور راه‌اندازی مجدد شود؟</string>
+    <string name="vps_reboot_confirm_message">%1$s راه‌اندازی مجدد شود؟ اتصال SSH هنگام راه‌اندازی مجدد سرور برای مدت کوتاهی قطع می‌شود.</string>
+    <string name="vps_rebooting">در حال راه‌اندازی مجدد سرور…</string>
+    <string name="vps_reboot_failed">زمان‌بندی راه‌اندازی مجدد سرور ممکن نشد</string>
+    <string name="vps_reboot_scheduled">راه‌اندازی مجدد زمان‌بندی شد</string>
+    <string name="vps_waiting_for_server">در انتظار بازگشت سرور…</string>
+    <string name="vps_server_online_again">سرور دوباره آنلاین است</string>
+    <string name="vps_reboot_timeout">سرور پیش از پایان مهلت بازنگشت</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">افزودن SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">احراز هویت</string>
+    <string name="vps_auth_password">رمز عبور</string>
+    <string name="vps_auth_private_key">کلید SSH</string>
+    <string name="vps_private_key">کلید خصوصی SSH</string>
+    <string name="vps_choose_private_key_file">انتخاب فایل کلید خصوصی</string>
+    <string name="vps_private_key_file_selected">فایل کلید: %1$s</string>
+    <string name="vps_private_key_passphrase">عبارت عبور کلید (اختیاری)</string>
+    <string name="vps_private_key_storage_hint">کلید خصوصی و عبارت عبور آن با Android Keystore رمزگذاری می‌شوند و فقط در داده‌های برنامه باقی می‌مانند.</string>
+    <string name="vps_private_key_read_error">خواندن فایل کلید خصوصی انتخاب‌شده ممکن نبود.</string>
+    <string name="vps_private_key_too_large">فایل انتخاب‌شده بیش از حد بزرگ است. یک کلید SSH کوچک‌تر از 512 کیلوبایت انتخاب کنید.</string>
+    <string name="vps_public_key_error">این مورد شبیه کلید عمومی SSH است. برای احراز هویت کلید خصوصی لازم است.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S متصل نیست</string>
+    <string name="d2s_not_connected_desc">این برنامه برای استفاده با DNSCrypt متصل نشده است. آیا می‌خواهید آن را متصل کنید؟</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D اولین درگاه محلی SOCKS5 آزاد را از 11990 به بعد انتخاب کرده و آن را در dnscrypt-proxy.toml ذخیره می‌کند.</string>
+    <string name="d2s_connect">اتصال</string>
+    <string name="d2s_connecting">در حال اتصال…</string>
+    <string name="d2s_connect_failed">اتصال D2S ناموفق بود</string>
+    <string name="d2s_connected_fmt">D2S متصل شد: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">اشتراک‌ها</string>
+    <string name="mihomo_subscriptions_summary">%1$d منبع · %2$d فعال · %3$d سرور</string>
+    <string name="mihomo_sub_add">افزودن اشتراک</string>
+    <string name="mihomo_sub_refresh_all">به‌روزرسانی همه</string>
+    <string name="mihomo_sub_empty_title">هنوز اشتراکی وجود ندارد</string>
+    <string name="mihomo_sub_empty_desc">یک منبع اشتراک اضافه کنید و آن را در یک یا چند پروفایل Mihomo استفاده کنید.</string>
+    <string name="mihomo_sub_saved">اشتراک ذخیره شد</string>
+    <string name="mihomo_sub_delete_title">حذف اشتراک</string>
+    <string name="mihomo_sub_delete_message">اشتراک «%1$s» حذف شود؟ پروفایل‌هایی که از آن استفاده می‌کنند از این منبع جدا خواهند شد.</string>
+    <string name="mihomo_sub_state_disabled">غیرفعال</string>
+    <string name="mihomo_sub_state_error">خطای به‌روزرسانی</string>
+    <string name="mihomo_sub_state_ready">آماده</string>
+    <string name="mihomo_sub_state_waiting">در انتظار اولین به‌روزرسانی</string>
+    <string name="mihomo_sub_servers">سرورها</string>
+    <string name="mihomo_sub_profiles">پروفایل‌ها</string>
+    <string name="mihomo_sub_interval">بازه</string>
+    <string name="mihomo_sub_traffic_value">ترافیک: %1$s</string>
+    <string name="mihomo_sub_expire_value">انقضا: %1$s</string>
+    <string name="mihomo_sub_used_by">پروفایل‌ها: %1$s</string>
+    <string name="mihomo_sub_updated_value">به‌روزرسانی: %1$s</string>
+    <string name="mihomo_sub_refresh">به‌روزرسانی</string>
+    <string name="mihomo_sub_add_title">اشتراک جدید</string>
+    <string name="mihomo_sub_edit_title">ویرایش اشتراک</string>
+    <string name="mihomo_sub_name">نام</string>
+    <string name="mihomo_sub_url">URL اشتراک</string>
+    <string name="mihomo_sub_basic_auth">احراز هویت Basic</string>
+    <string name="mihomo_sub_basic_auth_desc">نام کاربری و رمز عبور HTTP Basic را همراه درخواست‌های اشتراک ارسال کنید.</string>
+    <string name="mihomo_sub_username">نام کاربری</string>
+    <string name="mihomo_sub_password">رمز عبور</string>
+    <string name="mihomo_sub_hwid">احراز هویت HWID</string>
+    <string name="mihomo_sub_hwid_desc">شناسه سخت‌افزاری موردنیاز ارائه‌دهنده اشتراک را ارسال کنید.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">استفاده از شناسه این دستگاه</string>
+    <string name="mihomo_sub_device_headers">هدرهای دستگاه</string>
+    <string name="mihomo_sub_device_headers_desc">هدرهای سازگار با Happ شامل زبان، نسخه Android و مدل دستگاه را ارسال کنید.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">برای ساخت خودکار User-Agent سازگار با Happ، این قسمت را خالی بگذارید.</string>
+    <string name="mihomo_sub_locale">زبان</string>
+    <string name="mihomo_sub_os_version">نسخه Android</string>
+    <string name="mihomo_sub_device_model">مدل دستگاه</string>
+    <string name="mihomo_sub_custom_headers">هدرهای HTTP اضافی</string>
+    <string name="mihomo_sub_custom_headers_hint">در هر خط یک هدر: Header-Name: مقدار</string>
+    <string name="mihomo_sub_remote_interval">استفاده از بازه به‌روزرسانی ارائه‌دهنده</string>
+    <string name="mihomo_sub_remote_interval_desc">اگر ارائه‌دهنده profile-update-interval را ارسال کرد، از آن استفاده شود.</string>
+    <string name="mihomo_sub_fallback_interval">بازه جایگزین، دقیقه</string>
+    <string name="mihomo_sub_interval_hint">۱۵ تا ۱۰۰۸۰ دقیقه؛ وقتی ارائه‌دهنده بازه‌ای مشخص نکند استفاده می‌شود.</string>
+    <string name="mihomo_tab_subscriptions">اشتراک‌ها</string>
+    <string name="mihomo_tab_desc_subscriptions">منابع اشتراک مدیریت‌شده را برای این پروفایل انتخاب کنید.</string>
+    <string name="mihomo_profile_subscriptions_title">اشتراک‌ها</string>
+    <string name="mihomo_profile_subscriptions_desc">اشتراک‌های عمومی را که ZDT-D هنگام اجرا به این پروفایل اضافه می‌کند انتخاب کنید.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d انتخاب‌شده و در دسترس · %2$d در مجموع</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">فایل اصلی config.yaml بدون تغییر می‌ماند. ZDT-D ارائه‌دهنده‌ها را فقط به config.runtime.yaml اضافه و به گروه Proxy متصل می‌کند.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">ابتدا از صفحه اشتراک‌های Mihomo یک اشتراک ایجاد کنید.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d سرور</string>
+    <string name="mihomo_profile_subscription_disabled_hint">این اشتراک به‌صورت سراسری غیرفعال است.</string>
+    <string name="subscriptions_title">اشتراک‌ها</string>
+    <string name="subscriptions_entry_desc">مدیریت منابع مشترک و وارد کردن سرورهای جداگانه.</string>
+    <string name="subscriptions_badge">کتابخانه</string>
+    <string name="subscription_view_servers">مشاهده سرورها</string>
+    <string name="subscription_servers_count">%1$d سرور</string>
+    <string name="subscription_missing_title">سرور دیگر در اشتراک وجود ندارد</string>
+    <string name="subscription_local_copy_saved">نسخه محلی نگه داشته شد.</string>
+    <string name="subscription_detach">جدا کردن از اشتراک</string>
+    <string name="subscription_nodes_empty">هنوز سروری تجزیه نشده است. اشتراک را تازه‌سازی کنید.</string>
+    <string name="subscription_linked_to">متصل به %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">افزودن به %1$s</string>
+    <string name="subscription_unsupported_node">این نوع سرور هنوز برای وارد کردن پشتیبانی نمی‌شود.</string>
+    <string name="subscription_import_title">وارد کردن به %1$s</string>
+    <string name="subscription_choose_profile">یک نمایه انتخاب کنید</string>
+    <string name="subscription_no_target_profiles">ابتدا یک نمایه مقصد بسازید.</string>
+    <string name="subscription_local_server_name">نام سرور محلی</string>
+    <string name="subscription_server_name_hint">حروف انگلیسی، عدد، زیرخط و خط تیره</string>
+    <string name="subscription_import_action">وارد کردن</string>
+    <string name="subscription_import_success">سرور وارد و به اشتراک متصل شد</string>
+    <string name="subscription_import_failed">وارد کردن سرور ممکن نشد</string>
+    <string name="subscription_detach_failed">جدا کردن سرور ممکن نشد</string>
+    <string name="subscription_link_active">به اشتراک متصل است و خودکار همگام می‌شود</string>
+    <string name="subscription_manual_import">وارد کردن پیکربندی</string>
+    <string name="subscription_manual_import_desc">پیوند یک سرور، JSON مربوط به sing-box/Hysteria2 یا پیکربندی WireGuard را جای‌گذاری کنید. سرور بدون پیوند اشتراک به‌صورت محلی ساخته می‌شود.</string>
+    <string name="subscription_manual_source">پیوند یا پیکربندی</string>
+    <string name="subscription_paste">جای‌گذاری</string>
+    <string name="subscription_recognize">شناسایی</string>
+    <string name="subscription_manual_unrecognized">پیکربندی شناسایی نشد یا پشتیبان نصب‌شده از آن پشتیبانی نمی‌کند.</string>
+    <string name="subscription_manual_target">مقصد: %1$s</string>
+    <string name="subscription_copy_config">کپی پیکربندی</string>
+    <string name="subscription_copy_failed">آماده‌سازی پیکربندی برای کپی ممکن نشد.</string>
 </resources>

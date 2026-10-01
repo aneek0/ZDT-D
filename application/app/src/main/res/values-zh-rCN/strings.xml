@@ -52,6 +52,10 @@
 应用内置版本：versionCode=%2$d。
 
 建议更新以获得最佳兼容性。你可以跳过，但部分功能可能不可用，并且可能出现 API 不匹配错误。</string>
+    <string name="mv_module_build_update_prompt_text">已安装模块：v%1$s（versionCode=%2$s，构建 #%3$s）。
+可用构建：%4$s v%5$s（versionCode=%6$s，构建 #%7$s）。
+
+将模块更新到此应用内置的构建吗？</string>
     <string name="mv_module_version_unsupported">已安装的模块版本不再受支持（versionCode=%1$d）。要继续使用 ZDT-D，请更新模块。</string>
     <string name="mv_backup_list_read_error">无法读取备份列表：%1$s</string>
     <string name="mv_backup_settings_folder_missing">未找到设置文件夹：%1$s。</string>
@@ -228,6 +232,8 @@
     <string name="home_power_stopped">已停止</string>
     <string name="home_power_starting">正在启动…</string>
     <string name="home_power_stopping">正在停止…</string>
+    <string name="home_action_start_service">启动服务</string>
+    <string name="home_action_stop_service">停止服务</string>
     <string name="home_service_active_hint">服务正在运行。点按按钮即可停止。</string>
     <string name="home_service_stopped_hint">服务已停止。点按按钮即可启动。</string>
     <string name="home_no_log_data">（无日志数据）</string>
@@ -426,6 +432,7 @@ APatch：10700+</string>
     <string name="stats_unknown_cpu">未知 CPU</string>
     <string name="stats_clamped_from">已从 %1$s%% 限制</string>
     <string name="stats_memory_title">内存</string>
+    <string name="stats_power_title">电池</string>
     <string name="stats_total_fmt">总计：%1$s</string>
     <string name="stats_total_unknown">总计：—</string>
     <string name="stats_free_fmt">可用：%1$s</string>
@@ -539,6 +546,15 @@ APatch：10700+</string>
     <string name="program_updates_title">ZDT-D 模块工具/组件更新</string>
     <string name="program_updates_reset_cd">重置</string>
     <string name="program_updates_desc">直接从 GitHub 版本更新 ZDT-D 模块工具和组件。仅在点按按钮时执行检查。</string>
+    <string name="program_updates_bulk_title">更新所有工具</string>
+    <string name="program_updates_bulk_desc">检查所有工具并安装可用更新，无需停止正在运行的服务。</string>
+    <string name="program_updates_check_all">检查全部</string>
+    <string name="program_updates_checking_all">正在检查全部…</string>
+    <string name="program_updates_update_all">全部更新</string>
+    <string name="program_updates_updating_all">正在全部更新…</string>
+    <string name="program_updates_all_current">全部为最新版本</string>
+    <string name="program_updates_retry_check">重新检查</string>
+    <string name="program_updates_available_count_fmt">有 %1$d 个更新可用</string>
     <string name="program_updates_service_running_title">服务正在运行</string>
     <string name="program_updates_service_running_desc">检查/更新前请停止服务。这是为了防止规则和进程在替换期间使用这些文件。</string>
     <string name="program_updates_stopping">正在停止…</string>
@@ -649,7 +665,7 @@ APatch：10700+</string>
     <string name="program_updates_err_service_running">服务仍在运行。请停止后重试。</string>
     <string name="program_updates_err_detect_installed">无法检测已安装版本</string>
     <string name="program_updates_warn_installed_unknown">无法检测已安装版本。您仍可安装所选版本。</string>
-    <string name="program_updates_err_check_latest">检查最新版本失败</string>
+    <string name="program_updates_err_check_latest">无法获取信息</string>
     <string name="program_updates_err_no_internet">无互联网连接</string>
     <string name="program_updates_err_load_releases">加载版本失败</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ APatch：10700+</string>
     <string name="action_edit">编辑</string>
     <string name="singbox_profile_settings_title">配置文件设置</string>
     <string name="singbox_profile_settings_desc">每个 sing-box 配置文件都有自己的 t2s 端口、应用列表和服务器集。</string>
+    <string name="singbox_endpoint_resolve_label">解析服务器域名</string>
+    <string name="singbox_endpoint_resolve_hint">在启动 sing-box 前，将 outbound 的 server 字段中的域名解析为 IPv4。</string>
     <string name="singbox_profile_add_server">创建</string>
     <string name="singbox_profile_no_servers">尚未为此配置文件创建服务器。</string>
     <string name="singbox_profile_ports_must_differ">t2s_port 和 t2s_web_port 必须不同</string>
@@ -1335,6 +1353,8 @@ APatch：10700+</string>
     <string name="openvpn_dns_label">DNS 服务器</string>
     <string name="openvpn_dns_hint">输入 1 到 8 个 IPv4 DNS 服务器，以空格或逗号分隔。不允许 IPv6、域名和 https/tls URL。</string>
     <string name="openvpn_dns_invalid">仅输入 1 到 8 个有效的 IPv4 地址。</string>
+    <string name="openvpn_endpoint_resolve_label">解析 remote 域名</string>
+    <string name="openvpn_endpoint_resolve_hint">在启动 OpenVPN 前解析 remote 指令中的域名。</string>
     <string name="openvpn_config_title">OpenVPN 配置</string>
     <string name="openvpn_config_desc">粘贴 client.ovpn 内容或从文件加载。它将保存为 profile/name/client.ovpn。</string>
     <string name="openvpn_config_empty">client.ovpn 不能为空。</string>
@@ -2178,4 +2198,218 @@ APatch：10700+</string>
     <string name="dpi_detector_share_failed">无法分享报告压缩包。</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">配置 DNSCrypt 使用的 SOCKS5 服务器池、可用性检查和 DIRECT 直连回退。</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">正在加载 D2S 设置</string>
+    <string name="d2s_loading_desc">正在从守护进程读取结构化配置。</string>
+    <string name="d2s_load_failed_title">D2S 设置不可用</string>
+    <string name="d2s_load_failed_desc">无法读取配置。请检查模块安装后重试。</string>
+    <string name="d2s_overview_title">D2S 路由</string>
+    <string name="d2s_overview_desc">在本地 SOCKS5 服务器之间分配 DNSCrypt 连接，并在需要时使用直连。</string>
+    <string name="d2s_listener_label">本地 D2S 监听地址</string>
+    <string name="d2s_listener_unavailable">未配置</string>
+    <string name="d2s_listener_desc">从 dnscrypt-proxy.toml 中启用的 proxy 项读取。</string>
+    <string name="d2s_backends_title">SOCKS5 服务器</string>
+    <string name="d2s_backends_desc">添加本地 SOCKS5 服务端口。D2S 仅使用通过健康检查的服务器。</string>
+    <string name="d2s_backends_empty">未配置 SOCKS5 端口。D2S 将使用 DIRECT 回退。</string>
+    <string name="d2s_backend_port_label">SOCKS5 端口</string>
+    <string name="d2s_backend_port_desc">1 到 65535 的本地端口</string>
+    <string name="d2s_add_backend">添加端口</string>
+    <string name="d2s_remove_backend">删除 SOCKS5 端口</string>
+    <string name="d2s_direct_title">DIRECT 回退</string>
+    <string name="d2s_direct_desc">没有可用的 SOCKS5 服务器时直接连接。</string>
+    <string name="d2s_health_title">健康检查</string>
+    <string name="d2s_health_desc">控制 D2S 如何检测故障并将恢复的服务器重新加入轮询。</string>
+    <string name="d2s_healthy_interval">正常服务器检查间隔</string>
+    <string name="d2s_recovery_interval">故障服务器复查间隔</string>
+    <string name="d2s_failure_threshold">标记不可用前的失败次数</string>
+    <string name="d2s_failure_threshold_desc">连续失败次数</string>
+    <string name="d2s_runtime_cooldown">连接失败后的冷却时间</string>
+    <string name="d2s_seconds_desc">秒；必须大于零</string>
+    <string name="d2s_milliseconds_desc">毫秒；必须大于零</string>
+    <string name="d2s_probe_targets_label">检查目标</string>
+    <string name="d2s_probe_targets_desc">D2S 通过每个 SOCKS5 服务器连接这些 HOST:PORT 目标。</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">添加目标</string>
+    <string name="d2s_remove_probe_target">删除检查目标</string>
+    <string name="d2s_timeouts_title">连接超时</string>
+    <string name="d2s_timeouts_desc">连接、SOCKS5 协商、客户端请求和健康检查的限制。</string>
+    <string name="d2s_connect_timeout">SOCKS5 连接超时</string>
+    <string name="d2s_upstream_handshake_timeout">SOCKS5 握手超时</string>
+    <string name="d2s_backend_attempt_timeout">服务器尝试超时</string>
+    <string name="d2s_direct_connect_timeout">DIRECT 连接超时</string>
+    <string name="d2s_client_handshake_timeout">客户端握手超时</string>
+    <string name="d2s_probe_timeout">健康检查超时</string>
+    <string name="d2s_performance_title">性能与日志</string>
+    <string name="d2s_performance_desc">连接限制、TCP 行为、日志详细程度和优雅关闭。</string>
+    <string name="d2s_max_connections">最大并发连接数</string>
+    <string name="d2s_max_connections_desc">必须大于零</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">发送小数据包时不使用 Nagle 延迟。</string>
+    <string name="d2s_log_level">日志级别</string>
+    <string name="d2s_log_level_desc">控制写入 dnscrypt/log/d2s.log 的详细程度。</string>
+    <string name="d2s_shutdown_grace">关闭宽限时间</string>
+    <string name="d2s_save">保存 D2S 设置</string>
+    <string name="d2s_saving">正在保存…</string>
+    <string name="d2s_saved">D2S 设置已保存，将在停止并启动后应用。</string>
+    <string name="d2s_error_port_required">请输入 SOCKS5 端口。</string>
+    <string name="d2s_error_port_range">SOCKS5 端口必须在 1 到 65535 之间。</string>
+    <string name="d2s_error_duplicate_port">SOCKS5 端口不能重复。</string>
+    <string name="d2s_error_listener_port">服务器不能使用 D2S 监听端口。</string>
+    <string name="d2s_error_direct_required">SOCKS5 列表为空时必须启用 DIRECT 回退。</string>
+    <string name="d2s_error_positive_number">所有数值都必须大于零。</string>
+    <string name="d2s_error_probe_required">配置 SOCKS5 服务器后至少添加一个检查目标。</string>
+    <string name="d2s_error_probe_target">每个检查目标必须使用 HOST:PORT 格式。</string>
+    <string name="d2s_log_level_error">错误</string>
+    <string name="d2s_log_level_warn">警告</string>
+    <string name="d2s_log_level_info">信息</string>
+    <string name="d2s_log_level_debug">调试</string>
+    <string name="d2s_log_level_trace">跟踪</string>
+
+    <string name="d2s_route_timeout">SOCKS5 故障切换总超时</string>
+    <string name="d2s_route_timeout_desc">回退前尝试 SOCKS5 后端所允许的最大总时间（毫秒）。</string>
+    <string name="d2s_max_backend_attempts">最大后端尝试次数</string>
+    <string name="d2s_max_backend_attempts_desc">单个客户端连接最多尝试的 SOCKS5 服务器数量。</string>
+    <string name="d2s_max_connecting">最大并发连接尝试</string>
+    <string name="d2s_max_connecting_desc">限制同时进行的出站连接和 SOCKS5 握手数量。</string>
+    <string name="d2s_idle_after">空闲时暂停健康检查</string>
+    <string name="d2s_idle_after_desc">无客户端流量多少秒后暂停后台检查。0 表示禁用休眠。</string>
+    <string name="d2s_error_non_negative_number">空闲时间必须为 0 或更大。</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">模块 ZIP 兼容性修补失败：%1$s</string>
+    <string name="module_zip_patch_oom_warning">警告：内存中的 ZIP 兼容性修补耗尽了应用可用内存：%1$s。正在切换到低内存 ZIP 修补模式。</string>
+    <string name="module_zip_patch_low_memory_normalized">低内存 ZIP 兼容性修补已完成：已清除 %1$d 个 Central Directory 条目的加密标志。继续执行。</string>
+    <string name="module_zip_patch_low_memory_compatible">低内存 ZIP 兼容性检查已完成：归档已兼容严格的安装程序。继续执行。</string>
+    <string name="module_zip_patch_normalized">模块 ZIP 已针对严格安装程序完成规范化：已清除 %1$d 个 Central Directory 条目的加密标志。</string>
+    <string name="module_zip_patch_compatible">模块 ZIP 已兼容严格的安装程序。</string>
+    <string name="module_zip_patch_protection_kept_magisk">已为 Magisk 安装程序保留模块 ZIP 保护。</string>
+
+    <string name="vps_reboot_server">重启服务器</string>
+    <string name="vps_reboot_confirm_title">重启服务器？</string>
+    <string name="vps_reboot_confirm_message">要重启 %1$s 吗？服务器重启期间 SSH 连接会短暂中断。</string>
+    <string name="vps_rebooting">正在重启服务器…</string>
+    <string name="vps_reboot_failed">无法安排服务器重启</string>
+    <string name="vps_reboot_scheduled">已安排重启</string>
+    <string name="vps_waiting_for_server">正在等待服务器恢复…</string>
+    <string name="vps_server_online_again">服务器已重新上线</string>
+    <string name="vps_reboot_timeout">服务器未在超时前恢复</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">添加 SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">身份验证</string>
+    <string name="vps_auth_password">密码</string>
+    <string name="vps_auth_private_key">SSH 密钥</string>
+    <string name="vps_private_key">SSH 私钥</string>
+    <string name="vps_choose_private_key_file">选择私钥文件</string>
+    <string name="vps_private_key_file_selected">密钥文件：%1$s</string>
+    <string name="vps_private_key_passphrase">密钥口令（可选）</string>
+    <string name="vps_private_key_storage_hint">私钥和密钥口令使用 Android Keystore 加密，并且仅保存在应用数据中。</string>
+    <string name="vps_private_key_read_error">无法读取所选私钥文件。</string>
+    <string name="vps_private_key_too_large">所选文件过大。请选择小于 512 KB 的 SSH 密钥。</string>
+    <string name="vps_public_key_error">这看起来是 SSH 公钥。身份验证需要私钥。</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S 未连接</string>
+    <string name="d2s_not_connected_desc">此程序尚未连接以供 DNSCrypt 使用。是否要连接？</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D 将从 11990 开始选择第一个可用的本地 SOCKS5 端口，并保存到 dnscrypt-proxy.toml。</string>
+    <string name="d2s_connect">连接</string>
+    <string name="d2s_connecting">正在连接…</string>
+    <string name="d2s_connect_failed">无法连接 D2S</string>
+    <string name="d2s_connected_fmt">D2S 已连接：%1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">订阅</string>
+    <string name="mihomo_subscriptions_summary">%1$d 个来源 · %2$d 个已启用 · %3$d 个服务器</string>
+    <string name="mihomo_sub_add">添加订阅</string>
+    <string name="mihomo_sub_refresh_all">全部更新</string>
+    <string name="mihomo_sub_empty_title">暂无订阅</string>
+    <string name="mihomo_sub_empty_desc">添加订阅来源，并在一个或多个 Mihomo 配置中使用。</string>
+    <string name="mihomo_sub_saved">订阅已保存</string>
+    <string name="mihomo_sub_delete_title">删除订阅</string>
+    <string name="mihomo_sub_delete_message">删除订阅“%1$s”吗？正在使用它的配置将与此来源断开关联。</string>
+    <string name="mihomo_sub_state_disabled">已禁用</string>
+    <string name="mihomo_sub_state_error">更新错误</string>
+    <string name="mihomo_sub_state_ready">就绪</string>
+    <string name="mihomo_sub_state_waiting">等待首次更新</string>
+    <string name="mihomo_sub_servers">服务器</string>
+    <string name="mihomo_sub_profiles">配置文件</string>
+    <string name="mihomo_sub_interval">间隔</string>
+    <string name="mihomo_sub_traffic_value">流量：%1$s</string>
+    <string name="mihomo_sub_expire_value">到期：%1$s</string>
+    <string name="mihomo_sub_used_by">配置：%1$s</string>
+    <string name="mihomo_sub_updated_value">更新时间：%1$s</string>
+    <string name="mihomo_sub_refresh">更新</string>
+    <string name="mihomo_sub_add_title">新建订阅</string>
+    <string name="mihomo_sub_edit_title">编辑订阅</string>
+    <string name="mihomo_sub_name">名称</string>
+    <string name="mihomo_sub_url">订阅 URL</string>
+    <string name="mihomo_sub_basic_auth">Basic 身份验证</string>
+    <string name="mihomo_sub_basic_auth_desc">在订阅请求中发送 HTTP Basic 用户名和密码。</string>
+    <string name="mihomo_sub_username">用户名</string>
+    <string name="mihomo_sub_password">密码</string>
+    <string name="mihomo_sub_hwid">HWID 身份验证</string>
+    <string name="mihomo_sub_hwid_desc">发送订阅提供商要求的硬件标识符。</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">使用此设备 ID</string>
+    <string name="mihomo_sub_device_headers">设备请求头</string>
+    <string name="mihomo_sub_device_headers_desc">发送兼容 Happ 的语言、Android 版本和设备型号请求头。</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">留空可自动生成与 Happ 兼容的 User-Agent。</string>
+    <string name="mihomo_sub_locale">语言区域</string>
+    <string name="mihomo_sub_os_version">Android 版本</string>
+    <string name="mihomo_sub_device_model">设备型号</string>
+    <string name="mihomo_sub_custom_headers">其他 HTTP 请求头</string>
+    <string name="mihomo_sub_custom_headers_hint">每行一个请求头：Header-Name: 值</string>
+    <string name="mihomo_sub_remote_interval">使用提供商的更新间隔</string>
+    <string name="mihomo_sub_remote_interval_desc">提供商发送 profile-update-interval 时使用该值。</string>
+    <string name="mihomo_sub_fallback_interval">备用间隔（分钟）</string>
+    <string name="mihomo_sub_interval_hint">15–10080 分钟；提供商未指定间隔时使用。</string>
+    <string name="mihomo_tab_subscriptions">订阅</string>
+    <string name="mihomo_tab_desc_subscriptions">为此配置选择由 ZDT-D 管理的订阅来源。</string>
+    <string name="mihomo_profile_subscriptions_title">订阅</string>
+    <string name="mihomo_profile_subscriptions_desc">选择 ZDT-D 在运行时注入此配置的全局订阅。</string>
+    <string name="mihomo_profile_subscriptions_selected">已选择且可用 %1$d 个 · 共 %2$d 个</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">原始 config.yaml 保持不变。ZDT-D 仅向 config.runtime.yaml 添加 provider，并将其连接到 Proxy 组。</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">请先在 Mihomo 的订阅页面创建订阅。</string>
+    <string name="mihomo_profile_subscription_servers">%1$d 个服务器</string>
+    <string name="mihomo_profile_subscription_disabled_hint">此订阅已在全局禁用。</string>
+    <string name="subscriptions_title">订阅</string>
+    <string name="subscriptions_entry_desc">管理共享订阅源并导入单个服务器。</string>
+    <string name="subscriptions_badge">订阅库</string>
+    <string name="subscription_view_servers">查看服务器</string>
+    <string name="subscription_servers_count">%1$d 个服务器</string>
+    <string name="subscription_missing_title">服务器已不在订阅中</string>
+    <string name="subscription_local_copy_saved">本地副本已保留。</string>
+    <string name="subscription_detach">从订阅解绑</string>
+    <string name="subscription_nodes_empty">暂无已解析的服务器，请刷新订阅。</string>
+    <string name="subscription_linked_to">已连接到 %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">添加到 %1$s</string>
+    <string name="subscription_unsupported_node">暂不支持导入此服务器类型。</string>
+    <string name="subscription_import_title">导入到 %1$s</string>
+    <string name="subscription_choose_profile">选择配置文件</string>
+    <string name="subscription_no_target_profiles">请先创建目标配置文件。</string>
+    <string name="subscription_local_server_name">本地服务器名称</string>
+    <string name="subscription_server_name_hint">英文字母、数字、下划线和连字符</string>
+    <string name="subscription_import_action">导入</string>
+    <string name="subscription_import_success">服务器已导入并连接到订阅</string>
+    <string name="subscription_import_failed">无法导入服务器</string>
+    <string name="subscription_detach_failed">无法解绑服务器</string>
+    <string name="subscription_link_active">已连接到订阅并自动同步</string>
+    <string name="subscription_manual_import">导入配置</string>
+    <string name="subscription_manual_import_desc">粘贴单个服务器链接、sing-box/Hysteria2 JSON 或 WireGuard 配置。服务器将在本地创建，不关联订阅。</string>
+    <string name="subscription_manual_source">链接或配置</string>
+    <string name="subscription_paste">粘贴</string>
+    <string name="subscription_recognize">识别</string>
+    <string name="subscription_manual_unrecognized">无法识别该配置，或已安装的后端不支持它。</string>
+    <string name="subscription_manual_target">目标：%1$s</string>
+    <string name="subscription_copy_config">复制配置</string>
+    <string name="subscription_copy_failed">无法准备要复制的配置。</string>
 </resources>

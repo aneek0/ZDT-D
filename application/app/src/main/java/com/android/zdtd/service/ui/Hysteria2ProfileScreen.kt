@@ -155,6 +155,7 @@ private data class Hysteria2ServerUi(
   val enabled: Boolean,
   val port: Int?,
   val logLevel: String = "info",
+  val subscriptionLink: SubscriptionServerLinkUi? = null,
 )
 
 
@@ -402,6 +403,7 @@ private fun parseHysteria2ServersUi(obj: JSONObject?): List<Hysteria2ServerUi> {
           enabled = setting?.optBoolean("enabled", false) ?: false,
           port = setting?.optInt("socks5_port", 0)?.takeIf { it in 1..65535 },
           logLevel = setting?.optString("log_level", "info")?.takeIf { it.isNotBlank() } ?: "info",
+          subscriptionLink = parseSubscriptionServerLinkUi(item.optJSONObject("subscription_link")),
         )
       )
     }
@@ -1600,6 +1602,14 @@ private fun Hysteria2ServerCard(
           Switch(checked = enabled, onCheckedChange = { enabled = it })
         }
 
+        server.subscriptionLink?.let { link ->
+          SubscriptionServerLinkCard(link = link, onDetach = {
+            actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+              if (ok) onRefresh() else showSnack(context.getString(R.string.subscription_detach_failed))
+            }
+          })
+        }
+
         AnimatedVisibility(
           visible = showPort,
           enter = fadeIn() + expandVertically(),
@@ -1702,7 +1712,7 @@ private fun Hysteria2CreateServerDialog(
     Surface(
       modifier = Modifier.fillMaxWidth(0.92f),
       shape = RoundedCornerShape(28.dp),
-      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      color = MaterialTheme.colorScheme.surface,
       contentColor = MaterialTheme.colorScheme.onSurface,
       border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.34f)),
     ) {
@@ -1880,7 +1890,7 @@ private fun Hysteria2ServerSettingsDialog(
         .heightIn(max = maxDialogHeight)
         .navigationBarsPadding(),
       shape = RoundedCornerShape(28.dp),
-      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      color = MaterialTheme.colorScheme.surface,
       contentColor = MaterialTheme.colorScheme.onSurface,
       border = BorderStroke(1.dp, Color(0xFFFFBC00).copy(alpha = 0.34f)),
     ) {

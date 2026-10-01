@@ -398,27 +398,56 @@ fun getRuntimeApplyStatus(): ApiModels.RuntimeApplyStatus {
   }
 
   fun putJsonData(path: String, data: JSONObject): Boolean {
-    // This endpoint expects object directly (like {port:..}) or wrapper? In the HTML UI it sends the object as-is.
-    return requestOk("PUT", path, data)
+    // Preserve the server-side validation error instead of collapsing every
+    // rejected save into a generic false result. MainViewModel logs it.
+    val obj = requestJson("PUT", path, data)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected save" })
+    }
+    return true
   }
 
   fun postJsonData(path: String, data: JSONObject): Boolean {
-    return requestOk("POST", path, data)
+    val obj = requestJson("POST", path, data)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected POST" })
+    }
+    return true
+  }
+
+  fun postJsonResult(path: String, data: JSONObject): JSONObject {
+    val obj = requestJson("POST", path, data) ?: JSONObject()
+    if (!jsonBool(obj, "ok", true)) {
+      val error = obj.optString("error", "").trim()
+      throw IOException(error.ifBlank { "API rejected POST" })
+    }
+    return obj
   }
 
 
   fun deletePath(path: String): Boolean {
-    return requestOk("DELETE", path, null)
+    val obj = requestJson("DELETE", path, null)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected DELETE" })
+    }
+    return true
   }
 
-  fun uploadOpenVpnConfig(profile: String, filename: String, file: File): Boolean {
+  fun uploadOpenVpnConfig(profile: String, _filename: String, file: File): Boolean {
     val safeProfile = enc(profile.trim())
-    return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", filename, file)
+    // External display names never become internal profile file names.
+    return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", "client.ovpn", file)
   }
 
-  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File): Boolean {
+  fun uploadAmneziaWgConfig(profile: String, _filename: String, file: File): Boolean {
     val safeProfile = enc(profile.trim())
-    return uploadMultipart("/api/programs/amneziawg/profiles/$safeProfile/upload-config", filename, file)
+    return uploadMultipart("/api/programs/amneziawg/profiles/$safeProfile/upload-config", "client.conf", file)
   }
 
 

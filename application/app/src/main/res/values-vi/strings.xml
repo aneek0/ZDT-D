@@ -52,6 +52,10 @@ Hãy khởi động lại thiết bị để Magisk áp dụng thay đổi.</str
 Phiên bản đi kèm ứng dụng: versionCode=%2$d.
 
 Nên cập nhật để có khả năng tương thích tốt nhất. Bạn có thể bỏ qua, nhưng một số tính năng có thể không khả dụng và có thể xảy ra lỗi không khớp API.</string>
+    <string name="mv_module_build_update_prompt_text">Mô-đun đã cài: v%1$s (versionCode=%2$s, bản dựng #%3$s).
+Bản dựng khả dụng: %4$s v%5$s (versionCode=%6$s, bản dựng #%7$s).
+
+Cập nhật mô-đun lên bản dựng đi kèm ứng dụng này?</string>
     <string name="mv_module_version_unsupported">Phiên bản mô-đun đã cài không còn được hỗ trợ (versionCode=%1$d). Để tiếp tục sử dụng ZDT-D, hãy cập nhật mô-đun.</string>
     <string name="mv_backup_list_read_error">Không thể đọc danh sách bản sao lưu: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Không tìm thấy thư mục cài đặt: %1$s.</string>
@@ -228,6 +232,8 @@ Nên cập nhật để có khả năng tương thích tốt nhất. Bạn có t
     <string name="home_power_stopped">Đã dừng</string>
     <string name="home_power_starting">Đang khởi động…</string>
     <string name="home_power_stopping">Đang dừng…</string>
+    <string name="home_action_start_service">Khởi động dịch vụ</string>
+    <string name="home_action_stop_service">Dừng dịch vụ</string>
     <string name="home_service_active_hint">Dịch vụ đang chạy. Nhấn nút để dừng.</string>
     <string name="home_service_stopped_hint">Dịch vụ đã dừng. Nhấn nút để khởi động.</string>
     <string name="home_no_log_data">(không có dữ liệu nhật ký)</string>
@@ -426,6 +432,7 @@ Vì vậy, trình quản lý mô-đun đã chặn cài đặt ZDT-D.
     <string name="stats_unknown_cpu">CPU không xác định</string>
     <string name="stats_clamped_from">Đã giới hạn từ %1$s%%</string>
     <string name="stats_memory_title">Bộ nhớ</string>
+    <string name="stats_power_title">Pin</string>
     <string name="stats_total_fmt">Tổng: %1$s</string>
     <string name="stats_total_unknown">Tổng: —</string>
     <string name="stats_free_fmt">Trống: %1$s</string>
@@ -539,6 +546,15 @@ Cài đặt hiện tại sẽ được thay thế hoàn toàn và dịch vụ s�
     <string name="program_updates_title">Cập nhật công cụ/thành phần mô-đun ZDT-D</string>
     <string name="program_updates_reset_cd">Đặt lại</string>
     <string name="program_updates_desc">Cập nhật trực tiếp các công cụ và thành phần của mô-đun ZDT-D từ bản phát hành GitHub. Chỉ kiểm tra khi bạn nhấn nút.</string>
+    <string name="program_updates_bulk_title">Cập nhật tất cả công cụ</string>
+    <string name="program_updates_bulk_desc">Kiểm tra tất cả công cụ và cài đặt các bản cập nhật có sẵn mà không dừng dịch vụ đang chạy.</string>
+    <string name="program_updates_check_all">Kiểm tra tất cả</string>
+    <string name="program_updates_checking_all">Đang kiểm tra tất cả…</string>
+    <string name="program_updates_update_all">Cập nhật tất cả</string>
+    <string name="program_updates_updating_all">Đang cập nhật tất cả…</string>
+    <string name="program_updates_all_current">Mọi thứ đều đã cập nhật</string>
+    <string name="program_updates_retry_check">Kiểm tra lại</string>
+    <string name="program_updates_available_count_fmt">Có %1$d bản cập nhật</string>
     <string name="program_updates_service_running_title">Dịch vụ đang chạy</string>
     <string name="program_updates_service_running_desc">Dừng dịch vụ trước khi kiểm tra/cập nhật. Điều này cần thiết để quy tắc và tiến trình không dùng tệp trong lúc thay thế.</string>
     <string name="program_updates_stopping">Đang dừng…</string>
@@ -649,7 +665,7 @@ Dùng trình chỉnh sửa khác để sửa đổi.</string>
     <string name="program_updates_err_service_running">Dịch vụ vẫn đang chạy. Hãy dừng rồi thử lại.</string>
     <string name="program_updates_err_detect_installed">Không thể phát hiện phiên bản đã cài</string>
     <string name="program_updates_warn_installed_unknown">Không thể phát hiện phiên bản đã cài. Bạn vẫn có thể cài bản phát hành đã chọn.</string>
-    <string name="program_updates_err_check_latest">Không thể kiểm tra bản phát hành mới nhất</string>
+    <string name="program_updates_err_check_latest">Không thể lấy thông tin</string>
     <string name="program_updates_err_no_internet">Không có kết nối Internet</string>
     <string name="program_updates_err_load_releases">Không thể tải các bản phát hành</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="action_edit">Chỉnh sửa</string>
     <string name="singbox_profile_settings_title">Cài đặt hồ sơ</string>
     <string name="singbox_profile_settings_desc">Mỗi hồ sơ sing-box có các cổng t2s, danh sách ứng dụng và bộ máy chủ riêng.</string>
+    <string name="singbox_endpoint_resolve_label">Phân giải miền máy chủ</string>
+    <string name="singbox_endpoint_resolve_hint">Phân giải tên miền trong trường server của outbound sang IPv4 trước khi khởi động sing-box.</string>
     <string name="singbox_profile_add_server">Tạo</string>
     <string name="singbox_profile_no_servers">Chưa tạo máy chủ nào cho hồ sơ này.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port và t2s_web_port phải khác nhau</string>
@@ -1335,6 +1353,8 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="openvpn_dns_label">Máy chủ DNS</string>
     <string name="openvpn_dns_hint">Nhập 1–8 máy chủ DNS IPv4, phân tách bằng dấu cách hoặc dấu phẩy. Không cho phép IPv6, tên miền và URL https/tls.</string>
     <string name="openvpn_dns_invalid">Chỉ nhập 1–8 địa chỉ IPv4 hợp lệ.</string>
+    <string name="openvpn_endpoint_resolve_label">Phân giải miền remote</string>
+    <string name="openvpn_endpoint_resolve_hint">Phân giải tên miền trong chỉ thị remote trước khi khởi động OpenVPN.</string>
     <string name="openvpn_config_title">Cấu hình OpenVPN</string>
     <string name="openvpn_config_desc">Dán nội dung client.ovpn hoặc tải từ tệp. Tệp được lưu dưới dạng profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn không được để trống.</string>
@@ -2178,4 +2198,218 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="dpi_detector_share_failed">Không thể chia sẻ tệp báo cáo.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Cấu hình nhóm máy chủ SOCKS5, kiểm tra khả dụng và đường dự phòng DIRECT cho DNSCrypt.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">Đang tải cài đặt D2S</string>
+    <string name="d2s_loading_desc">Đang đọc cấu hình có cấu trúc từ daemon.</string>
+    <string name="d2s_load_failed_title">Không có cài đặt D2S</string>
+    <string name="d2s_load_failed_desc">Không thể đọc cấu hình. Hãy kiểm tra cài đặt mô-đun và thử lại.</string>
+    <string name="d2s_overview_title">Định tuyến D2S</string>
+    <string name="d2s_overview_desc">Phân phối kết nối DNSCrypt giữa các máy chủ SOCKS5 cục bộ và dùng kết nối trực tiếp khi cần.</string>
+    <string name="d2s_listener_label">Listener D2S cục bộ</string>
+    <string name="d2s_listener_unavailable">Chưa cấu hình</string>
+    <string name="d2s_listener_desc">Đọc từ mục proxy đang hoạt động trong dnscrypt-proxy.toml.</string>
+    <string name="d2s_backends_title">Máy chủ SOCKS5</string>
+    <string name="d2s_backends_desc">Thêm cổng của dịch vụ SOCKS5 cục bộ. D2S chỉ dùng máy chủ vượt qua kiểm tra.</string>
+    <string name="d2s_backends_empty">Chưa cấu hình cổng SOCKS5. D2S sẽ dùng dự phòng DIRECT.</string>
+    <string name="d2s_backend_port_label">Cổng SOCKS5</string>
+    <string name="d2s_backend_port_desc">Cổng cục bộ từ 1 đến 65535</string>
+    <string name="d2s_add_backend">Thêm cổng</string>
+    <string name="d2s_remove_backend">Xóa cổng SOCKS5</string>
+    <string name="d2s_direct_title">Dự phòng DIRECT</string>
+    <string name="d2s_direct_desc">Kết nối trực tiếp khi không có máy chủ SOCKS5 hoạt động.</string>
+    <string name="d2s_health_title">Kiểm tra trạng thái</string>
+    <string name="d2s_health_desc">Điều khiển cách D2S phát hiện lỗi và đưa máy chủ đã phục hồi trở lại vòng quay.</string>
+    <string name="d2s_healthy_interval">Khoảng kiểm tra máy chủ tốt</string>
+    <string name="d2s_recovery_interval">Kiểm tra lại máy chủ lỗi</string>
+    <string name="d2s_failure_threshold">Số lỗi trước khi không khả dụng</string>
+    <string name="d2s_failure_threshold_desc">Số lỗi liên tiếp</string>
+    <string name="d2s_runtime_cooldown">Tạm dừng sau lỗi kết nối</string>
+    <string name="d2s_seconds_desc">Giây; phải lớn hơn 0</string>
+    <string name="d2s_milliseconds_desc">Mili giây; phải lớn hơn 0</string>
+    <string name="d2s_probe_targets_label">Đích kiểm tra</string>
+    <string name="d2s_probe_targets_desc">D2S kết nối tới các đích HOST:PORT này qua từng máy chủ SOCKS5.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">Thêm đích</string>
+    <string name="d2s_remove_probe_target">Xóa đích kiểm tra</string>
+    <string name="d2s_timeouts_title">Thời gian chờ kết nối</string>
+    <string name="d2s_timeouts_desc">Giới hạn cho kết nối, thương lượng SOCKS5, yêu cầu máy khách và kiểm tra.</string>
+    <string name="d2s_connect_timeout">Kết nối SOCKS5</string>
+    <string name="d2s_upstream_handshake_timeout">Bắt tay SOCKS5</string>
+    <string name="d2s_backend_attempt_timeout">Thử qua máy chủ</string>
+    <string name="d2s_direct_connect_timeout">Kết nối DIRECT</string>
+    <string name="d2s_client_handshake_timeout">Bắt tay máy khách</string>
+    <string name="d2s_probe_timeout">Kiểm tra trạng thái</string>
+    <string name="d2s_performance_title">Hiệu năng và nhật ký</string>
+    <string name="d2s_performance_desc">Giới hạn kết nối, hành vi TCP, mức chi tiết nhật ký và tắt an toàn.</string>
+    <string name="d2s_max_connections">Số kết nối đồng thời tối đa</string>
+    <string name="d2s_max_connections_desc">Phải lớn hơn 0</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Gửi gói nhỏ không có độ trễ Nagle.</string>
+    <string name="d2s_log_level">Mức nhật ký</string>
+    <string name="d2s_log_level_desc">Điều khiển chi tiết ghi vào dnscrypt/log/d2s.log.</string>
+    <string name="d2s_shutdown_grace">Thời gian chờ khi tắt</string>
+    <string name="d2s_save">Lưu cài đặt D2S</string>
+    <string name="d2s_saving">Đang lưu…</string>
+    <string name="d2s_saved">Đã lưu cài đặt D2S. Sẽ áp dụng sau khi dừng/khởi động.</string>
+    <string name="d2s_error_port_required">Nhập cổng SOCKS5.</string>
+    <string name="d2s_error_port_range">Cổng SOCKS5 phải từ 1 đến 65535.</string>
+    <string name="d2s_error_duplicate_port">Cổng SOCKS5 không được trùng.</string>
+    <string name="d2s_error_listener_port">Máy chủ không thể dùng cổng listener D2S.</string>
+    <string name="d2s_error_direct_required">Cần dự phòng DIRECT khi danh sách SOCKS5 trống.</string>
+    <string name="d2s_error_positive_number">Mọi giá trị số phải lớn hơn 0.</string>
+    <string name="d2s_error_probe_required">Thêm ít nhất một đích khi đã cấu hình máy chủ SOCKS5.</string>
+    <string name="d2s_error_probe_target">Mỗi đích phải có định dạng HOST:PORT.</string>
+    <string name="d2s_log_level_error">Lỗi</string>
+    <string name="d2s_log_level_warn">Cảnh báo</string>
+    <string name="d2s_log_level_info">Thông tin</string>
+    <string name="d2s_log_level_debug">Gỡ lỗi</string>
+    <string name="d2s_log_level_trace">Theo dõi</string>
+
+    <string name="d2s_route_timeout">Thời gian chờ chuyển dự phòng SOCKS5 tổng</string>
+    <string name="d2s_route_timeout_desc">Tổng thời gian tối đa tính bằng mili giây để thử các máy chủ SOCKS5 trước khi dùng đường dự phòng.</string>
+    <string name="d2s_max_backend_attempts">Số lần thử máy chủ tối đa</string>
+    <string name="d2s_max_backend_attempts_desc">Số máy chủ SOCKS5 tối đa được thử cho một kết nối máy khách.</string>
+    <string name="d2s_max_connecting">Số lần kết nối đồng thời tối đa</string>
+    <string name="d2s_max_connecting_desc">Giới hạn kết nối ra ngoài và bắt tay SOCKS5 đồng thời.</string>
+    <string name="d2s_idle_after">Cho kiểm tra sức khỏe ngủ khi rảnh</string>
+    <string name="d2s_idle_after_desc">Số giây không có lưu lượng máy khách trước khi dừng kiểm tra nền. 0 tắt chế độ ngủ.</string>
+    <string name="d2s_error_non_negative_number">Thời gian rảnh phải bằng hoặc lớn hơn 0.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Không thể vá tương thích ZIP của mô-đun: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Cảnh báo: bản vá tương thích ZIP trong bộ nhớ đã hết bộ nhớ ứng dụng: %1$s. Đang chuyển sang chế độ vá ZIP dùng ít bộ nhớ.</string>
+    <string name="module_zip_patch_low_memory_normalized">Đã hoàn tất vá tương thích ZIP dùng ít bộ nhớ: đã xóa cờ mã hóa khỏi %1$d mục Central Directory. Tiếp tục.</string>
+    <string name="module_zip_patch_low_memory_compatible">Đã hoàn tất kiểm tra tương thích ZIP dùng ít bộ nhớ: kho lưu trữ đã tương thích với trình cài đặt nghiêm ngặt. Tiếp tục.</string>
+    <string name="module_zip_patch_normalized">Đã chuẩn hóa ZIP mô-đun cho trình cài đặt nghiêm ngặt: đã xóa cờ mã hóa khỏi %1$d mục Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP mô-đun đã tương thích với trình cài đặt nghiêm ngặt.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Giữ nguyên bảo vệ ZIP mô-đun cho trình cài đặt Magisk.</string>
+
+    <string name="vps_reboot_server">Khởi động lại máy chủ</string>
+    <string name="vps_reboot_confirm_title">Khởi động lại máy chủ?</string>
+    <string name="vps_reboot_confirm_message">Khởi động lại %1$s? Kết nối SSH sẽ tạm thời bị ngắt trong khi máy chủ khởi động lại.</string>
+    <string name="vps_rebooting">Đang khởi động lại máy chủ…</string>
+    <string name="vps_reboot_failed">Không thể lên lịch khởi động lại máy chủ</string>
+    <string name="vps_reboot_scheduled">Đã lên lịch khởi động lại</string>
+    <string name="vps_waiting_for_server">Đang chờ máy chủ hoạt động trở lại…</string>
+    <string name="vps_server_online_again">Máy chủ đã trực tuyến trở lại</string>
+    <string name="vps_reboot_timeout">Máy chủ không hoạt động trở lại trước khi hết thời gian chờ</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Thêm SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Xác thực</string>
+    <string name="vps_auth_password">Mật khẩu</string>
+    <string name="vps_auth_private_key">Khóa SSH</string>
+    <string name="vps_private_key">Khóa SSH riêng tư</string>
+    <string name="vps_choose_private_key_file">Chọn tệp khóa riêng tư</string>
+    <string name="vps_private_key_file_selected">Tệp khóa: %1$s</string>
+    <string name="vps_private_key_passphrase">Mật khẩu khóa (không bắt buộc)</string>
+    <string name="vps_private_key_storage_hint">Khóa riêng tư và mật khẩu khóa được mã hóa bằng Android Keystore và chỉ lưu trong dữ liệu ứng dụng.</string>
+    <string name="vps_private_key_read_error">Không thể đọc tệp khóa riêng tư đã chọn.</string>
+    <string name="vps_private_key_too_large">Tệp đã chọn quá lớn. Hãy chọn khóa SSH nhỏ hơn 512 KB.</string>
+    <string name="vps_public_key_error">Đây có vẻ là khóa SSH công khai. Cần khóa riêng tư để xác thực.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S chưa được kết nối</string>
+    <string name="d2s_not_connected_desc">Chương trình này chưa được kết nối để sử dụng với DNSCrypt. Bạn có muốn kết nối không?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D sẽ chọn cổng SOCKS5 cục bộ còn trống đầu tiên từ 11990 trở lên và lưu vào dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Kết nối</string>
+    <string name="d2s_connecting">Đang kết nối…</string>
+    <string name="d2s_connect_failed">Không thể kết nối D2S</string>
+    <string name="d2s_connected_fmt">D2S đã kết nối: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">Đăng ký</string>
+    <string name="mihomo_subscriptions_summary">%1$d nguồn · %2$d đang bật · %3$d máy chủ</string>
+    <string name="mihomo_sub_add">Thêm đăng ký</string>
+    <string name="mihomo_sub_refresh_all">Cập nhật tất cả</string>
+    <string name="mihomo_sub_empty_title">Chưa có đăng ký</string>
+    <string name="mihomo_sub_empty_desc">Thêm một nguồn đăng ký và dùng nguồn đó trong một hoặc nhiều hồ sơ Mihomo.</string>
+    <string name="mihomo_sub_saved">Đã lưu đăng ký</string>
+    <string name="mihomo_sub_delete_title">Xóa đăng ký</string>
+    <string name="mihomo_sub_delete_message">Xóa đăng ký “%1$s”? Các hồ sơ đang dùng đăng ký này sẽ bị ngắt khỏi nguồn đó.</string>
+    <string name="mihomo_sub_state_disabled">Đã tắt</string>
+    <string name="mihomo_sub_state_error">Lỗi cập nhật</string>
+    <string name="mihomo_sub_state_ready">Sẵn sàng</string>
+    <string name="mihomo_sub_state_waiting">Đang chờ lần cập nhật đầu tiên</string>
+    <string name="mihomo_sub_servers">Máy chủ</string>
+    <string name="mihomo_sub_profiles">Hồ sơ</string>
+    <string name="mihomo_sub_interval">Khoảng thời gian</string>
+    <string name="mihomo_sub_traffic_value">Lưu lượng: %1$s</string>
+    <string name="mihomo_sub_expire_value">Hết hạn: %1$s</string>
+    <string name="mihomo_sub_used_by">Hồ sơ: %1$s</string>
+    <string name="mihomo_sub_updated_value">Đã cập nhật: %1$s</string>
+    <string name="mihomo_sub_refresh">Cập nhật</string>
+    <string name="mihomo_sub_add_title">Đăng ký mới</string>
+    <string name="mihomo_sub_edit_title">Sửa đăng ký</string>
+    <string name="mihomo_sub_name">Tên</string>
+    <string name="mihomo_sub_url">URL đăng ký</string>
+    <string name="mihomo_sub_basic_auth">Xác thực Basic</string>
+    <string name="mihomo_sub_basic_auth_desc">Gửi tên người dùng và mật khẩu HTTP Basic cùng yêu cầu đăng ký.</string>
+    <string name="mihomo_sub_username">Tên người dùng</string>
+    <string name="mihomo_sub_password">Mật khẩu</string>
+    <string name="mihomo_sub_hwid">Xác thực HWID</string>
+    <string name="mihomo_sub_hwid_desc">Gửi mã định danh phần cứng mà nhà cung cấp đăng ký yêu cầu.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">Dùng ID của thiết bị này</string>
+    <string name="mihomo_sub_device_headers">Header thiết bị</string>
+    <string name="mihomo_sub_device_headers_desc">Gửi các header tương thích Happ cho ngôn ngữ, phiên bản Android và mẫu thiết bị.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">Để trống để tự động tạo User-Agent tương thích với Happ.</string>
+    <string name="mihomo_sub_locale">Ngôn ngữ</string>
+    <string name="mihomo_sub_os_version">Phiên bản Android</string>
+    <string name="mihomo_sub_device_model">Mẫu thiết bị</string>
+    <string name="mihomo_sub_custom_headers">Header HTTP bổ sung</string>
+    <string name="mihomo_sub_custom_headers_hint">Mỗi dòng một header: Header-Name: giá trị</string>
+    <string name="mihomo_sub_remote_interval">Dùng chu kỳ cập nhật của nhà cung cấp</string>
+    <string name="mihomo_sub_remote_interval_desc">Dùng profile-update-interval khi nhà cung cấp gửi giá trị này.</string>
+    <string name="mihomo_sub_fallback_interval">Chu kỳ dự phòng, phút</string>
+    <string name="mihomo_sub_interval_hint">15–10080 phút; dùng khi nhà cung cấp không chỉ định chu kỳ.</string>
+    <string name="mihomo_tab_subscriptions">Đăng ký</string>
+    <string name="mihomo_tab_desc_subscriptions">Chọn các nguồn đăng ký được quản lý cho hồ sơ này.</string>
+    <string name="mihomo_profile_subscriptions_title">Đăng ký</string>
+    <string name="mihomo_profile_subscriptions_desc">Chọn các đăng ký dùng chung mà ZDT-D sẽ chèn vào hồ sơ này khi chạy.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d đã chọn và khả dụng · tổng %2$d</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">config.yaml gốc không thay đổi. ZDT-D chỉ thêm provider vào config.runtime.yaml và gắn chúng vào nhóm Proxy.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">Trước tiên hãy tạo đăng ký từ màn hình Đăng ký của Mihomo.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d máy chủ</string>
+    <string name="mihomo_profile_subscription_disabled_hint">Đăng ký này đang bị tắt trên toàn cục.</string>
+    <string name="subscriptions_title">Gói đăng ký</string>
+    <string name="subscriptions_entry_desc">Quản lý nguồn dùng chung và nhập từng máy chủ.</string>
+    <string name="subscriptions_badge">Thư viện</string>
+    <string name="subscription_view_servers">Xem máy chủ</string>
+    <string name="subscription_servers_count">%1$d máy chủ</string>
+    <string name="subscription_missing_title">Máy chủ không còn trong gói đăng ký</string>
+    <string name="subscription_local_copy_saved">Bản sao cục bộ đã được giữ lại.</string>
+    <string name="subscription_detach">Hủy liên kết gói đăng ký</string>
+    <string name="subscription_nodes_empty">Chưa có máy chủ được phân tích. Hãy làm mới gói đăng ký.</string>
+    <string name="subscription_linked_to">Đã liên kết với %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Thêm vào %1$s</string>
+    <string name="subscription_unsupported_node">Loại máy chủ này chưa hỗ trợ nhập.</string>
+    <string name="subscription_import_title">Nhập vào %1$s</string>
+    <string name="subscription_choose_profile">Chọn hồ sơ</string>
+    <string name="subscription_no_target_profiles">Hãy tạo hồ sơ đích trước.</string>
+    <string name="subscription_local_server_name">Tên máy chủ cục bộ</string>
+    <string name="subscription_server_name_hint">Chữ cái tiếng Anh, số, gạch dưới và gạch ngang</string>
+    <string name="subscription_import_action">Nhập</string>
+    <string name="subscription_import_success">Đã nhập máy chủ và liên kết với gói đăng ký</string>
+    <string name="subscription_import_failed">Không thể nhập máy chủ</string>
+    <string name="subscription_detach_failed">Không thể hủy liên kết máy chủ</string>
+    <string name="subscription_link_active">Đã liên kết với gói đăng ký và tự động đồng bộ</string>
+    <string name="subscription_manual_import">Nhập cấu hình</string>
+    <string name="subscription_manual_import_desc">Dán liên kết một máy chủ, JSON sing-box/Hysteria2 hoặc cấu hình WireGuard. Máy chủ sẽ được tạo cục bộ, không liên kết với gói đăng ký.</string>
+    <string name="subscription_manual_source">Liên kết hoặc cấu hình</string>
+    <string name="subscription_paste">Dán</string>
+    <string name="subscription_recognize">Nhận dạng</string>
+    <string name="subscription_manual_unrecognized">Không nhận dạng được cấu hình hoặc backend đã cài không hỗ trợ.</string>
+    <string name="subscription_manual_target">Đích: %1$s</string>
+    <string name="subscription_copy_config">Sao chép cấu hình</string>
+    <string name="subscription_copy_failed">Không thể chuẩn bị cấu hình để sao chép.</string>
 </resources>

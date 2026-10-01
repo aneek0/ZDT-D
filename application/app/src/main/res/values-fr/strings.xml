@@ -52,6 +52,10 @@ Redémarrez l’appareil afin que Magisk applique les modifications.</string>
 Incluse avec l’application : versionCode=%2$d.
 
 La mise à jour est recommandée pour une compatibilité optimale. Vous pouvez l’ignorer, mais certaines fonctions risquent d’être indisponibles et des erreurs d’incompatibilité d’API peuvent survenir.</string>
+    <string name="mv_module_build_update_prompt_text">Module installé : v%1$s (versionCode=%2$s, build #%3$s).
+Build disponible : %4$s v%5$s (versionCode=%6$s, build #%7$s).
+
+Mettre à jour le module vers le build intégré à cette application ?</string>
     <string name="mv_module_version_unsupported">La version du module installée n’est plus prise en charge (versionCode=%1$d). Pour continuer à utiliser ZDT-D, mettez le module à jour.</string>
     <string name="mv_backup_list_read_error">Impossible de lire la liste des sauvegardes : %1$s</string>
     <string name="mv_backup_settings_folder_missing">Dossier des paramètres introuvable : %1$s.</string>
@@ -228,6 +232,8 @@ La mise à jour est recommandée pour une compatibilité optimale. Vous pouvez l
     <string name="home_power_stopped">Arrêté</string>
     <string name="home_power_starting">Démarrage…</string>
     <string name="home_power_stopping">Arrêt…</string>
+    <string name="home_action_start_service">Démarrer le service</string>
+    <string name="home_action_stop_service">Arrêter le service</string>
     <string name="home_service_active_hint">Le service est en cours d’exécution. Appuyez sur le bouton pour l’arrêter.</string>
     <string name="home_service_stopped_hint">Le service est arrêté. Appuyez sur le bouton pour le démarrer.</string>
     <string name="home_no_log_data">(aucune donnée de journal)</string>
@@ -426,6 +432,7 @@ Pour installer correctement ZDT-D, le métamodule doit fonctionner correctement 
     <string name="stats_unknown_cpu">Processeur inconnu</string>
     <string name="stats_clamped_from">Limité depuis %1$s%%</string>
     <string name="stats_memory_title">Mémoire</string>
+    <string name="stats_power_title">Batterie</string>
     <string name="stats_total_fmt">Total : %1$s</string>
     <string name="stats_total_unknown">Total : —</string>
     <string name="stats_free_fmt">Libre : %1$s</string>
@@ -539,6 +546,15 @@ Les paramètres actuels seront entièrement remplacés et le service sera arrêt
     <string name="program_updates_title">Mises à jour des outils/composants du module ZDT-D</string>
     <string name="program_updates_reset_cd">Réinitialiser</string>
     <string name="program_updates_desc">Met à jour les outils et composants du module ZDT-D directement depuis les versions GitHub. Les vérifications ne sont effectuées que lorsque vous touchez le bouton.</string>
+    <string name="program_updates_bulk_title">Mettre à jour tous les outils</string>
+    <string name="program_updates_bulk_desc">Vérifie tous les outils et installe les mises à jour disponibles sans arrêter le service en cours d’exécution.</string>
+    <string name="program_updates_check_all">Tout vérifier</string>
+    <string name="program_updates_checking_all">Vérification de tout…</string>
+    <string name="program_updates_update_all">Tout mettre à jour</string>
+    <string name="program_updates_updating_all">Mise à jour de tout…</string>
+    <string name="program_updates_all_current">Tout est à jour</string>
+    <string name="program_updates_retry_check">Répéter la vérification</string>
+    <string name="program_updates_available_count_fmt">%1$d mises à jour disponibles</string>
     <string name="program_updates_service_running_title">Le service est en cours d’exécution</string>
     <string name="program_updates_service_running_desc">Arrêtez le service avant la vérification/mise à jour. Cela évite que les règles et processus utilisent les fichiers pendant leur remplacement.</string>
     <string name="program_updates_stopping">Arrêt…</string>
@@ -649,7 +665,7 @@ Utilisez un autre éditeur pour le modifier.</string>
     <string name="program_updates_err_service_running">Le service est toujours en cours. Arrêtez-le et réessayez.</string>
     <string name="program_updates_err_detect_installed">Impossible de détecter la version installée</string>
     <string name="program_updates_warn_installed_unknown">La version installée n’a pas pu être détectée. Vous pouvez tout de même installer la version sélectionnée.</string>
-    <string name="program_updates_err_check_latest">Échec de la vérification de la dernière version</string>
+    <string name="program_updates_err_check_latest">Impossible d’obtenir les informations</string>
     <string name="program_updates_err_no_internet">Aucune connexion Internet</string>
     <string name="program_updates_err_load_releases">Échec du chargement des versions</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ La protection ne fonctionne pas en mode point d’accès. Si le point d’accès
     <string name="action_edit">Modifier</string>
     <string name="singbox_profile_settings_title">Paramètres du profil</string>
     <string name="singbox_profile_settings_desc">Chaque profil sing-box possède ses propres ports t2s, sa liste d’applications et son ensemble de serveurs.</string>
+    <string name="singbox_endpoint_resolve_label">Résoudre les domaines des serveurs</string>
+    <string name="singbox_endpoint_resolve_hint">Résoudre en IPv4 les noms de domaine des champs server des sorties avant de démarrer sing-box.</string>
     <string name="singbox_profile_add_server">Créer</string>
     <string name="singbox_profile_no_servers">Aucun serveur n’a encore été créé pour ce profil.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port et t2s_web_port doivent être différents</string>
@@ -1336,6 +1354,8 @@ La protection ne fonctionne pas en mode point d’accès. Si le point d’accès
     <string name="openvpn_dns_label">Serveurs DNS</string>
     <string name="openvpn_dns_hint">Saisissez 1 à 8 serveurs DNS IPv4 séparés par des espaces ou des virgules. IPv6, les domaines et les URL https/tls ne sont pas autorisés.</string>
     <string name="openvpn_dns_invalid">Saisissez uniquement 1 à 8 adresses IPv4 valides.</string>
+    <string name="openvpn_endpoint_resolve_label">Résoudre les domaines distants</string>
+    <string name="openvpn_endpoint_resolve_hint">Résoudre les noms de domaine des directives remote avant de démarrer OpenVPN.</string>
     <string name="openvpn_config_title">Configuration OpenVPN</string>
     <string name="openvpn_config_desc">Collez le contenu de client.ovpn ou chargez-le depuis un fichier. Il est enregistré sous profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn ne peut pas être vide.</string>
@@ -2179,4 +2199,218 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="dpi_detector_share_failed">Impossible de partager l’archive du rapport.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Configurez le pool de serveurs SOCKS5, les contrôles de disponibilité et le repli DIRECT utilisés par DNSCrypt.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">Chargement des paramètres D2S</string>
+    <string name="d2s_loading_desc">Lecture de la configuration structurée depuis le démon.</string>
+    <string name="d2s_load_failed_title">Paramètres D2S indisponibles</string>
+    <string name="d2s_load_failed_desc">Impossible de lire la configuration. Vérifiez l’installation du module et réessayez.</string>
+    <string name="d2s_overview_title">Routage D2S</string>
+    <string name="d2s_overview_desc">Répartit les connexions DNSCrypt entre des serveurs SOCKS5 locaux et utilise une connexion directe si nécessaire.</string>
+    <string name="d2s_listener_label">Listener D2S local</string>
+    <string name="d2s_listener_unavailable">Non configuré</string>
+    <string name="d2s_listener_desc">Lu depuis l’entrée proxy active de dnscrypt-proxy.toml.</string>
+    <string name="d2s_backends_title">Serveurs SOCKS5</string>
+    <string name="d2s_backends_desc">Ajoutez les ports des services SOCKS5 locaux. D2S utilise uniquement les serveurs validés.</string>
+    <string name="d2s_backends_empty">Aucun port SOCKS5 configuré. D2S utilisera le repli DIRECT.</string>
+    <string name="d2s_backend_port_label">Port SOCKS5</string>
+    <string name="d2s_backend_port_desc">Port local de 1 à 65535</string>
+    <string name="d2s_add_backend">Ajouter un port</string>
+    <string name="d2s_remove_backend">Supprimer le port SOCKS5</string>
+    <string name="d2s_direct_title">Repli DIRECT</string>
+    <string name="d2s_direct_desc">Se connecter directement lorsqu’aucun serveur SOCKS5 sain n’est disponible.</string>
+    <string name="d2s_health_title">Contrôles de disponibilité</string>
+    <string name="d2s_health_desc">Détermine comment D2S détecte les pannes et remet les serveurs rétablis en rotation.</string>
+    <string name="d2s_healthy_interval">Intervalle des serveurs sains</string>
+    <string name="d2s_recovery_interval">Nouvelle vérification des serveurs en panne</string>
+    <string name="d2s_failure_threshold">Échecs avant indisponibilité</string>
+    <string name="d2s_failure_threshold_desc">Nombre d’échecs consécutifs</string>
+    <string name="d2s_runtime_cooldown">Pause après une erreur de connexion</string>
+    <string name="d2s_seconds_desc">Secondes ; doit être supérieur à zéro</string>
+    <string name="d2s_milliseconds_desc">Millisecondes ; doit être supérieur à zéro</string>
+    <string name="d2s_probe_targets_label">Cibles de contrôle</string>
+    <string name="d2s_probe_targets_desc">D2S se connecte à ces cibles HOST:PORT via chaque serveur SOCKS5.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">Ajouter une cible</string>
+    <string name="d2s_remove_probe_target">Supprimer la cible</string>
+    <string name="d2s_timeouts_title">Délais de connexion</string>
+    <string name="d2s_timeouts_desc">Limites de connexion, négociation SOCKS5, requêtes client et contrôles.</string>
+    <string name="d2s_connect_timeout">Connexion SOCKS5</string>
+    <string name="d2s_upstream_handshake_timeout">Négociation SOCKS5</string>
+    <string name="d2s_backend_attempt_timeout">Tentative via serveur</string>
+    <string name="d2s_direct_connect_timeout">Connexion DIRECT</string>
+    <string name="d2s_client_handshake_timeout">Négociation client</string>
+    <string name="d2s_probe_timeout">Contrôle de disponibilité</string>
+    <string name="d2s_performance_title">Performances et journal</string>
+    <string name="d2s_performance_desc">Limites de connexion, comportement TCP, détail du journal et arrêt propre.</string>
+    <string name="d2s_max_connections">Connexions simultanées maximales</string>
+    <string name="d2s_max_connections_desc">Doit être supérieur à zéro</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Envoie les petits paquets sans délai Nagle.</string>
+    <string name="d2s_log_level">Niveau du journal</string>
+    <string name="d2s_log_level_desc">Contrôle le détail écrit dans dnscrypt/log/d2s.log.</string>
+    <string name="d2s_shutdown_grace">Délai d’arrêt propre</string>
+    <string name="d2s_save">Enregistrer les paramètres D2S</string>
+    <string name="d2s_saving">Enregistrement…</string>
+    <string name="d2s_saved">Paramètres D2S enregistrés. Ils seront appliqués après arrêt/démarrage.</string>
+    <string name="d2s_error_port_required">Saisissez un port SOCKS5.</string>
+    <string name="d2s_error_port_range">Le port SOCKS5 doit être compris entre 1 et 65535.</string>
+    <string name="d2s_error_duplicate_port">Les ports SOCKS5 ne doivent pas être dupliqués.</string>
+    <string name="d2s_error_listener_port">Un serveur ne peut pas utiliser le port du listener D2S.</string>
+    <string name="d2s_error_direct_required">Le repli DIRECT est requis lorsque la liste SOCKS5 est vide.</string>
+    <string name="d2s_error_positive_number">Toutes les valeurs numériques doivent être supérieures à zéro.</string>
+    <string name="d2s_error_probe_required">Ajoutez au moins une cible si des serveurs SOCKS5 sont configurés.</string>
+    <string name="d2s_error_probe_target">Chaque cible doit utiliser le format HOST:PORT.</string>
+    <string name="d2s_log_level_error">Erreur</string>
+    <string name="d2s_log_level_warn">Avertissement</string>
+    <string name="d2s_log_level_info">Informations</string>
+    <string name="d2s_log_level_debug">Débogage</string>
+    <string name="d2s_log_level_trace">Traçage</string>
+
+    <string name="d2s_route_timeout">Délai total de basculement SOCKS5</string>
+    <string name="d2s_route_timeout_desc">Temps total maximal en millisecondes consacré aux serveurs SOCKS5 avant le repli.</string>
+    <string name="d2s_max_backend_attempts">Nombre maximal de tentatives serveur</string>
+    <string name="d2s_max_backend_attempts_desc">Nombre maximal de serveurs SOCKS5 essayés pour une connexion cliente.</string>
+    <string name="d2s_max_connecting">Tentatives de connexion simultanées maximales</string>
+    <string name="d2s_max_connecting_desc">Limite les connexions sortantes et négociations SOCKS5 simultanées.</string>
+    <string name="d2s_idle_after">Mettre les vérifications en veille</string>
+    <string name="d2s_idle_after_desc">Secondes sans trafic client avant la mise en veille des vérifications. 0 désactive la veille.</string>
+    <string name="d2s_error_non_negative_number">Le délai d’inactivité doit être supérieur ou égal à zéro.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Échec du correctif de compatibilité du ZIP du module : %1$s</string>
+    <string name="module_zip_patch_oom_warning">Avertissement : le correctif de compatibilité ZIP en mémoire a manqué de mémoire d’application : %1$s. Passage au mode de correction ZIP à faible consommation mémoire.</string>
+    <string name="module_zip_patch_low_memory_normalized">Correctif de compatibilité ZIP à faible consommation mémoire terminé : indicateur de chiffrement supprimé dans %1$d entrées du Central Directory. Poursuite de l’opération.</string>
+    <string name="module_zip_patch_low_memory_compatible">Vérification de compatibilité ZIP à faible consommation mémoire terminée : l’archive est déjà compatible avec les installateurs stricts. Poursuite de l’opération.</string>
+    <string name="module_zip_patch_normalized">ZIP du module normalisé pour un installateur strict : indicateur de chiffrement supprimé dans %1$d entrées du Central Directory.</string>
+    <string name="module_zip_patch_compatible">Le ZIP du module est déjà compatible avec les installateurs stricts.</string>
+    <string name="module_zip_patch_protection_kept_magisk">La protection du ZIP du module est conservée pour l’installateur Magisk.</string>
+
+    <string name="vps_reboot_server">Redémarrer le serveur</string>
+    <string name="vps_reboot_confirm_title">Redémarrer le serveur ?</string>
+    <string name="vps_reboot_confirm_message">Redémarrer %1$s ? La connexion SSH sera brièvement interrompue pendant le redémarrage.</string>
+    <string name="vps_rebooting">Redémarrage du serveur…</string>
+    <string name="vps_reboot_failed">Impossible de planifier le redémarrage du serveur</string>
+    <string name="vps_reboot_scheduled">Redémarrage planifié</string>
+    <string name="vps_waiting_for_server">Attente du retour du serveur…</string>
+    <string name="vps_server_online_again">Le serveur est de nouveau en ligne</string>
+    <string name="vps_reboot_timeout">Le serveur n’est pas revenu avant le délai imparti</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Ajouter un SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Authentification</string>
+    <string name="vps_auth_password">Mot de passe</string>
+    <string name="vps_auth_private_key">Clé SSH</string>
+    <string name="vps_private_key">Clé SSH privée</string>
+    <string name="vps_choose_private_key_file">Choisir le fichier de clé privée</string>
+    <string name="vps_private_key_file_selected">Fichier de clé : %1$s</string>
+    <string name="vps_private_key_passphrase">Phrase secrète de la clé (facultatif)</string>
+    <string name="vps_private_key_storage_hint">La clé privée et sa phrase secrète sont chiffrées avec Android Keystore et restent uniquement dans les données de l’application.</string>
+    <string name="vps_private_key_read_error">Impossible de lire le fichier de clé privée sélectionné.</string>
+    <string name="vps_private_key_too_large">Le fichier sélectionné est trop volumineux. Choisissez une clé SSH de moins de 512 Ko.</string>
+    <string name="vps_public_key_error">Cela ressemble à une clé SSH publique. Une clé privée est requise pour l’authentification.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S n’est pas connecté</string>
+    <string name="d2s_not_connected_desc">Ce programme n’est pas connecté pour être utilisé avec DNSCrypt. Voulez-vous le connecter ?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D sélectionnera le premier port SOCKS5 local libre à partir de 11990 et l’enregistrera dans dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Connecter</string>
+    <string name="d2s_connecting">Connexion…</string>
+    <string name="d2s_connect_failed">Impossible de connecter D2S</string>
+    <string name="d2s_connected_fmt">D2S connecté : %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">Abonnements</string>
+    <string name="mihomo_subscriptions_summary">%1$d sources · %2$d actives · %3$d serveurs</string>
+    <string name="mihomo_sub_add">Ajouter un abonnement</string>
+    <string name="mihomo_sub_refresh_all">Tout actualiser</string>
+    <string name="mihomo_sub_empty_title">Aucun abonnement</string>
+    <string name="mihomo_sub_empty_desc">Ajoutez une source d’abonnement et utilisez-la dans un ou plusieurs profils Mihomo.</string>
+    <string name="mihomo_sub_saved">Abonnement enregistré</string>
+    <string name="mihomo_sub_delete_title">Supprimer l’abonnement</string>
+    <string name="mihomo_sub_delete_message">Supprimer l’abonnement « %1$s » ? Les profils qui l’utilisent seront déconnectés de cette source.</string>
+    <string name="mihomo_sub_state_disabled">Désactivé</string>
+    <string name="mihomo_sub_state_error">Erreur de mise à jour</string>
+    <string name="mihomo_sub_state_ready">Prêt</string>
+    <string name="mihomo_sub_state_waiting">En attente de la première mise à jour</string>
+    <string name="mihomo_sub_servers">Serveurs</string>
+    <string name="mihomo_sub_profiles">Profils</string>
+    <string name="mihomo_sub_interval">Intervalle</string>
+    <string name="mihomo_sub_traffic_value">Trafic : %1$s</string>
+    <string name="mihomo_sub_expire_value">Expire : %1$s</string>
+    <string name="mihomo_sub_used_by">Profils : %1$s</string>
+    <string name="mihomo_sub_updated_value">Mis à jour : %1$s</string>
+    <string name="mihomo_sub_refresh">Actualiser</string>
+    <string name="mihomo_sub_add_title">Nouvel abonnement</string>
+    <string name="mihomo_sub_edit_title">Modifier l’abonnement</string>
+    <string name="mihomo_sub_name">Nom</string>
+    <string name="mihomo_sub_url">URL de l’abonnement</string>
+    <string name="mihomo_sub_basic_auth">Authentification Basic</string>
+    <string name="mihomo_sub_basic_auth_desc">Envoyer l’identifiant et le mot de passe HTTP Basic avec les requêtes.</string>
+    <string name="mihomo_sub_username">Identifiant</string>
+    <string name="mihomo_sub_password">Mot de passe</string>
+    <string name="mihomo_sub_hwid">Authentification HWID</string>
+    <string name="mihomo_sub_hwid_desc">Envoyer l’identifiant matériel requis par le fournisseur.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">Utiliser l’ID de cet appareil</string>
+    <string name="mihomo_sub_device_headers">En-têtes de l’appareil</string>
+    <string name="mihomo_sub_device_headers_desc">Envoyer les en-têtes compatibles Happ : langue, version Android et modèle.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">Laissez vide pour générer automatiquement un User-Agent compatible avec Happ.</string>
+    <string name="mihomo_sub_locale">Langue</string>
+    <string name="mihomo_sub_os_version">Version Android</string>
+    <string name="mihomo_sub_device_model">Modèle de l’appareil</string>
+    <string name="mihomo_sub_custom_headers">En-têtes HTTP supplémentaires</string>
+    <string name="mihomo_sub_custom_headers_hint">Un en-tête par ligne : Header-Name: valeur</string>
+    <string name="mihomo_sub_remote_interval">Utiliser l’intervalle du fournisseur</string>
+    <string name="mihomo_sub_remote_interval_desc">Utiliser profile-update-interval lorsque le fournisseur l’envoie.</string>
+    <string name="mihomo_sub_fallback_interval">Intervalle de secours, minutes</string>
+    <string name="mihomo_sub_interval_hint">15–10080 minutes ; utilisé si le fournisseur ne précise pas d’intervalle.</string>
+    <string name="mihomo_tab_subscriptions">Abonnements</string>
+    <string name="mihomo_tab_desc_subscriptions">Choisissez les sources d’abonnement gérées pour ce profil.</string>
+    <string name="mihomo_profile_subscriptions_title">Abonnements du profil</string>
+    <string name="mihomo_profile_subscriptions_desc">Sélectionnez les abonnements globaux que ZDT-D injectera dans ce profil à l’exécution.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d sélectionnés et disponibles · %2$d au total</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">Le config.yaml original reste inchangé. ZDT-D ajoute les fournisseurs uniquement à config.runtime.yaml et les rattache au groupe Proxy.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">Créez d’abord des abonnements dans l’écran Abonnements de Mihomo.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d serveurs</string>
+    <string name="mihomo_profile_subscription_disabled_hint">Cet abonnement est désactivé globalement.</string>
+    <string name="subscriptions_title">Abonnements</string>
+    <string name="subscriptions_entry_desc">Gérez les sources partagées et importez des serveurs individuels.</string>
+    <string name="subscriptions_badge">Bibliothèque</string>
+    <string name="subscription_view_servers">Voir les serveurs</string>
+    <string name="subscription_servers_count">%1$d serveurs</string>
+    <string name="subscription_missing_title">Le serveur n’est plus présent dans l’abonnement</string>
+    <string name="subscription_local_copy_saved">La copie locale a été conservée.</string>
+    <string name="subscription_detach">Dissocier de l’abonnement</string>
+    <string name="subscription_nodes_empty">Aucun serveur analysé. Actualisez l’abonnement.</string>
+    <string name="subscription_linked_to">Lié à %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Ajouter à %1$s</string>
+    <string name="subscription_unsupported_node">Ce type de serveur n’est pas encore pris en charge pour l’importation.</string>
+    <string name="subscription_import_title">Importer dans %1$s</string>
+    <string name="subscription_choose_profile">Choisir un profil</string>
+    <string name="subscription_no_target_profiles">Créez d’abord un profil de destination.</string>
+    <string name="subscription_local_server_name">Nom du serveur local</string>
+    <string name="subscription_server_name_hint">Lettres anglaises, chiffres, tiret bas et trait d’union</string>
+    <string name="subscription_import_action">Importer</string>
+    <string name="subscription_import_success">Serveur importé et lié à l’abonnement</string>
+    <string name="subscription_import_failed">Impossible d’importer le serveur</string>
+    <string name="subscription_detach_failed">Impossible de dissocier le serveur</string>
+    <string name="subscription_link_active">Lié à un abonnement et synchronisé automatiquement</string>
+    <string name="subscription_manual_import">Importer une configuration</string>
+    <string name="subscription_manual_import_desc">Collez un lien de serveur, un JSON sing-box/Hysteria2 ou une configuration WireGuard. Le serveur sera créé localement sans lien d’abonnement.</string>
+    <string name="subscription_manual_source">Lien ou configuration</string>
+    <string name="subscription_paste">Coller</string>
+    <string name="subscription_recognize">Reconnaître</string>
+    <string name="subscription_manual_unrecognized">La configuration n’est pas reconnue ou n’est pas prise en charge par le backend installé.</string>
+    <string name="subscription_manual_target">Destination : %1$s</string>
+    <string name="subscription_copy_config">Copier la configuration</string>
+    <string name="subscription_copy_failed">Impossible de préparer la configuration à copier.</string>
 </resources>

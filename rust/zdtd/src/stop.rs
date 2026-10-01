@@ -175,6 +175,7 @@ fn stop_process_groups_parallel() -> Result<()> {
         "nfqws",
         "nfqws2",
         "dnscrypt",
+        "d2s",
         "byedpi",
         "t2s",
         "opera-proxy",

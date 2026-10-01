@@ -4,6 +4,16 @@ import java.util.UUID
 
 enum class VpsReachability { UNKNOWN, CHECKING, ONLINE, OFFLINE }
 
+enum class VpsAuthType { PASSWORD, PRIVATE_KEY }
+
+data class VpsSshAuth(
+  val type: VpsAuthType = VpsAuthType.PASSWORD,
+  val password: String = "",
+  val privateKey: String = "",
+  val privateKeyName: String = "",
+  val privateKeyPassphrase: String = "",
+)
+
 enum class VpsServiceKind(val wireId: String) {
   DNSCRYPT("dnscrypt"),
   OPENVPN("openvpn"),
@@ -22,11 +32,23 @@ data class VpsServer(
   val host: String,
   val port: Int = 22,
   val username: String,
-  val password: String,
+  val password: String = "",
+  val authType: VpsAuthType = VpsAuthType.PASSWORD,
+  val privateKey: String = "",
+  val privateKeyName: String = "",
+  val privateKeyPassphrase: String = "",
   val pinnedHostKey: String,
   val fingerprint: String,
   val createdAt: Long = System.currentTimeMillis(),
   val lastSuccessfulCheck: Long = 0L,
+)
+
+fun VpsServer.sshAuth(): VpsSshAuth = VpsSshAuth(
+  type = authType,
+  password = password,
+  privateKey = privateKey,
+  privateKeyName = privateKeyName,
+  privateKeyPassphrase = privateKeyPassphrase,
 )
 
 data class VpsMetrics(
@@ -75,6 +97,9 @@ data class VpsServiceProfile(
   val domain: String = "",
   val clientCount: Int = 0,
   val active: Boolean = false,
+  val uploadBytes: Long = 0L,
+  val downloadBytes: Long = 0L,
+  val sniOptions: List<String> = emptyList(),
 )
 
 data class VpsClientConfig(
@@ -84,6 +109,8 @@ data class VpsClientConfig(
   val kind: VpsServiceKind,
   val createdAt: Long = 0L,
   val active: Boolean = true,
+  val uploadBytes: Long = 0L,
+  val downloadBytes: Long = 0L,
 )
 
 data class VpsConfigResult(
@@ -95,6 +122,7 @@ data class VpsConfigResult(
   val mimeType: String,
   val content: String,
   val shareLink: String? = null,
+  val sniOptions: List<String> = emptyList(),
 )
 
 data class VpsProbeResult(

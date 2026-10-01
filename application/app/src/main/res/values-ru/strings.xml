@@ -52,6 +52,10 @@
 В составе приложения: versionCode=%2$d.
 
 Рекомендуется обновиться для максимальной совместимости. Можно пропустить, но часть функций может быть недоступна, а также возможны ошибки из-за разницы API.</string>
+    <string name="mv_module_build_update_prompt_text">Установленный модуль: v%1$s (versionCode=%2$s, сборка #%3$s).
+Доступная сборка: %4$s v%5$s (versionCode=%6$s, сборка #%7$s).
+
+Обновить модуль до сборки, встроенной в это приложение?</string>
     <string name="mv_module_version_unsupported">Установленная версия модуля больше не поддерживается (versionCode=%1$d). Чтобы продолжить пользоваться ZDT-D, необходимо обновить модуль.</string>
     <string name="mv_backup_list_read_error">Не удалось прочитать список бэкапов: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Не найдена папка настроек: %1$s.</string>
@@ -243,6 +247,7 @@
     <string name="stats_unknown_cpu">Неизвестный процессор</string>
     <string name="stats_clamped_from">Ограничено с %1$s%%</string>
     <string name="stats_memory_title">Память</string>
+    <string name="stats_power_title">Батарея</string>
     <string name="stats_total_fmt">Всего: %1$s</string>
     <string name="stats_total_unknown">Всего: —</string>
     <string name="stats_free_fmt">Свободно: %1$s</string>
@@ -356,6 +361,15 @@
     <string name="program_updates_title">Обновление инструментов/компонентов ZDT-D модуля</string>
     <string name="program_updates_reset_cd">Сброс</string>
     <string name="program_updates_desc">Обновляет инструменты и компоненты ZDT-D модуля прямо из GitHub releases. Проверка выполняется только по нажатию.</string>
+    <string name="program_updates_bulk_title">Обновление всех инструментов</string>
+    <string name="program_updates_bulk_desc">Проверяет все инструменты и устанавливает доступные обновления без остановки запущенного сервиса.</string>
+    <string name="program_updates_check_all">Проверить всё</string>
+    <string name="program_updates_checking_all">Проверяю всё…</string>
+    <string name="program_updates_update_all">Обновить всё</string>
+    <string name="program_updates_updating_all">Обновляю всё…</string>
+    <string name="program_updates_all_current">Всё актуально</string>
+    <string name="program_updates_retry_check">Повторить проверку</string>
+    <string name="program_updates_available_count_fmt">Доступно обновлений: %1$d</string>
     <string name="program_updates_service_running_title">Сервис запущен</string>
     <string name="program_updates_service_running_desc">Перед проверкой/обновлением остановите сервис. Это нужно, чтобы правила и процессы не использовали файлы во время замены.</string>
     <string name="program_updates_stopping">Останавливаю…</string>
@@ -533,6 +547,8 @@
     <string name="home_power_stopped">Остановлено</string>
     <string name="home_power_starting">Запуск…</string>
     <string name="home_power_stopping">Остановка…</string>
+    <string name="home_action_start_service">Запустить службу</string>
+    <string name="home_action_stop_service">Остановить службу</string>
     <string name="home_service_active_hint">Служба работает. Нажмите кнопку, чтобы остановить.</string>
     <string name="home_service_stopped_hint">Служба остановлена. Нажмите кнопку, чтобы запустить.</string>
     <string name="home_no_log_data">(нет данных лога)</string>
@@ -647,7 +663,7 @@ APatch: 10700+</string>
     <string name="program_updates_err_service_running">Служба всё ещё работает. Остановите её и попробуйте снова.</string>
     <string name="program_updates_err_detect_installed">Не удалось определить установленную версию</string>
     <string name="program_updates_warn_installed_unknown">Установленную версию не удалось определить. Вы всё равно можете установить выбранный релиз.</string>
-    <string name="program_updates_err_check_latest">Не удалось проверить последнюю версию</string>
+    <string name="program_updates_err_check_latest">Не удалось получить информацию</string>
     <string name="program_updates_err_no_internet">Нет подключения к интернету</string>
     <string name="program_updates_err_load_releases">Не удалось загрузить релизы</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -932,6 +948,8 @@ APatch: 10700+</string>
     <string name="action_edit">Изменить</string>
     <string name="singbox_profile_settings_title">Настройки профиля</string>
     <string name="singbox_profile_settings_desc">У каждого профиля sing-box свои порты t2s, свой список приложений и свой набор серверов.</string>
+    <string name="singbox_endpoint_resolve_label">Разрешение доменов серверов</string>
+    <string name="singbox_endpoint_resolve_hint">Разрешать доменные имена в полях server исходящих подключений в IPv4 перед запуском sing-box.</string>
     <string name="singbox_profile_add_server">Создать</string>
     <string name="singbox_profile_no_servers">Для этого профиля пока не создано ни одного сервера.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port и t2s_web_port должны отличаться</string>
@@ -1336,6 +1354,8 @@ APatch: 10700+</string>
     <string name="openvpn_dns_label">DNS-серверы</string>
     <string name="openvpn_dns_hint">Введите 1..8 IPv4 DNS через пробел или запятую. IPv6, домены и https/tls URL запрещены.</string>
     <string name="openvpn_dns_invalid">Введите только 1..8 корректных IPv4-адресов.</string>
+    <string name="openvpn_endpoint_resolve_label">Разрешение доменов</string>
+    <string name="openvpn_endpoint_resolve_hint">Разрешать доменные имена в директивах remote перед запуском OpenVPN.</string>
     <string name="openvpn_config_title">Конфиг OpenVPN</string>
     <string name="openvpn_config_desc">Вставьте содержимое client.ovpn или загрузите его из файла. Он сохраняется как profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn не должен быть пустым.</string>
@@ -2205,4 +2225,217 @@ APatch: 10700+</string>
     <string name="blockcheck_fatal_address_block">Адреса целей полностью недоступны</string>
     <string name="blockcheck_fatal_network_lost">Соединение потеряно во время проверки</string>
     <string name="blockcheck_udp_targets_fmt">Цели: %1$s</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Настройка пула SOCKS5-серверов, проверок доступности и DIRECT-резерва для DNSCrypt.</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">Загрузка настроек D2S</string>
+    <string name="d2s_loading_desc">Чтение структурированной конфигурации из демона.</string>
+    <string name="d2s_load_failed_title">Настройки D2S недоступны</string>
+    <string name="d2s_load_failed_desc">Не удалось прочитать конфигурацию. Проверьте установку модуля и повторите попытку.</string>
+    <string name="d2s_overview_title">Маршрутизация D2S</string>
+    <string name="d2s_overview_desc">Распределяет подключения DNSCrypt между локальными SOCKS5-серверами и при необходимости использует прямое соединение.</string>
+    <string name="d2s_listener_label">Локальный listener D2S</string>
+    <string name="d2s_listener_unavailable">Не настроен</string>
+    <string name="d2s_listener_desc">Берётся из активного параметра proxy в dnscrypt-proxy.toml.</string>
+    <string name="d2s_backends_title">SOCKS5-серверы</string>
+    <string name="d2s_backends_desc">Добавьте порты локальных SOCKS5-сервисов. D2S использует только серверы, прошедшие проверку.</string>
+    <string name="d2s_backends_empty">Порты SOCKS5 не настроены. D2S будет использовать DIRECT fallback.</string>
+    <string name="d2s_backend_port_label">Порт SOCKS5</string>
+    <string name="d2s_backend_port_desc">Локальный порт от 1 до 65535</string>
+    <string name="d2s_add_backend">Добавить порт</string>
+    <string name="d2s_remove_backend">Удалить порт SOCKS5</string>
+    <string name="d2s_direct_title">Резервное DIRECT-соединение</string>
+    <string name="d2s_direct_desc">Подключаться напрямую, когда нет доступного SOCKS5-сервера.</string>
+    <string name="d2s_health_title">Проверка доступности</string>
+    <string name="d2s_health_desc">Определяет, как D2S обнаруживает сбои и возвращает восстановленные серверы в балансировку.</string>
+    <string name="d2s_healthy_interval">Интервал проверки рабочих серверов</string>
+    <string name="d2s_recovery_interval">Интервал повторной проверки недоступных</string>
+    <string name="d2s_failure_threshold">Ошибок до состояния «недоступен»</string>
+    <string name="d2s_failure_threshold_desc">Количество последовательных ошибок</string>
+    <string name="d2s_runtime_cooldown">Пауза после ошибки подключения</string>
+    <string name="d2s_seconds_desc">Секунды; значение должно быть больше нуля</string>
+    <string name="d2s_milliseconds_desc">Миллисекунды; значение должно быть больше нуля</string>
+    <string name="d2s_probe_targets_label">Адреса проверки</string>
+    <string name="d2s_probe_targets_desc">D2S подключается к этим адресам HOST:PORT через каждый SOCKS5-сервер.</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">Добавить адрес</string>
+    <string name="d2s_remove_probe_target">Удалить адрес проверки</string>
+    <string name="d2s_timeouts_title">Таймауты соединений</string>
+    <string name="d2s_timeouts_desc">Ограничения для подключения, согласования SOCKS5, запросов клиентов и проверок доступности.</string>
+    <string name="d2s_connect_timeout">Подключение к SOCKS5</string>
+    <string name="d2s_upstream_handshake_timeout">Согласование SOCKS5</string>
+    <string name="d2s_backend_attempt_timeout">Попытка через сервер</string>
+    <string name="d2s_direct_connect_timeout">Прямое подключение</string>
+    <string name="d2s_client_handshake_timeout">Согласование с клиентом</string>
+    <string name="d2s_probe_timeout">Проверка сервера</string>
+    <string name="d2s_performance_title">Производительность и журнал</string>
+    <string name="d2s_performance_desc">Лимиты подключений, поведение TCP, детализация журнала и корректное завершение.</string>
+    <string name="d2s_max_connections">Максимум одновременных подключений</string>
+    <string name="d2s_max_connections_desc">Значение должно быть больше нуля</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Отправлять небольшие пакеты без задержки алгоритма Нейгла.</string>
+    <string name="d2s_log_level">Уровень журналирования</string>
+    <string name="d2s_log_level_desc">Определяет детализацию файла dnscrypt/log/d2s.log.</string>
+    <string name="d2s_shutdown_grace">Ожидание завершения подключений</string>
+    <string name="d2s_save">Сохранить настройки D2S</string>
+    <string name="d2s_saving">Сохранение…</string>
+    <string name="d2s_saved">Настройки D2S сохранены. Они применятся после остановки и запуска.</string>
+    <string name="d2s_error_port_required">Укажите порт SOCKS5.</string>
+    <string name="d2s_error_port_range">Порт SOCKS5 должен быть от 1 до 65535.</string>
+    <string name="d2s_error_duplicate_port">Порты SOCKS5 не должны повторяться.</string>
+    <string name="d2s_error_listener_port">Сервер не может использовать порт listener D2S.</string>
+    <string name="d2s_error_direct_required">При пустом списке SOCKS5 требуется DIRECT fallback.</string>
+    <string name="d2s_error_positive_number">Все числовые значения должны быть больше нуля.</string>
+    <string name="d2s_error_probe_required">При настроенных SOCKS5-серверах добавьте хотя бы один адрес проверки.</string>
+    <string name="d2s_error_probe_target">Каждый адрес проверки должен иметь формат HOST:PORT.</string>
+    <string name="d2s_log_level_error">Ошибки</string>
+    <string name="d2s_log_level_warn">Предупреждения</string>
+    <string name="d2s_log_level_info">Информация</string>
+    <string name="d2s_log_level_debug">Отладка</string>
+    <string name="d2s_log_level_trace">Трассировка</string>
+
+    <string name="d2s_route_timeout">Общий таймаут переключения SOCKS5</string>
+    <string name="d2s_route_timeout_desc">Максимальное общее время в миллисекундах на попытки через SOCKS5 перед резервным маршрутом.</string>
+    <string name="d2s_max_backend_attempts">Максимум попыток через серверы</string>
+    <string name="d2s_max_backend_attempts_desc">Максимальное число SOCKS5-серверов для одного подключения клиента.</string>
+    <string name="d2s_max_connecting">Максимум одновременных попыток подключения</string>
+    <string name="d2s_max_connecting_desc">Ограничивает одновременные подключения и согласования SOCKS5.</string>
+    <string name="d2s_idle_after">Сон проверок при простое</string>
+    <string name="d2s_idle_after_desc">Секунды без клиентского трафика до остановки фоновых проверок. 0 отключает сон.</string>
+    <string name="d2s_error_non_negative_number">Время простоя должно быть равно нулю или больше.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Не удалось применить исправление совместимости ZIP модуля: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Предупреждение: для исправления совместимости ZIP в памяти не хватило памяти приложения: %1$s. Переключение на режим обработки ZIP с низким потреблением памяти.</string>
+    <string name="module_zip_patch_low_memory_normalized">Исправление совместимости ZIP в режиме низкого потребления памяти завершено: флаг шифрования снят у %1$d записей Central Directory. Продолжаем.</string>
+    <string name="module_zip_patch_low_memory_compatible">Проверка совместимости ZIP в режиме низкого потребления памяти завершена: архив уже совместим со строгими установщиками. Продолжаем.</string>
+    <string name="module_zip_patch_normalized">ZIP модуля нормализован для строгого установщика: флаг шифрования снят у %1$d записей Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP модуля уже совместим со строгими установщиками.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Защита ZIP модуля сохранена для установщика Magisk.</string>
+
+    <string name="vps_reboot_server">Перезагрузить сервер</string>
+    <string name="vps_reboot_confirm_title">Перезагрузить сервер?</string>
+    <string name="vps_reboot_confirm_message">Перезагрузить %1$s? SSH-соединение временно прервётся на время перезапуска сервера.</string>
+    <string name="vps_rebooting">Перезагрузка сервера…</string>
+    <string name="vps_reboot_failed">Не удалось запланировать перезагрузку сервера</string>
+    <string name="vps_reboot_scheduled">Перезагрузка запланирована</string>
+    <string name="vps_waiting_for_server">Ожидание возвращения сервера…</string>
+    <string name="vps_server_online_again">Сервер снова доступен</string>
+    <string name="vps_reboot_timeout">Сервер не вернулся до истечения времени ожидания</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Добавить SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Авторизация</string>
+    <string name="vps_auth_password">Пароль</string>
+    <string name="vps_auth_private_key">SSH-ключ</string>
+    <string name="vps_private_key">Приватный SSH-ключ</string>
+    <string name="vps_choose_private_key_file">Выбрать файл приватного ключа</string>
+    <string name="vps_private_key_file_selected">Файл ключа: %1$s</string>
+    <string name="vps_private_key_passphrase">Пароль ключа (необязательно)</string>
+    <string name="vps_private_key_storage_hint">Приватный ключ и пароль ключа шифруются через Android Keystore и остаются только в данных приложения.</string>
+    <string name="vps_private_key_read_error">Не удалось прочитать выбранный файл приватного ключа.</string>
+    <string name="vps_private_key_too_large">Выбранный файл слишком большой. Выберите SSH-ключ размером менее 512 КБ.</string>
+    <string name="vps_public_key_error">Похоже, выбран публичный SSH-ключ. Для авторизации требуется приватный ключ.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S не подключён</string>
+    <string name="d2s_not_connected_desc">Данная программа не подключена для использования с DNSCrypt. Желаете подключить?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D выберет первый свободный локальный порт SOCKS5 начиная с 11990 и сохранит его в dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Подключить</string>
+    <string name="d2s_connecting">Подключение…</string>
+    <string name="d2s_connect_failed">Не удалось подключить D2S</string>
+    <string name="d2s_connected_fmt">D2S подключён: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">Подписки</string>
+    <string name="mihomo_subscriptions_summary">%1$d источн. · %2$d активн. · %3$d серверов</string>
+    <string name="mihomo_sub_add">Добавить подписку</string>
+    <string name="mihomo_sub_refresh_all">Обновить всё</string>
+    <string name="mihomo_sub_empty_title">Подписок пока нет</string>
+    <string name="mihomo_sub_empty_desc">Добавьте источник подписки и используйте его в одном или нескольких профилях Mihomo.</string>
+    <string name="mihomo_sub_saved">Подписка сохранена</string>
+    <string name="mihomo_sub_delete_title">Удалить подписку</string>
+    <string name="mihomo_sub_delete_message">Удалить подписку «%1$s»? Профили, использующие её, будут отключены от этого источника.</string>
+    <string name="mihomo_sub_state_disabled">Отключена</string>
+    <string name="mihomo_sub_state_error">Ошибка обновления</string>
+    <string name="mihomo_sub_state_ready">Готова</string>
+    <string name="mihomo_sub_state_waiting">Ожидает первого обновления</string>
+    <string name="mihomo_sub_servers">Серверы</string>
+    <string name="mihomo_sub_profiles">Профили</string>
+    <string name="mihomo_sub_interval">Интервал</string>
+    <string name="mihomo_sub_traffic_value">Трафик: %1$s</string>
+    <string name="mihomo_sub_expire_value">Истекает: %1$s</string>
+    <string name="mihomo_sub_used_by">Профили: %1$s</string>
+    <string name="mihomo_sub_updated_value">Обновлено: %1$s</string>
+    <string name="mihomo_sub_refresh">Обновить</string>
+    <string name="mihomo_sub_add_title">Новая подписка</string>
+    <string name="mihomo_sub_edit_title">Изменить подписку</string>
+    <string name="mihomo_sub_name">Название</string>
+    <string name="mihomo_sub_url">URL подписки</string>
+    <string name="mihomo_sub_basic_auth">Basic-аутентификация</string>
+    <string name="mihomo_sub_basic_auth_desc">Отправлять HTTP Basic логин и пароль при запросе подписки.</string>
+    <string name="mihomo_sub_username">Логин</string>
+    <string name="mihomo_sub_password">Пароль</string>
+    <string name="mihomo_sub_hwid">HWID-аутентификация</string>
+    <string name="mihomo_sub_hwid_desc">Отправлять аппаратный идентификатор, требуемый провайдером подписки.</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">Использовать ID этого устройства</string>
+    <string name="mihomo_sub_device_headers">Заголовки устройства</string>
+    <string name="mihomo_sub_device_headers_desc">Отправлять совместимые с Happ заголовки языка, версии Android и модели устройства.</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">Оставьте пустым, чтобы автоматически генерировать совместимый с Happ User-Agent.</string>
+    <string name="mihomo_sub_locale">Язык</string>
+    <string name="mihomo_sub_os_version">Версия Android</string>
+    <string name="mihomo_sub_device_model">Модель устройства</string>
+    <string name="mihomo_sub_custom_headers">Дополнительные HTTP-заголовки</string>
+    <string name="mihomo_sub_custom_headers_hint">Один заголовок в строке: Header-Name: значение</string>
+    <string name="mihomo_sub_remote_interval">Использовать интервал провайдера</string>
+    <string name="mihomo_sub_remote_interval_desc">Использовать profile-update-interval, если провайдер его передаёт.</string>
+    <string name="mihomo_sub_fallback_interval">Резервный интервал, минут</string>
+    <string name="mihomo_sub_interval_hint">15–10080 минут; используется, если провайдер не указал интервал.</string>
+    <string name="mihomo_tab_subscriptions">Подписки</string>
+    <string name="mihomo_tab_desc_subscriptions">Выбор управляемых источников подписок для этого профиля.</string>
+    <string name="mihomo_profile_subscriptions_title">Подписки профиля</string>
+    <string name="mihomo_profile_subscriptions_desc">Выберите общие подписки, которые ZDT-D добавит в этот профиль при запуске.</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d выбрано и доступно · %2$d всего</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">Исходный config.yaml не изменяется. ZDT-D добавляет провайдеры только в config.runtime.yaml и подключает их к группе Proxy.</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">Сначала создайте подписки на общем экране подписок Mihomo.</string>
+    <string name="mihomo_profile_subscription_servers">%1$d серверов</string>
+    <string name="mihomo_profile_subscription_disabled_hint">Эта подписка глобально отключена.</string>
+    <string name="subscriptions_title">Подписки</string>
+    <string name="subscriptions_entry_desc">Общие источники подписок и импорт отдельных серверов.</string>
+    <string name="subscriptions_badge">Библиотека</string>
+    <string name="subscription_view_servers">Посмотреть серверы</string>
+    <string name="subscription_servers_count">Серверов: %1$d</string>
+    <string name="subscription_missing_title">Сервер больше отсутствует в подписке</string>
+    <string name="subscription_local_copy_saved">Локальная копия сохранена.</string>
+    <string name="subscription_detach">Отвязать от подписки</string>
+    <string name="subscription_nodes_empty">Разобранных серверов пока нет. Обновите подписку.</string>
+    <string name="subscription_linked_to">Связан с %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Добавить в %1$s</string>
+    <string name="subscription_unsupported_node">Сервер можно посмотреть, но его тип пока не поддерживается для импорта.</string>
+    <string name="subscription_import_title">Импорт в %1$s</string>
+    <string name="subscription_choose_profile">Выберите профиль</string>
+    <string name="subscription_no_target_profiles">Сначала создайте профиль назначения.</string>
+    <string name="subscription_local_server_name">Имя локального сервера</string>
+    <string name="subscription_server_name_hint">Английские буквы, цифры, подчёркивание и дефис</string>
+    <string name="subscription_import_action">Импортировать</string>
+    <string name="subscription_import_success">Сервер импортирован и связан с подпиской</string>
+    <string name="subscription_import_failed">Не удалось импортировать сервер</string>
+    <string name="subscription_detach_failed">Не удалось отвязать сервер</string>
+    <string name="subscription_link_active">Связан с подпиской и синхронизируется автоматически</string>
+    <string name="subscription_manual_import">Импортировать конфигурацию</string>
+    <string name="subscription_manual_import_desc">Вставьте ссылку одного сервера, JSON sing-box/Hysteria2 или конфигурацию WireGuard. Сервер будет создан локально без связи с подпиской.</string>
+    <string name="subscription_manual_source">Ссылка или конфигурация</string>
+    <string name="subscription_paste">Вставить</string>
+    <string name="subscription_recognize">Распознать</string>
+    <string name="subscription_manual_unrecognized">Конфигурация не распознана или не поддерживается установленным backend.</string>
+    <string name="subscription_manual_target">Назначение: %1$s</string>
+    <string name="subscription_copy_config">Копировать конфигурацию</string>
+    <string name="subscription_copy_failed">Не удалось подготовить конфигурацию для копирования.</string>
 </resources>

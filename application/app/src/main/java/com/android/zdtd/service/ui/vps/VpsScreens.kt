@@ -5,7 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -15,7 +18,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,10 +84,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -100,6 +102,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
+import com.android.zdtd.service.vps.VpsAuthType
 import com.android.zdtd.service.vps.VpsClientConfig
 import com.android.zdtd.service.vps.VpsConfigResult
 import com.android.zdtd.service.vps.VpsLoadState
@@ -110,12 +113,15 @@ import com.android.zdtd.service.vps.VpsServer
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsServiceProfile
 import com.android.zdtd.service.vps.VpsServiceState
+import com.android.zdtd.service.vps.VpsSshAuth
 import com.android.zdtd.service.vps.VpsViewModel
 import java.io.File
 import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Composable
 fun VpsServersScreen(
@@ -236,6 +242,7 @@ fun VpsServerDetailsScreen(
   val operation by viewModel.operation.collectAsState()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
+  var showRebootConfirm by remember { mutableStateOf(false) }
 
   LifecycleStartEffect(serverId) {
     viewModel.startServerDetailsMonitoring(serverId)
@@ -244,6 +251,27 @@ fun VpsServerDetailsScreen(
 
   VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
   logs?.let { text -> VpsTextDialog(stringResource(R.string.vps_logs_title), text, onDismiss = { logs = null }) }
+  if (showRebootConfirm && server != null) {
+    AlertDialog(
+      onDismissRequest = { if (!operation.running) showRebootConfirm = false },
+      title = { Text(stringResource(R.string.vps_reboot_confirm_title)) },
+      text = { Text(stringResource(R.string.vps_reboot_confirm_message, server.name)) },
+      confirmButton = {
+        Button(
+          enabled = !operation.running,
+          onClick = {
+            showRebootConfirm = false
+            viewModel.rebootServer(serverId)
+          },
+        ) { Text(stringResource(R.string.vps_reboot_server)) }
+      },
+      dismissButton = {
+        OutlinedButton(enabled = !operation.running, onClick = { showRebootConfirm = false }) {
+          Text(stringResource(R.string.action_cancel))
+        }
+      },
+    )
+  }
   removeTarget?.let { kind ->
     AlertDialog(
       onDismissRequest = { removeTarget = null },
@@ -270,7 +298,15 @@ fun VpsServerDetailsScreen(
     contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    item { VpsServerSummaryCard(server, currentMetrics, onRefresh = { viewModel.refreshServer(serverId); viewModel.loadServices(serverId) }) }
+    item {
+      VpsServerSummaryCard(
+        server = server,
+        metrics = currentMetrics,
+        rebootEnabled = currentMetrics.reachability == VpsReachability.ONLINE && !operation.running,
+        onRefresh = { viewModel.refreshServer(serverId); viewModel.loadServices(serverId) },
+        onReboot = { showRebootConfirm = true },
+      )
+    }
     item {
       Text(
         text = stringResource(R.string.vps_services_title),
@@ -352,9 +388,9 @@ fun VpsServiceScreen(
       suggestedHysteriaPort = profilesMap[VpsViewModel.profileKey(serverId, VpsServiceKind.XRAY)]?.firstOrNull()?.port,
       busy = operation.running || !serverOnline,
       onDismiss = { showCreate = false },
-      onCreate = { name, port, mode, domain, email, sni ->
+      onCreate = { name, port, mode, domain, email, snis ->
         showCreate = false
-        viewModel.createProfile(serverId, kind, name, port, mode, domain, email, sni)
+        viewModel.createProfile(serverId, kind, name, port, mode, domain, email, snis)
       },
     )
   }
@@ -582,14 +618,49 @@ fun VpsProfileScreen(
 private fun AddVpsServerDialog(
   busy: Boolean,
   onDismiss: () -> Unit,
-  onSubmit: (String, String, Int, String, String) -> Unit,
+  onSubmit: (String, String, Int, String, VpsSshAuth) -> Unit,
 ) {
+  val context = LocalContext.current
   var name by remember { mutableStateOf("") }
   var host by remember { mutableStateOf("") }
   var port by remember { mutableStateOf("22") }
   var username by remember { mutableStateOf("root") }
+  var authType by remember { mutableStateOf(VpsAuthType.PASSWORD) }
   var password by remember { mutableStateOf("") }
-  val valid = host.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && port.toIntOrNull() in 1..65535
+  var privateKey by remember { mutableStateOf("") }
+  var privateKeyName by remember { mutableStateOf("") }
+  var privateKeyPassphrase by remember { mutableStateOf("") }
+  var keyError by remember { mutableStateOf<String?>(null) }
+
+  val keyReadError = stringResource(R.string.vps_private_key_read_error)
+  val keyTooLarge = stringResource(R.string.vps_private_key_too_large)
+  val publicKeyError = stringResource(R.string.vps_public_key_error)
+
+  val keyPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+    onResult = { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      runCatching { readVpsPrivateKeyFromUri(context, uri) }
+        .onSuccess { imported ->
+          privateKey = imported.text
+          privateKeyName = imported.name
+          keyError = if (looksLikeVpsPublicKey(imported.text)) publicKeyError else null
+        }
+        .onFailure { error ->
+          privateKey = ""
+          privateKeyName = ""
+          keyError = if (error is VpsPrivateKeyTooLargeException) keyTooLarge else keyReadError
+        }
+    },
+  )
+
+  val portValid = port.toIntOrNull() in 1..65535
+  val authValid = when (authType) {
+    VpsAuthType.PASSWORD -> password.isNotEmpty()
+    VpsAuthType.PRIVATE_KEY -> privateKey.isNotBlank() && keyError == null && !looksLikeVpsPublicKey(privateKey)
+  }
+  val valid = host.isNotBlank() && username.isNotBlank() && portValid && authValid
+
   AlertDialog(
     onDismissRequest = onDismiss,
     icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
@@ -603,19 +674,164 @@ private fun AddVpsServerDialog(
         OutlinedTextField(host, { host = it.trim() }, label = { Text(stringResource(R.string.vps_host)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.vps_ssh_port)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(username, { username = it.trim() }, label = { Text(stringResource(R.string.vps_username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.vps_password)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        Text(stringResource(R.string.vps_password_storage_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
+
+        Text(
+          stringResource(R.string.vps_auth_method),
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          if (authType == VpsAuthType.PASSWORD) {
+            FilledTonalButton(onClick = { authType = VpsAuthType.PASSWORD }, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.vps_auth_password))
+            }
+          } else {
+            OutlinedButton(onClick = { authType = VpsAuthType.PASSWORD; keyError = null }, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.vps_auth_password))
+            }
+          }
+          if (authType == VpsAuthType.PRIVATE_KEY) {
+            FilledTonalButton(onClick = { authType = VpsAuthType.PRIVATE_KEY }, modifier = Modifier.weight(1f)) {
+              Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.vps_auth_private_key))
+            }
+          } else {
+            OutlinedButton(onClick = { authType = VpsAuthType.PRIVATE_KEY }, modifier = Modifier.weight(1f)) {
+              Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.vps_auth_private_key))
+            }
+          }
+        }
+
+        if (authType == VpsAuthType.PASSWORD) {
+          OutlinedTextField(
+            password,
+            { password = it },
+            label = { Text(stringResource(R.string.vps_password)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            stringResource(R.string.vps_password_storage_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          )
+        } else {
+          OutlinedButton(
+            enabled = !busy,
+            onClick = { keyPicker.launch(arrayOf("*/*")) },
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(
+              if (privateKeyName.isBlank()) stringResource(R.string.vps_choose_private_key_file)
+              else stringResource(R.string.vps_private_key_file_selected, privateKeyName),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          OutlinedTextField(
+            value = privateKey,
+            onValueChange = { value ->
+              privateKey = value
+              if (privateKeyName.isNotBlank()) privateKeyName = ""
+              keyError = when {
+                value.isBlank() -> null
+                looksLikeVpsPublicKey(value) -> publicKeyError
+                else -> null
+              }
+            },
+            label = { Text(stringResource(R.string.vps_private_key)) },
+            placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
+            minLines = 4,
+            maxLines = 8,
+            isError = keyError != null,
+            supportingText = keyError?.let { message -> { Text(message) } },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = privateKeyPassphrase,
+            onValueChange = { privateKeyPassphrase = it },
+            label = { Text(stringResource(R.string.vps_private_key_passphrase)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            stringResource(R.string.vps_private_key_storage_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          )
+        }
       }
     },
     confirmButton = {
-      Button(enabled = valid && !busy, onClick = { onSubmit(name, host, port.toInt(), username, password) }) {
-        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(7.dp)); Text(stringResource(R.string.vps_check_and_add))
+      Button(
+        enabled = valid && !busy,
+        onClick = {
+          onSubmit(
+            name,
+            host,
+            port.toInt(),
+            username,
+            VpsSshAuth(
+              type = authType,
+              password = if (authType == VpsAuthType.PASSWORD) password else "",
+              privateKey = if (authType == VpsAuthType.PRIVATE_KEY) privateKey else "",
+              privateKeyName = if (authType == VpsAuthType.PRIVATE_KEY) privateKeyName else "",
+              privateKeyPassphrase = if (authType == VpsAuthType.PRIVATE_KEY) privateKeyPassphrase else "",
+            ),
+          )
+        },
+      ) {
+        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        else Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(stringResource(R.string.vps_check_and_add))
       }
     },
     dismissButton = { OutlinedButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
+
+private data class ImportedVpsPrivateKey(val name: String, val text: String)
+private class VpsPrivateKeyTooLargeException : IllegalArgumentException()
+
+private fun readVpsPrivateKeyFromUri(context: Context, uri: Uri): ImportedVpsPrivateKey {
+  val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+    if (cursor.moveToFirst()) cursor.getString(0) else null
+  }.orEmpty().ifBlank { "ssh_private_key" }
+  val input = context.contentResolver.openInputStream(uri) ?: error("Unable to open selected key")
+  val bytes = input.use { stream ->
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8 * 1024)
+    var total = 0
+    while (true) {
+      val count = stream.read(buffer)
+      if (count < 0) break
+      total += count
+      if (total > VPS_PRIVATE_KEY_MAX_BYTES) throw VpsPrivateKeyTooLargeException()
+      output.write(buffer, 0, count)
+    }
+    output.toByteArray()
+  }
+  require(bytes.isNotEmpty()) { "Selected key is empty" }
+  return ImportedVpsPrivateKey(name, bytes.toString(Charsets.UTF_8).trim())
+}
+
+private fun looksLikeVpsPublicKey(value: String): Boolean {
+  val first = value.lineSequence().firstOrNull()?.trim().orEmpty()
+  return first.startsWith("ssh-") || first.startsWith("ecdsa-") || first.startsWith("sk-")
+}
+
+private const val VPS_PRIVATE_KEY_MAX_BYTES = 512 * 1024
 
 @Composable
 private fun CreateVpsProfileDialog(
@@ -623,7 +839,7 @@ private fun CreateVpsProfileDialog(
   suggestedHysteriaPort: Int?,
   busy: Boolean,
   onDismiss: () -> Unit,
-  onCreate: (String, Int, String, String, String, String) -> Unit,
+  onCreate: (String, Int, String, String, String, List<String>) -> Unit,
 ) {
   var name by remember { mutableStateOf("") }
   val defaultPort = when (kind) {
@@ -637,22 +853,48 @@ private fun CreateVpsProfileDialog(
   var mode by remember { mutableStateOf(if (kind == VpsServiceKind.XRAY) "reality" else if (kind == VpsServiceKind.OPENVPN) "udp" else "default") }
   var domain by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
-  var sni by remember(kind) { mutableStateOf(if (kind == VpsServiceKind.HYSTERIA2) "zdt-hysteria.local" else "www.microsoft.com") }
+  var hysteriaSni by remember(kind) { mutableStateOf("zdt-hysteria.local") }
+  var xraySnis by remember(kind) { mutableStateOf(listOf("www.microsoft.com")) }
   var menu by remember { mutableStateOf(false) }
+  val configuration = LocalConfiguration.current
   val requiresPublicTls = kind == VpsServiceKind.XRAY && mode == "ws"
+  val normalizedXraySnis = xraySnis.map(String::trim).filter(String::isNotBlank).distinct()
   val requiresSni = (kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2
-  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || sni.isNotBlank())
+  val hasRequiredSni = when {
+    kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis.isNotEmpty()
+    kind == VpsServiceKind.HYSTERIA2 -> hysteriaSni.isNotBlank()
+    else -> true
+  }
+  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || hasRequiredSni)
   val modes = when (kind) {
     VpsServiceKind.OPENVPN -> listOf("udp", "tcp")
     VpsServiceKind.XRAY -> listOf("reality", "ws")
     else -> listOf(mode)
   }
 
+  fun updateXraySni(index: Int, raw: String) {
+    val hasSeparator = raw.any { it == ',' || it == '\n' || it == ';' }
+    if (!hasSeparator) {
+      xraySnis = xraySnis.toMutableList().also { list -> list[index] = raw.trim() }
+      return
+    }
+    val parts = raw.split(',', '\n', ';').map(String::trim).filter(String::isNotBlank)
+    val next = xraySnis.toMutableList()
+    next.removeAt(index)
+    next.addAll(index, parts.ifEmpty { listOf("") })
+    xraySnis = next.distinct()
+  }
+
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.vps_create_profile)) },
     text = {
-      Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(
+        modifier = Modifier
+          .heightIn(max = configuration.screenHeightDp.dp * 0.62f)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
         OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.vps_profile_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.vps_port)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         if (modes.size > 1) {
@@ -663,8 +905,40 @@ private fun CreateVpsProfileDialog(
             }
           }
         }
-        if ((kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2) {
-          OutlinedTextField(sni, { sni = it.trim() }, label = { Text(stringResource(R.string.vps_sni)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (kind == VpsServiceKind.XRAY && mode == "reality") {
+          xraySnis.forEachIndexed { index, value ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              OutlinedTextField(
+                value = value,
+                onValueChange = { updateXraySni(index, it) },
+                label = { Text(stringResource(R.string.vps_sni)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+              )
+              if (xraySnis.size > 1) {
+                IconButton(
+                  enabled = !busy,
+                  onClick = { xraySnis = xraySnis.toMutableList().also { it.removeAt(index) } },
+                ) {
+                  Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete))
+                }
+              }
+            }
+          }
+          TextButton(
+            enabled = !busy,
+            onClick = { xraySnis = xraySnis + "" },
+          ) {
+            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.vps_add_sni))
+          }
+        } else if (kind == VpsServiceKind.HYSTERIA2) {
+          OutlinedTextField(hysteriaSni, { hysteriaSni = it.trim() }, label = { Text(stringResource(R.string.vps_sni)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         if (requiresPublicTls) {
           OutlinedTextField(domain, { domain = it.trim() }, label = { Text(stringResource(R.string.vps_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -677,7 +951,17 @@ private fun CreateVpsProfileDialog(
       }
     },
     confirmButton = {
-      Button(enabled = valid && !busy, onClick = { onCreate(name, port.toInt(), mode, domain, email, sni) }) { Text(stringResource(R.string.action_create)) }
+      Button(
+        enabled = valid && !busy,
+        onClick = {
+          val snis = when {
+            kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis
+            kind == VpsServiceKind.HYSTERIA2 -> listOf(hysteriaSni.trim())
+            else -> emptyList()
+          }
+          onCreate(name, port.toInt(), mode, domain, email, snis)
+        },
+      ) { Text(stringResource(R.string.action_create)) }
     },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
@@ -745,13 +1029,13 @@ private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () ->
   Card(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 194.dp),
     shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.14f), MaterialTheme.colorScheme.surface.copy(alpha = 0.66f))))
         .padding(14.dp),
       verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -807,7 +1091,13 @@ private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () ->
 }
 
 @Composable
-private fun VpsServerSummaryCard(server: VpsServer, metrics: VpsMetrics, onRefresh: () -> Unit) {
+private fun VpsServerSummaryCard(
+  server: VpsServer,
+  metrics: VpsMetrics,
+  rebootEnabled: Boolean,
+  onRefresh: () -> Unit,
+  onReboot: () -> Unit,
+) {
   val targetAccent = when (metrics.reachability) {
     VpsReachability.ONLINE -> Color(0xFF22C55E)
     VpsReachability.OFFLINE -> MaterialTheme.colorScheme.error
@@ -854,6 +1144,15 @@ private fun VpsServerSummaryCard(server: VpsServer, metrics: VpsMetrics, onRefre
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
       )
+      OutlinedButton(
+        enabled = rebootEnabled,
+        onClick = onReboot,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(stringResource(R.string.vps_reboot_server))
+      }
     }
   }
 }
@@ -865,10 +1164,11 @@ private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled
   Card(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).clickable(enabled = state.installed && enabled, onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
   ) {
-    Row(modifier = Modifier.background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.12f), MaterialTheme.colorScheme.surface.copy(alpha = 0.68f)))).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(modifier = Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       ServiceIcon(kind, accent)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(serviceTitle(kind), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -912,6 +1212,11 @@ private fun VpsProfileCard(
         Text(profile.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("${profile.mode.uppercase(Locale.ROOT)} · ${profile.protocol.uppercase(Locale.ROOT)} ${profile.port}", style = MaterialTheme.typography.bodySmall)
         Text(stringResource(R.string.vps_clients_count, profile.clientCount), style = MaterialTheme.typography.labelMedium, color = accent)
+        Text(
+          stringResource(R.string.vps_traffic_values, formatTrafficBytes(profile.uploadBytes), formatTrafficBytes(profile.downloadBytes)),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+        )
       }
       Box {
         IconButton(enabled = enabled, onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = null) }
@@ -939,6 +1244,11 @@ private fun VpsClientCard(
       Column(Modifier.weight(1f)) {
         Text(client.name, fontWeight = FontWeight.Bold)
         if (client.createdAt > 0) Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(client.createdAt * 1000)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(
+          stringResource(R.string.vps_traffic_values, formatTrafficBytes(client.uploadBytes), formatTrafficBytes(client.downloadBytes)),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        )
       }
       FilledTonalButton(enabled = enabled, onClick = onGenerate) { Text(stringResource(R.string.vps_get_config)) }
       IconButton(enabled = enabled, onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete)) }
@@ -1263,6 +1573,7 @@ private fun formatBytes(value: Long): String {
   while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
   return if (i <= 1) String.format(Locale.US, "%.0f %s", v, units[i]) else String.format(Locale.US, "%.1f %s", v, units[i])
 }
+private fun formatTrafficBytes(value: Long): String = if (value <= 0L) "0 B" else formatBytes(value)
 private fun formatPercent(value: Double) = String.format(Locale.US, "%.1f%%", value.coerceIn(0.0, 100.0))
 private fun formatUptime(seconds: Long): String {
   if (seconds <= 0) return "—"
@@ -1331,8 +1642,21 @@ private fun importConfigIntoZdtd(
         if (created == null) return@createNamedProfile onDone(context.getString(R.string.create_failed))
         actions.createSingBoxServer(created, "server") { serverName ->
           if (serverName == null) return@createSingBoxServer onDone(context.getString(R.string.vps_import_failed))
-          val path = "/api/programs/sing-box/profiles/${url(created)}/servers/${url(serverName)}/config"
-          actions.saveText(path, imported.configJson) { ok -> onDone(context.getString(if (ok) R.string.vps_import_success else R.string.vps_import_failed)) }
+          val serverBase = "/api/programs/sing-box/profiles/${url(created)}/servers/${url(serverName)}"
+          actions.saveText("$serverBase/config", imported.configJson) { configOk ->
+            if (!configOk || result.sniOptions.isEmpty()) {
+              onDone(context.getString(if (configOk) R.string.vps_import_success else R.string.vps_import_failed))
+              return@saveText
+            }
+            actions.loadJsonData("$serverBase/setting") { current ->
+              val setting = current ?: JSONObject()
+              setting.put("sni", result.sniOptions.first())
+              setting.put("sni_options", JSONArray().also { array -> result.sniOptions.forEach { option -> array.put(option) } })
+              actions.saveJsonData("$serverBase/setting", setting) { settingOk ->
+                onDone(context.getString(if (settingOk) R.string.vps_import_success else R.string.vps_import_failed))
+              }
+            }
+          }
         }
       }
     }

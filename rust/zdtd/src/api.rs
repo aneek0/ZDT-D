@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -7,7 +7,7 @@ use std::{
     collections::{HashMap, BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::{Component, Path, PathBuf},
     sync::{Arc, OnceLock, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}},
     thread,
@@ -296,6 +296,253 @@ struct ContentReq {
     content: String,
 }
 
+fn d2s_default_true() -> bool { true }
+fn d2s_default_connect_timeout_ms() -> u64 { 500 }
+fn d2s_default_upstream_handshake_timeout_ms() -> u64 { 1_000 }
+fn d2s_default_backend_attempt_timeout_ms() -> u64 { 1_200 }
+fn d2s_default_direct_connect_timeout_ms() -> u64 { 2_000 }
+fn d2s_default_client_handshake_timeout_ms() -> u64 { 3_000 }
+fn d2s_default_probe_timeout_ms() -> u64 { 1_200 }
+fn d2s_default_healthy_probe_interval_secs() -> u64 { 30 }
+fn d2s_default_recovery_probe_interval_secs() -> u64 { 5 }
+fn d2s_default_failure_threshold() -> u32 { 3 }
+fn d2s_default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn d2s_default_probe_targets() -> Vec<String> {
+    vec!["1.1.1.1:443".to_string(), "8.8.8.8:443".to_string()]
+}
+fn d2s_default_max_connections() -> usize { 1_024 }
+fn d2s_default_log_level() -> String { "info".to_string() }
+fn d2s_default_status_interval_secs() -> u64 { 5 }
+fn d2s_status_interval_is_default(value: &u64) -> bool { *value == d2s_default_status_interval_secs() }
+fn d2s_default_shutdown_grace_period_ms() -> u64 { 5_000 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct D2sFileConfig {
+    backends: Vec<String>,
+    direct_fallback: bool,
+    connect_timeout_ms: u64,
+    upstream_handshake_timeout_ms: u64,
+    backend_attempt_timeout_ms: u64,
+    direct_connect_timeout_ms: u64,
+    client_handshake_timeout_ms: u64,
+    probe_timeout_ms: u64,
+    healthy_probe_interval_secs: u64,
+    recovery_probe_interval_secs: u64,
+    failure_threshold: u32,
+    runtime_cooldown_ms: u64,
+    probe_targets: Vec<String>,
+    max_connections: usize,
+    tcp_nodelay: bool,
+    log_level: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_file: Option<PathBuf>,
+    #[serde(skip_serializing_if = "d2s_status_interval_is_default")]
+    status_interval_secs: u64,
+    shutdown_grace_period_ms: u64,
+    // Compatibility-only fields from experimental D2S builds. They are not
+    // exposed by the API and the stable D2S transport ignores them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    idle_after_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route_timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_backend_attempts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_connecting: Option<usize>,
+}
+
+impl Default for D2sFileConfig {
+    fn default() -> Self {
+        Self {
+            backends: Vec::new(),
+            direct_fallback: d2s_default_true(),
+            connect_timeout_ms: d2s_default_connect_timeout_ms(),
+            upstream_handshake_timeout_ms: d2s_default_upstream_handshake_timeout_ms(),
+            backend_attempt_timeout_ms: d2s_default_backend_attempt_timeout_ms(),
+            direct_connect_timeout_ms: d2s_default_direct_connect_timeout_ms(),
+            client_handshake_timeout_ms: d2s_default_client_handshake_timeout_ms(),
+            probe_timeout_ms: d2s_default_probe_timeout_ms(),
+            healthy_probe_interval_secs: d2s_default_healthy_probe_interval_secs(),
+            recovery_probe_interval_secs: d2s_default_recovery_probe_interval_secs(),
+            failure_threshold: d2s_default_failure_threshold(),
+            runtime_cooldown_ms: d2s_default_runtime_cooldown_ms(),
+            probe_targets: d2s_default_probe_targets(),
+            max_connections: d2s_default_max_connections(),
+            tcp_nodelay: d2s_default_true(),
+            log_level: d2s_default_log_level(),
+            status_file: None,
+            status_interval_secs: d2s_default_status_interval_secs(),
+            shutdown_grace_period_ms: d2s_default_shutdown_grace_period_ms(),
+            idle_after_secs: None,
+            route_timeout_ms: None,
+            max_backend_attempts: None,
+            max_connecting: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct D2sConfigReq {
+    backends: Vec<String>,
+    direct_fallback: bool,
+    connect_timeout_ms: u64,
+    upstream_handshake_timeout_ms: u64,
+    backend_attempt_timeout_ms: u64,
+    direct_connect_timeout_ms: u64,
+    client_handshake_timeout_ms: u64,
+    probe_timeout_ms: u64,
+    healthy_probe_interval_secs: u64,
+    recovery_probe_interval_secs: u64,
+    failure_threshold: u32,
+    runtime_cooldown_ms: u64,
+    probe_targets: Vec<String>,
+    max_connections: usize,
+    tcp_nodelay: bool,
+    log_level: String,
+    shutdown_grace_period_ms: u64,
+}
+
+impl From<&D2sFileConfig> for D2sConfigReq {
+    fn from(value: &D2sFileConfig) -> Self {
+        Self {
+            backends: value.backends.clone(),
+            direct_fallback: value.direct_fallback,
+            connect_timeout_ms: value.connect_timeout_ms,
+            upstream_handshake_timeout_ms: value.upstream_handshake_timeout_ms,
+            backend_attempt_timeout_ms: value.backend_attempt_timeout_ms,
+            direct_connect_timeout_ms: value.direct_connect_timeout_ms,
+            client_handshake_timeout_ms: value.client_handshake_timeout_ms,
+            probe_timeout_ms: value.probe_timeout_ms,
+            healthy_probe_interval_secs: value.healthy_probe_interval_secs,
+            recovery_probe_interval_secs: value.recovery_probe_interval_secs,
+            failure_threshold: value.failure_threshold,
+            runtime_cooldown_ms: value.runtime_cooldown_ms,
+            probe_targets: value.probe_targets.clone(),
+            max_connections: value.max_connections,
+            tcp_nodelay: value.tcp_nodelay,
+            log_level: value.log_level.clone(),
+            shutdown_grace_period_ms: value.shutdown_grace_period_ms,
+        }
+    }
+}
+
+impl D2sFileConfig {
+    fn apply_request(&mut self, req: D2sConfigReq) {
+        self.backends = req.backends;
+        self.direct_fallback = req.direct_fallback;
+        self.connect_timeout_ms = req.connect_timeout_ms;
+        self.upstream_handshake_timeout_ms = req.upstream_handshake_timeout_ms;
+        self.backend_attempt_timeout_ms = req.backend_attempt_timeout_ms;
+        self.direct_connect_timeout_ms = req.direct_connect_timeout_ms;
+        self.client_handshake_timeout_ms = req.client_handshake_timeout_ms;
+        self.probe_timeout_ms = req.probe_timeout_ms;
+        self.healthy_probe_interval_secs = req.healthy_probe_interval_secs;
+        self.recovery_probe_interval_secs = req.recovery_probe_interval_secs;
+        self.failure_threshold = req.failure_threshold;
+        self.runtime_cooldown_ms = req.runtime_cooldown_ms;
+        self.probe_targets = req.probe_targets;
+        self.max_connections = req.max_connections;
+        self.tcp_nodelay = req.tcp_nodelay;
+        self.log_level = req.log_level;
+        self.shutdown_grace_period_ms = req.shutdown_grace_period_ms;
+    }
+}
+
+fn read_d2s_file_config(path: &Path) -> Result<D2sFileConfig> {
+    let raw = read_text(path)?;
+    toml::from_str(&raw).map_err(|e| anyhow::anyhow!("bad D2S TOML {}: {e}", path.display()))
+}
+
+fn write_d2s_file_config(path: &Path, config: &D2sFileConfig) -> Result<()> {
+    let raw = toml::to_string_pretty(config)
+        .map_err(|e| anyhow::anyhow!("serialize D2S TOML {}: {e}", path.display()))?;
+    write_text_atomic(path, &raw)
+}
+
+fn validate_d2s_host_port(value: &str, field: &str) -> Result<()> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        anyhow::bail!("{field} must be HOST:PORT");
+    }
+    if let Ok(addr) = value.parse::<SocketAddr>() {
+        if addr.port() == 0 {
+            anyhow::bail!("{field} port must be greater than zero");
+        }
+        return Ok(());
+    }
+    let (host, port) = value
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow::anyhow!("{field} must be HOST:PORT"))?;
+    if host.is_empty() || host.contains('/') || host.contains('@') {
+        anyhow::bail!("{field} must be HOST:PORT");
+    }
+    let port = port.parse::<u16>()
+        .map_err(|_| anyhow::anyhow!("{field} has an invalid port"))?;
+    if port == 0 {
+        anyhow::bail!("{field} port must be greater than zero");
+    }
+    Ok(())
+}
+
+fn validate_d2s_file_config(config: &D2sFileConfig, listener: Option<SocketAddr>) -> Result<()> {
+    if config.backends.is_empty() && !config.direct_fallback {
+        anyhow::bail!("direct_fallback must be enabled when no SOCKS5 backends are configured");
+    }
+
+    let mut seen_backends = BTreeSet::new();
+    for backend in &config.backends {
+        let addr: SocketAddr = backend.trim().parse()
+            .map_err(|_| anyhow::anyhow!("invalid D2S backend: {backend}"))?;
+        if !addr.ip().is_loopback() || addr.port() == 0 {
+            anyhow::bail!("D2S backends must use a loopback HOST:PORT: {backend}");
+        }
+        if Some(addr) == listener {
+            anyhow::bail!("D2S backend points to its listener: {backend}");
+        }
+        if !seen_backends.insert(addr) {
+            anyhow::bail!("duplicate D2S backend: {backend}");
+        }
+    }
+
+    for (name, value) in [
+        ("connect_timeout_ms", config.connect_timeout_ms),
+        ("upstream_handshake_timeout_ms", config.upstream_handshake_timeout_ms),
+        ("backend_attempt_timeout_ms", config.backend_attempt_timeout_ms),
+        ("direct_connect_timeout_ms", config.direct_connect_timeout_ms),
+        ("client_handshake_timeout_ms", config.client_handshake_timeout_ms),
+        ("probe_timeout_ms", config.probe_timeout_ms),
+        ("healthy_probe_interval_secs", config.healthy_probe_interval_secs),
+        ("recovery_probe_interval_secs", config.recovery_probe_interval_secs),
+        ("runtime_cooldown_ms", config.runtime_cooldown_ms),
+        ("shutdown_grace_period_ms", config.shutdown_grace_period_ms),
+    ] {
+        if value == 0 {
+            anyhow::bail!("{name} must be greater than zero");
+        }
+    }
+    if config.failure_threshold == 0 {
+        anyhow::bail!("failure_threshold must be greater than zero");
+    }
+    if config.max_connections == 0 {
+        anyhow::bail!("max_connections must be greater than zero");
+    }
+    if config.status_interval_secs == 0 {
+        anyhow::bail!("status_interval_secs must be greater than zero");
+    }
+    if !config.backends.is_empty() && config.probe_targets.is_empty() {
+        anyhow::bail!("probe_targets must not be empty when SOCKS5 backends are configured");
+    }
+    for target in &config.probe_targets {
+        validate_d2s_host_port(target, "probe target")?;
+    }
+    let level = config.log_level.trim();
+    if level.is_empty() || level.len() > 128 || level.chars().any(char::is_control) {
+        anyhow::bail!("log_level must be a non-empty logging filter");
+    }
+    Ok(())
+}
+
 
 const CONSTRUCTOR_TRIGGER_PACKAGE: &str = "com.android.zdtd.service";
 
@@ -392,7 +639,10 @@ fn ensure_safe_segment(s: &str, what: &str) -> Result<()> {
 }
 
 fn is_safe_filename(s: &str) -> bool {
-    if s.is_empty() || s.len() > 255 {
+// File names may come from Android's document picker (UTF-8 display names)
+    // or from the strategy names shipped with ZDT-D. Keep international names
+    // intact, but never allow them to become paths.
+    if s.trim().is_empty() || s.len() > 255 {
         return false;
     }
     // Disallow dot segments and any path separators (absolute or traversal).
@@ -413,6 +663,40 @@ fn ensure_safe_filename(s: &str) -> Result<()> {
         anyhow::bail!("invalid filename");
     }
     Ok(())
+}
+
+fn decode_url_component(raw: &str) -> Result<String> {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => {
+                if i + 2 >= bytes.len() {
+                    anyhow::bail!("bad percent-encoding");
+                }
+                let hi = (bytes[i + 1] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow::anyhow!("bad percent-encoding"))?;
+                let lo = (bytes[i + 2] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow::anyhow!("bad percent-encoding"))?;
+                out.push(((hi << 4) | lo) as u8);
+                i += 3;
+            }
+            // Android currently builds path segments with URLEncoder, where a
+            // space is represented as '+'. Literal plus signs are encoded as %2B.
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).map_err(|e| anyhow::anyhow!("path segment is not UTF-8: {e}"))
 }
 
 fn working_root() -> PathBuf {
@@ -468,6 +752,54 @@ fn sha256_hex_bytes(data: &[u8]) -> String {
 struct MultipartFile {
     filename: String,
     data: Vec<u8>,
+}
+
+fn extract_multipart_filename(content_disposition: &str) -> Result<Option<String>> {
+    // OkHttp sends filename="...". Parse the quoted value directly instead of
+    // splitting on ';', because a legal display name may itself contain ';'.
+    if let Some(start) = content_disposition.find("filename=\"") {
+        let rest = &content_disposition[start + "filename=\"".len()..];
+        let mut escaped = false;
+        let mut out = String::new();
+        for ch in rest.chars() {
+            if escaped {
+                out.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                return Ok((!out.is_empty()).then_some(out));
+            }
+            out.push(ch);
+        }
+        anyhow::bail!("unterminated multipart filename");
+    }
+
+    // RFC 5987 fallback: filename*=UTF-8''percent-encoded-name
+    if let Some(part) = content_disposition
+        .split(';')
+        .map(str::trim)
+        .find(|p| p.starts_with("filename*="))
+    {
+        let raw = part.trim_start_matches("filename*=").trim_matches('"');
+        let encoded = raw.split_once("''").map(|(_, value)| value).unwrap_or(raw);
+        let decoded = decode_url_component(encoded)?;
+        return Ok((!decoded.is_empty()).then_some(decoded));
+    }
+
+    // Legacy unquoted filename=value.
+    let value = content_disposition
+        .split(';')
+        .map(str::trim)
+        .find_map(|p| p.strip_prefix("filename="))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    Ok(value)
 }
 
 fn parse_multipart_file(headers: &HashMap<String, String>, body: &[u8]) -> Result<MultipartFile> {
@@ -547,15 +879,7 @@ fn parse_multipart_file(headers: &HashMap<String, String>, body: &[u8]) -> Resul
 
         // We accept the first *file* part we see. If a part has no filename (regular form field),
         // skip it.
-        let filename_opt = cd
-            .split(';')
-            .find_map(|p| {
-                let p = p.trim();
-                p.strip_prefix("filename=")
-            })
-            .map(|v| v.trim().trim_matches('"'))
-            .filter(|v| !v.is_empty())
-            .map(|v| v.to_string());
+        let filename_opt = extract_multipart_filename(&cd)?;
 
         if let Some(filename) = filename_opt {
             ensure_safe_filename(&filename)?;
@@ -647,18 +971,23 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 Ok(json!({"ok": true, "files": files, "sizes": sizes, "limit": STRATEGIC_TEXT_LIMIT}))
             }
             ("POST", ["api", "strategic", _, "upload"]) => {
-                // Upload a file. Filename comes from multipart Content-Disposition.
+                // Upload a file. International display names are allowed, but
+                // path separators/control characters are still rejected by the
+                // multipart parser. Text assets are converted to canonical UTF-8
+                // so later editing/saving never depends on the source encoding.
                 let f = parse_multipart_file(headers, body)?;
                 let dst = base.join(&f.filename);
-                // Ensure destination is within base.
                 if dst.parent() != Some(base.as_path()) {
                     anyhow::bail!("invalid destination");
                 }
-                write_bytes_atomic(&dst, &f.data)?;
-                // Apply default permissions.
-                match kind {
-                    "bin" => chmod_best_effort(&dst, 0o755),
-                    _ => chmod_best_effort(&dst, 0o644),
+                if kind == "bin" {
+                    write_bytes_atomic(&dst, &f.data)?;
+                    chmod_best_effort(&dst, 0o755);
+                } else {
+                    let content = crate::external_text::decode_external_text(&f.data)
+                        .with_context(|| format!("decode imported strategic file {}", f.filename))?;
+                    write_text_atomic(&dst, &content)?;
+                    chmod_best_effort(&dst, 0o644);
                 }
                 Ok(json!({"ok": true, "filename": f.filename}))
             }
@@ -669,8 +998,9 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 if kind == "bin" {
                     anyhow::bail!("bin files are not text-readable via API");
                 }
-                ensure_safe_filename(name)?;
-                let p = base.join(name);
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
+                let p = base.join(&name);
                 if !p.is_file() {
                     anyhow::bail!("file not found");
                 }
@@ -686,21 +1016,24 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 if kind == "bin" {
                     anyhow::bail!("bin files cannot be edited as text");
                 }
-                ensure_safe_filename(name)?;
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let content_len = req.content.as_bytes().len() as u64;
+                let content = crate::external_text::normalize_text(&req.content)?;
+                let content_len = content.as_bytes().len() as u64;
                 if content_len > STRATEGIC_TEXT_LIMIT {
                     return Ok(json!({"ok": false, "error": "too_large", "size": content_len, "limit": STRATEGIC_TEXT_LIMIT}));
                 }
-                let p = base.join(name);
-                write_text_atomic(&p, &req.content)?;
+                let p = base.join(&name);
+                write_text_atomic(&p, &content)?;
                 chmod_best_effort(&p, 0o644);
                 Ok(json!({"ok": true}))
             }
             ("DELETE", ["api", "strategic", _, name]) => {
-                ensure_safe_filename(name)?;
-                let p = base.join(name);
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
+                let p = base.join(&name);
                 if p.exists() {
                     fs::remove_file(&p)
                         .map_err(|e| anyhow::anyhow!("remove failed {}: {e}", p.display()))?;
@@ -1335,7 +1668,8 @@ fn default_singbox_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> se
         "tun": "sbtun0",
         "dns": ["8.8.8.8"],
         "tun2socks_loglevel": "info",
-        "proto_mode": "tcp_udp"
+        "proto_mode": "tcp_udp",
+        "endpoint_resolve": true
     })
 }
 
@@ -2453,12 +2787,15 @@ fn create_next_profile(program_id: &str) -> Result<String> {
 }
 
 fn read_text(p: &Path) -> Result<String> {
-    fs::read_to_string(p).map_err(|e| anyhow::anyhow!("read failed {}: {e}", p.display()))
+    let data = fs::read(p).map_err(|e| anyhow::anyhow!("read failed {}: {e}", p.display()))?;
+    crate::external_text::decode_external_text(&data)
+        .with_context(|| format!("decode text {}", p.display()))
 }
 
 fn read_text_or_empty(p: &Path) -> Result<String> {
-    match fs::read_to_string(p) {
-        Ok(s) => Ok(s),
+    match fs::read(p) {
+        Ok(data) => crate::external_text::decode_external_text(&data)
+            .with_context(|| format!("decode text {}", p.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(anyhow::anyhow!("read failed {}: {e}", p.display())),
     }
@@ -3421,6 +3758,127 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
     write_json(stream, 200, json!({"ok": true, "data": out}))
 }
 
+/// Handles the global subscription library API.
+///
+/// These routes deliberately live outside `/api/programs/*`: subscriptions are
+/// shared by Mihomo, sing-box, Hysteria2 and WireProxy.
+fn handle_subscriptions_subroutes(stream: TcpStream, method: &str, path: &str, body: &[u8]) -> Result<()> {
+    let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+
+    match (method, seg.as_slice()) {
+        ("GET", ["api", "subscriptions"]) => {
+            match crate::programs::mihomo_subscription::list_view() {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::create(req)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "subscriptions", "refresh-all"]) => {
+            match crate::programs::mihomo_subscription::enqueue_refresh_all() {
+                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscriptions", id]) => {
+            match crate::programs::mihomo_subscription::full_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "subscriptions", id]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::update(id, req)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("DELETE", ["api", "subscriptions", id]) => {
+            match crate::programs::mihomo_subscription::delete(id) {
+                Ok(()) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "refresh"]) => {
+            match crate::programs::mihomo_subscription::enqueue_refresh(id) {
+                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "subscriptions", id, "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::set_enabled(id, req.enabled)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "subscriptions", id, "nodes"]) => {
+            match crate::programs::mihomo_subscription::nodes_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "nodes", node_id, "import"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ImportNodeRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let link = crate::programs::mihomo_subscription::import_node(id, node_id, req)?;
+                Ok(json!({"ok": true, "link": link}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscriptions", id, "nodes", node_id, "export"]) => {
+            match crate::programs::mihomo_subscription::export_node(id, node_id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscription-import", "preview"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ManualImportPreviewRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::mihomo_subscription::preview_manual_import(req)
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "subscription-import"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ManualImportRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::mihomo_subscription::import_manual(req)
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "subscription-links"]) => {
+            match crate::programs::mihomo_subscription::links_view(None, None) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "subscription-links", link_id]) => {
+            match crate::programs::mihomo_subscription::detach_link(link_id) {
+                Ok(()) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        _ => write_empty_404(stream),
+    }
+}
+
 /// Handles subroutes under /api/programs/*
 fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool) -> Result<()> {
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
@@ -3571,9 +4029,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             let res = (|| -> Result<serde_json::Value> {
                 crate::programs::openvpn::ensure_valid_profile_name(profile)?;
                 ensure_openvpn_profile_layout(profile)?;
-                let p = openvpn_profile_root(profile).join("setting.json");
-                let v: serde_json::Value = read_json(&p)?;
-                Ok(json!({"ok": true, "data": v}))
+                let setting = crate::programs::openvpn::read_setting(profile)?;
+                Ok(json!({"ok": true, "data": setting}))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),
@@ -3652,8 +4109,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_openvpn_profile_layout(profile)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let content = crate::external_text::normalize_text(&req.content)?;
                 let p = openvpn_profile_root(profile).join("client.ovpn");
-                write_text_atomic(&p, &req.content)?;
+                write_text_atomic(&p, &content)?;
                 Ok(())
             })();
             match res {
@@ -3666,11 +4124,15 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 crate::programs::openvpn::ensure_valid_profile_name(profile)?;
                 ensure_openvpn_profile_layout(profile)?;
                 let f = parse_multipart_file(headers, body)?;
-                if !f.filename.ends_with(".ovpn") {
-                    anyhow::bail!("only .ovpn files are accepted");
+                // The external document name is only presentation metadata. The
+                // profile always stores one canonical client.ovpn file.
+                let content = crate::external_text::decode_external_text(&f.data)
+                    .with_context(|| format!("decode imported OpenVPN config {}", f.filename))?;
+                if content.trim().is_empty() {
+                    anyhow::bail!("client.ovpn is empty");
                 }
                 let p = openvpn_profile_root(profile).join("client.ovpn");
-                write_bytes_atomic(&p, &f.data)?;
+                write_text_atomic(&p, &content)?;
                 Ok(())
             })();
             match res {
@@ -3863,7 +4325,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_amneziawg_profile_layout(profile)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                crate::programs::amneziawg::import_config(profile, &req.content)?;
+                let content = crate::external_text::normalize_text(&req.content)?;
+                crate::programs::amneziawg::import_config(profile, &content)?;
                 Ok(())
             })();
             match res {
@@ -3876,10 +4339,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
                 ensure_amneziawg_profile_layout(profile)?;
                 let f = parse_multipart_file(headers, body)?;
-                if !f.filename.ends_with(".conf") {
-                    anyhow::bail!("only .conf files are accepted");
-                }
-                let content = String::from_utf8(f.data).map_err(|e| anyhow::anyhow!("config is not UTF-8: {e}"))?;
+                // Like OpenVPN, AWG stores a canonical client.conf regardless of
+                // the external document's language, extension case or display name.
+                let content = crate::external_text::decode_external_text(&f.data)
+                    .with_context(|| format!("decode imported AmneziaWG config {}", f.filename))?;
                 crate::programs::amneziawg::import_config(profile, &content)?;
                 Ok(())
             })();
@@ -4200,7 +4663,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 Err(e) => write_err(stream, e),
             }
         }
-
 
         // --- mihomo profile API
         ("GET", ["api", "programs", "mihomo", "profiles"]) => {
@@ -4574,6 +5036,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("hysteria2", profile);
                 Ok(())
             })();
             match res {
@@ -4660,7 +5123,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                         if name.starts_with('.') { continue; }
                         let setting_path = path.join("setting.json");
                         let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
-                        servers.push(json!({"name": name, "setting": data}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("hysteria2", profile, name);
+                        servers.push(json!({"name": name, "setting": data, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -4702,6 +5166,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("hysteria2", profile, server);
                 Ok(())
             })();
             match res {
@@ -4886,6 +5351,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("sing-box", profile);
                 Ok(())
             })();
             match res {
@@ -4972,7 +5438,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                         if name.starts_with('.') { continue; }
                         let setting_path = path.join("setting.json");
                         let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_singbox_server_setting_value(1080));
-                        servers.push(json!({"name": name, "setting": data}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("sing-box", profile, name);
+                        servers.push(json!({"name": name, "setting": data, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -5014,6 +5481,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("sing-box", profile, server);
                 Ok(())
             })();
             match res {
@@ -5067,10 +5535,47 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if !mode_vpn && port == 0 {
                     anyhow::bail!("invalid port");
                 }
+                let selected_sni = v.get("sni")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|x| !x.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| existing.get("sni")
+                        .and_then(|x| x.as_str())
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string));
+                let source_options = if v.get("sni_options").is_some() {
+                    v.get("sni_options")
+                } else {
+                    existing.get("sni_options")
+                };
+                let mut sni_options = Vec::<String>::new();
+                if let Some(values) = source_options.and_then(|x| x.as_array()) {
+                    for value in values {
+                        let Some(value) = value.as_str().map(str::trim).filter(|x| !x.is_empty()) else { continue; };
+                        if !sni_options.iter().any(|existing| existing.as_str() == value) {
+                            sni_options.push(value.to_string());
+                        }
+                    }
+                }
+                let selected_sni = match (selected_sni, sni_options.is_empty()) {
+                    (Some(value), false) if sni_options.iter().any(|item| item == &value) => Some(value),
+                    (_, false) => sni_options.first().cloned(),
+                    (value, true) => value,
+                };
+
                 let root = singbox_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("setting.json");
-                write_json_pretty(&p, &json!({"enabled": enabled, "port": if port == 0 { 1080 } else { port }}))?;
+                let mut normalized = json!({"enabled": enabled, "port": if port == 0 { 1080 } else { port }});
+                if let Some(value) = selected_sni {
+                    normalized["sni"] = json!(value);
+                }
+                if !sni_options.is_empty() {
+                    normalized["sni_options"] = json!(sni_options);
+                }
+                write_json_pretty(&p, &normalized)?;
                 crate::programs::singbox::normalize_config_for_profile_server(profile, server)?;
                 Ok(())
             })();
@@ -5194,6 +5699,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("wireproxy", profile);
                 Ok(())
             })();
             match res {
@@ -5290,7 +5796,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                             .ok()
                             .and_then(|raw| crate::programs::wireproxy::parse_socks5_bind_address_str(&raw).ok())
                             .map(|v| json!({"host": v.host, "port": v.port}));
-                        servers.push(json!({"name": name, "data": data, "bind": bind}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("wireproxy", profile, name);
+                        servers.push(json!({"name": name, "data": data, "bind": bind, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -5335,6 +5842,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("wireproxy", profile, server);
                 Ok(())
             })();
             match res {
@@ -5627,6 +6135,62 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("dnscrypt").join("setting/dnscrypt-proxy.toml");
                 write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        ("PUT", ["api", "programs", "dnscrypt", "d2s-connect"]) => {
+            let res = crate::programs::dnscrypt::connect_d2s_proxy();
+            match res {
+                Ok(listener) => write_json(
+                    stream,
+                    200,
+                    json!({"ok": true, "listener": listener.to_string()}),
+                ),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        ("GET", ["api", "programs", "dnscrypt", "d2s-config"]) => {
+            let p = program_root("dnscrypt").join("d2set/d2s.toml");
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::dnscrypt::ensure_d2s_config_exists()?;
+                let config = read_d2s_file_config(&p)?;
+                // For the UI, an unsupported/external proxy simply means
+                // D2S is not connected. Runtime startup keeps the stricter
+                // parser and still logs malformed local D2S endpoints.
+                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()
+                    .ok()
+                    .flatten()
+                    .map(|addr| addr.to_string());
+                let visible = D2sConfigReq::from(&config);
+                let mut value = serde_json::to_value(visible)?;
+                let object = value.as_object_mut()
+                    .ok_or_else(|| anyhow::anyhow!("serialize D2S API response"))?;
+                object.insert("ok".to_string(), json!(true));
+                object.insert("listener".to_string(), json!(listener));
+                Ok(value)
+            })();
+            match res {
+                Ok(value) => write_json(stream, 200, value),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "dnscrypt", "d2s-config"]) => {
+            let res = (|| -> Result<()> {
+                let req: D2sConfigReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad D2S JSON body: {e}"))?;
+                let p = program_root("dnscrypt").join("d2set/d2s.toml");
+                crate::programs::dnscrypt::ensure_d2s_config_exists()?;
+                let mut config = read_d2s_file_config(&p)?;
+                config.apply_request(req);
+                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?;
+                validate_d2s_file_config(&config, listener)?;
+                write_d2s_file_config(&p, &config)?;
                 Ok(())
             })();
             match res {
@@ -6070,8 +6634,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         ("DELETE", ["api", "programs", "myprogram", "profiles", profile, "bin", filename]) => {
             let res = (|| -> Result<()> {
                 ensure_valid_singbox_profile_name(profile)?;
-                ensure_safe_filename(filename)?;
-                crate::programs::myprogram::delete_bin_file(profile, filename)?;
+                let filename = decode_url_component(filename)?;
+                ensure_safe_filename(&filename)?;
+                crate::programs::myprogram::delete_bin_file(profile, &filename)?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -7010,7 +7575,19 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
         return write_empty_404(stream);
     }
 
-    
+    // Global subscription library API. Keep this dispatch before `/api/programs/*`:
+    // subscriptions are shared resources, not Mihomo program subroutes.
+    if path == "/api/subscriptions"
+        || path.starts_with("/api/subscriptions/")
+        || path == "/api/subscription-links"
+        || path.starts_with("/api/subscription-links/")
+        || path == "/api/subscription-import"
+        || path.starts_with("/api/subscription-import/")
+    {
+        return handle_subscriptions_subroutes(stream, method.as_str(), path.as_str(), &body);
+    }
+
+
     // Construction Studio API
     if path.starts_with("/api/construction/") {
         return handle_construction_subroutes(stream, method.as_str(), path.as_str(), &body, services_running);

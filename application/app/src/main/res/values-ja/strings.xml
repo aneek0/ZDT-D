@@ -52,6 +52,10 @@ Magisk が変更を適用できるよう、端末を再起動してください�
 アプリに同梱: versionCode=%2$d。
 
 最適な互換性のため更新を推奨します。スキップすることもできますが、一部の機能が利用できなかったり、API の不一致エラーが発生したりする可能性があります。</string>
+    <string name="mv_module_build_update_prompt_text">インストール済みモジュール: v%1$s (versionCode=%2$s、ビルド #%3$s)。
+利用可能なビルド: %4$s v%5$s (versionCode=%6$s、ビルド #%7$s)。
+
+モジュールをこのアプリに同梱されたビルドへ更新しますか？</string>
     <string name="mv_module_version_unsupported">インストールされているモジュールのバージョンはサポートされなくなりました（versionCode=%1$d）。ZDT-D を引き続き使用するにはモジュールを更新してください。</string>
     <string name="mv_backup_list_read_error">バックアップ一覧を読み取れませんでした: %1$s</string>
     <string name="mv_backup_settings_folder_missing">設定フォルダーが見つかりません: %1$s。</string>
@@ -228,6 +232,8 @@ Magisk が変更を適用できるよう、端末を再起動してください�
     <string name="home_power_stopped">停止</string>
     <string name="home_power_starting">開始中…</string>
     <string name="home_power_stopping">停止中…</string>
+    <string name="home_action_start_service">サービスを開始</string>
+    <string name="home_action_stop_service">サービスを停止</string>
     <string name="home_service_active_hint">サービスは実行中です。停止するにはボタンをタップしてください。</string>
     <string name="home_service_stopped_hint">サービスは停止しています。開始するにはボタンをタップしてください。</string>
     <string name="home_no_log_data">（ログデータなし）</string>
@@ -426,6 +432,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="stats_unknown_cpu">不明なCPU</string>
     <string name="stats_clamped_from">%1$s%% から制限</string>
     <string name="stats_memory_title">メモリ</string>
+    <string name="stats_power_title">バッテリー</string>
     <string name="stats_total_fmt">合計: %1$s</string>
     <string name="stats_total_unknown">合計: —</string>
     <string name="stats_free_fmt">空き: %1$s</string>
@@ -539,6 +546,15 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="program_updates_title">ZDT-Dモジュールのツール／コンポーネント更新</string>
     <string name="program_updates_reset_cd">リセット</string>
     <string name="program_updates_desc">ZDT-DモジュールのツールとコンポーネントをGitHubリリースから直接更新します。確認はボタンをタップしたときだけ行われます。</string>
+    <string name="program_updates_bulk_title">すべてのツールを更新</string>
+    <string name="program_updates_bulk_desc">実行中のサービスを停止せずに、すべてのツールを確認して利用可能な更新をインストールします。</string>
+    <string name="program_updates_check_all">すべて確認</string>
+    <string name="program_updates_checking_all">すべて確認中…</string>
+    <string name="program_updates_update_all">すべて更新</string>
+    <string name="program_updates_updating_all">すべて更新中…</string>
+    <string name="program_updates_all_current">すべて最新です</string>
+    <string name="program_updates_retry_check">再確認</string>
+    <string name="program_updates_available_count_fmt">%1$d 件の更新があります</string>
     <string name="program_updates_service_running_title">サービスは実行中です</string>
     <string name="program_updates_service_running_desc">確認／更新前にサービスを停止してください。置換中にルールやプロセスがファイルを使用しないようにするために必要です。</string>
     <string name="program_updates_stopping">停止中…</string>
@@ -649,7 +665,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="program_updates_err_service_running">サービスはまだ実行中です。停止してからもう一度お試しください。</string>
     <string name="program_updates_err_detect_installed">インストール済みバージョンを検出できませんでした</string>
     <string name="program_updates_warn_installed_unknown">インストール済みバージョンを検出できませんでした。選択したリリースは引き続きインストールできます。</string>
-    <string name="program_updates_err_check_latest">最新リリースの確認に失敗しました</string>
+    <string name="program_updates_err_check_latest">情報を取得できませんでした</string>
     <string name="program_updates_err_no_internet">インターネット接続がありません</string>
     <string name="program_updates_err_load_releases">リリースの読み込みに失敗しました</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="action_edit">編集</string>
     <string name="singbox_profile_settings_title">プロファイル設定</string>
     <string name="singbox_profile_settings_desc">各sing-boxプロファイルには独自のt2sポート、アプリリスト、サーバーセットがあります。</string>
+    <string name="singbox_endpoint_resolve_label">サーバードメインを解決</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box の起動前に outbound の server フィールドのドメイン名を IPv4 に解決します。</string>
     <string name="singbox_profile_add_server">作成</string>
     <string name="singbox_profile_no_servers">このプロファイルにはまだサーバーが作成されていません。</string>
     <string name="singbox_profile_ports_must_differ">t2s_portとt2s_web_portは異なる必要があります</string>
@@ -1335,6 +1353,8 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="openvpn_dns_label">DNSサーバー</string>
     <string name="openvpn_dns_hint">1～8個のIPv4 DNSサーバーを空白またはカンマ区切りで入力します。IPv6、ドメイン、https/tls URLは使用できません。</string>
     <string name="openvpn_dns_invalid">有効なIPv4アドレスを1～8個だけ入力してください。</string>
+    <string name="openvpn_endpoint_resolve_label">remote ドメインを解決</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN の起動前に remote ディレクティブのドメイン名を解決します。</string>
     <string name="openvpn_config_title">OpenVPN設定</string>
     <string name="openvpn_config_desc">client.ovpnの内容を貼り付けるか、ファイルから読み込みます。profile/name/client.ovpnとして保存されます。</string>
     <string name="openvpn_config_empty">client.ovpnを空にすることはできません。</string>
@@ -2178,4 +2198,218 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="dpi_detector_share_failed">レポートのアーカイブを共有できませんでした。</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt が使用する SOCKS5 サーバープール、稼働確認、DIRECT フォールバックを設定します。</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">D2S 設定を読み込み中</string>
+    <string name="d2s_loading_desc">デーモンから構造化設定を読み取っています。</string>
+    <string name="d2s_load_failed_title">D2S 設定を利用できません</string>
+    <string name="d2s_load_failed_desc">設定を読み取れませんでした。モジュールのインストールを確認して再試行してください。</string>
+    <string name="d2s_overview_title">D2S ルーティング</string>
+    <string name="d2s_overview_desc">DNSCrypt 接続をローカル SOCKS5 サーバーへ分散し、必要時は直接接続を使用します。</string>
+    <string name="d2s_listener_label">ローカル D2S リスナー</string>
+    <string name="d2s_listener_unavailable">未設定</string>
+    <string name="d2s_listener_desc">dnscrypt-proxy.toml の有効な proxy 項目から読み取ります。</string>
+    <string name="d2s_backends_title">SOCKS5 サーバー</string>
+    <string name="d2s_backends_desc">ローカル SOCKS5 サービスのポートを追加します。D2S は正常性確認済みのサーバーのみ使用します。</string>
+    <string name="d2s_backends_empty">SOCKS5 ポートが未設定です。D2S は DIRECT フォールバックを使用します。</string>
+    <string name="d2s_backend_port_label">SOCKS5 ポート</string>
+    <string name="d2s_backend_port_desc">1～65535 のローカルポート</string>
+    <string name="d2s_add_backend">ポートを追加</string>
+    <string name="d2s_remove_backend">SOCKS5 ポートを削除</string>
+    <string name="d2s_direct_title">DIRECT フォールバック</string>
+    <string name="d2s_direct_desc">正常な SOCKS5 サーバーがない場合は直接接続します。</string>
+    <string name="d2s_health_title">正常性チェック</string>
+    <string name="d2s_health_desc">障害検出と復旧したサーバーのローテーション復帰を制御します。</string>
+    <string name="d2s_healthy_interval">正常サーバーの確認間隔</string>
+    <string name="d2s_recovery_interval">障害サーバーの再確認間隔</string>
+    <string name="d2s_failure_threshold">利用不可になるまでの失敗回数</string>
+    <string name="d2s_failure_threshold_desc">連続失敗回数</string>
+    <string name="d2s_runtime_cooldown">接続失敗後の待機時間</string>
+    <string name="d2s_seconds_desc">秒。0 より大きい値</string>
+    <string name="d2s_milliseconds_desc">ミリ秒。0 より大きい値</string>
+    <string name="d2s_probe_targets_label">確認先</string>
+    <string name="d2s_probe_targets_desc">各 SOCKS5 サーバー経由でこれらの HOST:PORT に接続します。</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">確認先を追加</string>
+    <string name="d2s_remove_probe_target">確認先を削除</string>
+    <string name="d2s_timeouts_title">接続タイムアウト</string>
+    <string name="d2s_timeouts_desc">接続、SOCKS5 ネゴシエーション、クライアント要求、確認処理の上限です。</string>
+    <string name="d2s_connect_timeout">SOCKS5 接続タイムアウト</string>
+    <string name="d2s_upstream_handshake_timeout">SOCKS5 ハンドシェイク</string>
+    <string name="d2s_backend_attempt_timeout">サーバー試行タイムアウト</string>
+    <string name="d2s_direct_connect_timeout">DIRECT 接続タイムアウト</string>
+    <string name="d2s_client_handshake_timeout">クライアントハンドシェイク</string>
+    <string name="d2s_probe_timeout">正常性確認タイムアウト</string>
+    <string name="d2s_performance_title">パフォーマンスとログ</string>
+    <string name="d2s_performance_desc">接続上限、TCP 動作、ログ詳細、正常終了を設定します。</string>
+    <string name="d2s_max_connections">最大同時接続数</string>
+    <string name="d2s_max_connections_desc">0 より大きい値</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Nagle 遅延なしで小さなパケットを送信します。</string>
+    <string name="d2s_log_level">ログレベル</string>
+    <string name="d2s_log_level_desc">dnscrypt/log/d2s.log に書き込む詳細度を制御します。</string>
+    <string name="d2s_shutdown_grace">終了待機時間</string>
+    <string name="d2s_save">D2S 設定を保存</string>
+    <string name="d2s_saving">保存中…</string>
+    <string name="d2s_saved">D2S 設定を保存しました。停止して再開後に適用されます。</string>
+    <string name="d2s_error_port_required">SOCKS5 ポートを入力してください。</string>
+    <string name="d2s_error_port_range">SOCKS5 ポートは 1～65535 にしてください。</string>
+    <string name="d2s_error_duplicate_port">SOCKS5 ポートを重複させないでください。</string>
+    <string name="d2s_error_listener_port">サーバーに D2S リスナーポートは使用できません。</string>
+    <string name="d2s_error_direct_required">SOCKS5 リストが空の場合は DIRECT フォールバックが必要です。</string>
+    <string name="d2s_error_positive_number">すべての数値は 0 より大きくしてください。</string>
+    <string name="d2s_error_probe_required">SOCKS5 サーバー設定時は確認先を 1 つ以上追加してください。</string>
+    <string name="d2s_error_probe_target">確認先は HOST:PORT 形式にしてください。</string>
+    <string name="d2s_log_level_error">エラー</string>
+    <string name="d2s_log_level_warn">警告</string>
+    <string name="d2s_log_level_info">情報</string>
+    <string name="d2s_log_level_debug">デバッグ</string>
+    <string name="d2s_log_level_trace">トレース</string>
+
+    <string name="d2s_route_timeout">SOCKS5 フェイルオーバー全体のタイムアウト</string>
+    <string name="d2s_route_timeout_desc">フォールバック前に SOCKS5 サーバーを試行する合計最大時間（ミリ秒）。</string>
+    <string name="d2s_max_backend_attempts">バックエンドの最大試行回数</string>
+    <string name="d2s_max_backend_attempts_desc">1つのクライアント接続で試行する SOCKS5 サーバーの最大数。</string>
+    <string name="d2s_max_connecting">同時接続試行の上限</string>
+    <string name="d2s_max_connecting_desc">同時に行う外向き接続と SOCKS5 ハンドシェイクを制限します。</string>
+    <string name="d2s_idle_after">アイドル時にヘルスチェックを休止</string>
+    <string name="d2s_idle_after_desc">クライアント通信がない状態でチェックを休止するまでの秒数。0 で休止を無効化。</string>
+    <string name="d2s_error_non_negative_number">アイドル時間は 0 以上である必要があります。</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">モジュール ZIP の互換性パッチに失敗しました: %1$s</string>
+    <string name="module_zip_patch_oom_warning">警告: メモリ内 ZIP 互換性パッチでアプリのメモリが不足しました: %1$s。低メモリ ZIP パッチモードに切り替えます。</string>
+    <string name="module_zip_patch_low_memory_normalized">低メモリ ZIP 互換性パッチが完了しました: %1$d 件の Central Directory エントリから暗号化フラグを解除しました。続行します。</string>
+    <string name="module_zip_patch_low_memory_compatible">低メモリ ZIP 互換性チェックが完了しました: アーカイブはすでに厳格なインストーラーと互換性があります。続行します。</string>
+    <string name="module_zip_patch_normalized">厳格なインストーラー向けにモジュール ZIP を正規化しました: %1$d 件の Central Directory エントリから暗号化フラグを解除しました。</string>
+    <string name="module_zip_patch_compatible">モジュール ZIP はすでに厳格なインストーラーと互換性があります。</string>
+    <string name="module_zip_patch_protection_kept_magisk">Magisk インストーラー向けにモジュール ZIP の保護を維持しました。</string>
+
+    <string name="vps_reboot_server">サーバーを再起動</string>
+    <string name="vps_reboot_confirm_title">サーバーを再起動しますか？</string>
+    <string name="vps_reboot_confirm_message">%1$s を再起動しますか？再起動中は SSH 接続が一時的に切断されます。</string>
+    <string name="vps_rebooting">サーバーを再起動しています…</string>
+    <string name="vps_reboot_failed">サーバーの再起動を予約できませんでした</string>
+    <string name="vps_reboot_scheduled">再起動を予約しました</string>
+    <string name="vps_waiting_for_server">サーバーの復帰を待っています…</string>
+    <string name="vps_server_online_again">サーバーが再びオンラインになりました</string>
+    <string name="vps_reboot_timeout">タイムアウトまでにサーバーが復帰しませんでした</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI を追加</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">認証</string>
+    <string name="vps_auth_password">パスワード</string>
+    <string name="vps_auth_private_key">SSHキー</string>
+    <string name="vps_private_key">SSH秘密鍵</string>
+    <string name="vps_choose_private_key_file">秘密鍵ファイルを選択</string>
+    <string name="vps_private_key_file_selected">鍵ファイル: %1$s</string>
+    <string name="vps_private_key_passphrase">鍵のパスフレーズ（任意）</string>
+    <string name="vps_private_key_storage_hint">秘密鍵とパスフレーズは Android Keystore で暗号化され、アプリデータ内にのみ保存されます。</string>
+    <string name="vps_private_key_read_error">選択した秘密鍵ファイルを読み取れませんでした。</string>
+    <string name="vps_private_key_too_large">選択したファイルが大きすぎます。512 KB 未満の SSH キーを選択してください。</string>
+    <string name="vps_public_key_error">これは公開 SSH キーのようです。認証には秘密鍵が必要です。</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S は接続されていません</string>
+    <string name="d2s_not_connected_desc">このプログラムは DNSCrypt で使用するために接続されていません。接続しますか？</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D は 11990 以降で最初に空いているローカル SOCKS5 ポートを選び、dnscrypt-proxy.toml に保存します。</string>
+    <string name="d2s_connect">接続</string>
+    <string name="d2s_connecting">接続中…</string>
+    <string name="d2s_connect_failed">D2S に接続できませんでした</string>
+    <string name="d2s_connected_fmt">D2S 接続済み: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">サブスクリプション</string>
+    <string name="mihomo_subscriptions_summary">%1$d 件のソース · %2$d 件有効 · %3$d 台のサーバー</string>
+    <string name="mihomo_sub_add">サブスクリプションを追加</string>
+    <string name="mihomo_sub_refresh_all">すべて更新</string>
+    <string name="mihomo_sub_empty_title">サブスクリプションはまだありません</string>
+    <string name="mihomo_sub_empty_desc">サブスクリプションソースを追加し、1つ以上のMihomoプロファイルで使用できます。</string>
+    <string name="mihomo_sub_saved">サブスクリプションを保存しました</string>
+    <string name="mihomo_sub_delete_title">サブスクリプションを削除</string>
+    <string name="mihomo_sub_delete_message">サブスクリプション「%1$s」を削除しますか？ 使用中のプロファイルはこのソースから切り離されます。</string>
+    <string name="mihomo_sub_state_disabled">無効</string>
+    <string name="mihomo_sub_state_error">更新エラー</string>
+    <string name="mihomo_sub_state_ready">準備完了</string>
+    <string name="mihomo_sub_state_waiting">初回更新を待機中</string>
+    <string name="mihomo_sub_servers">サーバー</string>
+    <string name="mihomo_sub_profiles">プロファイル</string>
+    <string name="mihomo_sub_interval">間隔</string>
+    <string name="mihomo_sub_traffic_value">通信量: %1$s</string>
+    <string name="mihomo_sub_expire_value">有効期限: %1$s</string>
+    <string name="mihomo_sub_used_by">プロファイル: %1$s</string>
+    <string name="mihomo_sub_updated_value">更新日時: %1$s</string>
+    <string name="mihomo_sub_refresh">更新</string>
+    <string name="mihomo_sub_add_title">新しいサブスクリプション</string>
+    <string name="mihomo_sub_edit_title">サブスクリプションを編集</string>
+    <string name="mihomo_sub_name">名前</string>
+    <string name="mihomo_sub_url">サブスクリプションURL</string>
+    <string name="mihomo_sub_basic_auth">Basic認証</string>
+    <string name="mihomo_sub_basic_auth_desc">サブスクリプション要求にHTTP Basicのユーザー名とパスワードを送信します。</string>
+    <string name="mihomo_sub_username">ユーザー名</string>
+    <string name="mihomo_sub_password">パスワード</string>
+    <string name="mihomo_sub_hwid">HWID認証</string>
+    <string name="mihomo_sub_hwid_desc">サブスクリプション提供元が要求するハードウェア識別子を送信します。</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">この端末のIDを使用</string>
+    <string name="mihomo_sub_device_headers">端末ヘッダー</string>
+    <string name="mihomo_sub_device_headers_desc">Happ互換の言語、Androidバージョン、端末モデルのヘッダーを送信します。</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">空欄にすると、Happ互換のUser-Agentを自動生成します。</string>
+    <string name="mihomo_sub_locale">ロケール</string>
+    <string name="mihomo_sub_os_version">Android バージョン</string>
+    <string name="mihomo_sub_device_model">端末モデル</string>
+    <string name="mihomo_sub_custom_headers">追加HTTPヘッダー</string>
+    <string name="mihomo_sub_custom_headers_hint">1行に1つ: Header-Name: 値</string>
+    <string name="mihomo_sub_remote_interval">提供元の更新間隔を使用</string>
+    <string name="mihomo_sub_remote_interval_desc">提供元が送信した場合はprofile-update-intervalを使用します。</string>
+    <string name="mihomo_sub_fallback_interval">代替更新間隔（分）</string>
+    <string name="mihomo_sub_interval_hint">15～10080分。提供元が間隔を指定しない場合に使用します。</string>
+    <string name="mihomo_tab_subscriptions">サブスクリプション</string>
+    <string name="mihomo_tab_desc_subscriptions">このプロファイルで使用する管理対象サブスクリプションソースを選択します。</string>
+    <string name="mihomo_profile_subscriptions_title">サブスクリプション</string>
+    <string name="mihomo_profile_subscriptions_desc">ZDT-Dが実行時にこのプロファイルへ追加する共通サブスクリプションを選択します。</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d 件選択・利用可能 · 全%2$d 件</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">元のconfig.yamlは変更されません。ZDT-Dはproviderをconfig.runtime.yamlにのみ追加し、Proxyグループへ接続します。</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">先にMihomoのサブスクリプション画面でサブスクリプションを作成してください。</string>
+    <string name="mihomo_profile_subscription_servers">%1$d 台のサーバー</string>
+    <string name="mihomo_profile_subscription_disabled_hint">このサブスクリプションは全体で無効になっています。</string>
+    <string name="subscriptions_title">サブスクリプション</string>
+    <string name="subscriptions_entry_desc">共有ソースを管理し、個別のサーバーをインポートします。</string>
+    <string name="subscriptions_badge">ライブラリ</string>
+    <string name="subscription_view_servers">サーバーを表示</string>
+    <string name="subscription_servers_count">%1$d 台のサーバー</string>
+    <string name="subscription_missing_title">サーバーはサブスクリプションに存在しなくなりました</string>
+    <string name="subscription_local_copy_saved">ローカルコピーは保持されています。</string>
+    <string name="subscription_detach">サブスクリプションから切り離す</string>
+    <string name="subscription_nodes_empty">解析済みサーバーがありません。更新してください。</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s にリンク済み</string>
+    <string name="subscription_add_to_target">%1$s に追加</string>
+    <string name="subscription_unsupported_node">このサーバー形式はまだインポートできません。</string>
+    <string name="subscription_import_title">%1$s にインポート</string>
+    <string name="subscription_choose_profile">プロファイルを選択</string>
+    <string name="subscription_no_target_profiles">先に対象プロファイルを作成してください。</string>
+    <string name="subscription_local_server_name">ローカルサーバー名</string>
+    <string name="subscription_server_name_hint">英字、数字、アンダースコア、ハイフン</string>
+    <string name="subscription_import_action">インポート</string>
+    <string name="subscription_import_success">サーバーをインポートしてリンクしました</string>
+    <string name="subscription_import_failed">サーバーをインポートできませんでした</string>
+    <string name="subscription_detach_failed">サーバーを切り離せませんでした</string>
+    <string name="subscription_link_active">サブスクリプションにリンクされ自動同期されます</string>
+    <string name="subscription_manual_import">設定をインポート</string>
+    <string name="subscription_manual_import_desc">1台のサーバーリンク、sing-box/Hysteria2 JSON、またはWireGuard設定を貼り付けます。サーバーは購読リンクなしでローカルに作成されます。</string>
+    <string name="subscription_manual_source">リンクまたは設定</string>
+    <string name="subscription_paste">貼り付け</string>
+    <string name="subscription_recognize">認識</string>
+    <string name="subscription_manual_unrecognized">設定を認識できないか、インストール済みバックエンドでサポートされていません。</string>
+    <string name="subscription_manual_target">インポート先：%1$s</string>
+    <string name="subscription_copy_config">設定をコピー</string>
+    <string name="subscription_copy_failed">コピー用の設定を準備できませんでした。</string>
 </resources>

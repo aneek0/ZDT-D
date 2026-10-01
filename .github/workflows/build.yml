@@ -19,44 +19,47 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_API_LEVEL: 36
-  ZDT_COMPILE_SDK: 36
-  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
-  GRADLE_VERSION: "9.4.1"
+  ANDROID_API_LEVEL: "37.0"
+  ZDT_COMPILE_SDK: 37
+  ZDT_COMPILE_SDK_MINOR: 0
+  ANDROID_BUILD_TOOLS_VERSION: "37.0.0"
+  GRADLE_VERSION: "9.6.0"
+  NATIVE_NDK_VERSION: "30.0.16248370"
+  GO_VERSION: "1.26.8"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
   NO_DASHBOARD: "1"
   NDK_VERSION: "27.2.12479018"
-  OPENVPN_VERSION: "2.7.4"
-  MBEDTLS_VERSION: "3.6.6"
-  MBEDTLS_SHA256: "8fb65fae8dcae5840f793c0a334860a411f884cc537ea290ce1c52bb64ca007a"
+  OPENVPN_VERSION: "2.7.7"
+  MBEDTLS_VERSION: "3.6.7"
+  MBEDTLS_SHA256: "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
   LZO_VERSION: "2.10"
   LZ4_VERSION: "1.10.0"
   OPENVPN_ANDROID_API_LEVEL: 24
-  AMNEZIAWG_GO_REF: "master"
-  AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
+  AMNEZIAWG_GO_REF: "v3.1.20260828"
+  AMNEZIAWG_TOOLS_REF: "v3.1.20260812"
   AMNEZIAWG_ANDROID_API_LEVEL: 24
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
-  WIREPROXY_REF: "v1.1.2"
-  TUN2SOCKS_REF: "v2.6.0"
-  MIHOMO_REF: "v1.19.27"
-  SING_BOX_REF: "v1.13.14"
+  WIREPROXY_REF: "v1.1.3"
+  TUN2SOCKS_REF: "v2.7.0"
+  MIHOMO_REF: "v1.19.30"
+  SING_BOX_REF: "v1.14.1"
+  HYSTERIA_REF: "app/v2.9.3"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
-  DNSCRYPT_PROXY_REF: "2.1.16"
-  MIERU_REF: "v3.34.0"
-  OPERA_PROXY_REF: "v1.26.0"
-  HYSTERIA_REF: "app/v2.9.3"
+  DNSCRYPT_PROXY_REF: "2.1.18"
+  MIERU_REF: "v3.38.0"
+  OPERA_PROXY_REF: "v1.28.0"
   DPITUNNEL_REF: "main"
   DPITUNNEL_ANDROID_API_LEVEL: 24
-  DPITUNNEL_OPENSSL_REF: "openssl-3.3.2"
-  TOR_REF: "tor-0.4.9.9"
+  DPITUNNEL_OPENSSL_REF: "openssl-3.5.9"
+  TOR_REF: "tor-0.4.9.13"
   TOR_ANDROID_API_LEVEL: 24
-  TOR_OPENSSL_REF: "openssl-3.5.7"
-  TOR_LIBEVENT_REF: "release-2.1.12-stable"
+  TOR_OPENSSL_REF: "openssl-3.5.9"
+  TOR_LIBEVENT_REF: "release-2.1.13-stable"
   TOR_ZLIB_REF: "v1.3.2"
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
@@ -75,7 +78,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -152,7 +155,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -266,6 +269,23 @@ jobs:
           echo "should_build=$should_build"
           echo "reason=$reason"
 
+  publish_build_status_start:
+    name: Publish build status start
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Publish binaries stage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh binaries running preparing "Building native components"
+
   build_zdtd:
     name: build zdtd ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -291,7 +311,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -436,7 +456,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -556,19 +576,167 @@ jobs:
           path: out/artifacts/t2s/t2s
           retention-days: 1
 
+  build_d2s:
+    name: build D2S ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache Android NDK
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "ndk;$NDK_VERSION"
+          fi
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and d2s target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-d2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/d2s/Cargo.toml') }}
+          restore-keys: |
+            cargo-d2s-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
+          cargo -V
+          rustc -V
+
+      - name: Build d2s
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/d2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
+
+      - name: Collect d2s
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/d2s"
+          DST="out/artifacts/d2s"
+          test -s "$SRC" || { echo "::error::d2s artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/d2s"
+          chmod 755 "$DST/d2s"
+          ls -lh "$DST/d2s"
+
+      - name: Upload d2s binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: d2s-${{ matrix.artifact_suffix }}
+          path: out/artifacts/d2s/d2s
+          retention-days: 1
+
   module_core_ready:
-    name: 1 Core ready (zdtd + T2S)
+    name: 1 Core ready (zdtd + T2S + D2S)
     runs-on: ubuntu-latest
     needs:
       - build_zdtd
       - build_t2s
+      - build_d2s
     if: >-
       needs.build_zdtd.result == 'success' &&
-      needs.build_t2s.result == 'success'
+      needs.build_t2s.result == 'success' &&
+      needs.build_d2s.result == 'success'
 
     steps:
       - name: Mark core binaries ready
-        run: echo "zdtd and T2S artifacts are ready for module packaging"
+        run: echo "zdtd, T2S and D2S artifacts are ready for module packaging"
 
   build_openvpn:
     name: build OpenVPN ${{ matrix.abi }}
@@ -595,7 +763,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -854,14 +1022,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -1085,14 +1253,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -1202,14 +1370,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -1332,14 +1500,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -1465,14 +1633,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -1608,18 +1776,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Prepare Android NDK
         run: |
@@ -1632,7 +1800,7 @@ jobs:
           fi
           test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          NDK_VERSION="29.0.13846066"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
             "$SDKMANAGER" "ndk;$NDK_VERSION"
           fi
@@ -1724,7 +1892,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -1864,14 +2032,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -2013,14 +2181,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -2157,14 +2325,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -2287,7 +2455,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -2491,7 +2659,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -2713,7 +2881,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -2988,7 +3156,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3231,14 +3399,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.22.12'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up Android SDK for Go cgo
@@ -3306,7 +3474,7 @@ jobs:
             go build \
               -trimpath \
               -buildvcs=false \
-              -ldflags="-s -w -buildid=" \
+              -ldflags="-s -w -buildid= -checklinkname=0" \
               -o "$ARTIFACT_DIR/lyrebird" \
               "$LYREBIRD_PACKAGE"
           popd > /dev/null
@@ -3409,7 +3577,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3489,112 +3657,175 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Publish archive stage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh archives running preparing "Packing module archive"
+
+      - name: Resolve build identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::Numeric versionCode not found in module.prop"; exit 1; }
+          [[ -n "$VERSION_NAME" ]] || { echo "::error::version not found in module.prop"; exit 1; }
+
+          BUILD_CHANNEL="service"
+          STABLE_TAG="V${VERSION_NAME}"
+          stable_version_shape=false
+          version_code_matches_version=false
+
+          if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.0$ ]]; then
+            stable_version_shape=true
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            code_prefix="${major}${minor}"
+            code_min=$((code_prefix * 1000))
+            code_max=$((code_min + 999))
+            if (( VERSION_CODE >= code_min && VERSION_CODE <= code_max )); then
+              version_code_matches_version=true
+            fi
+          fi
+
+          parse_version_code_from_body() {
+            sed -nE 's/^\|[[:space:]]*(Version code|Код версии)[[:space:]]*\|[[:space:]]*`?([0-9]+)`?[[:space:]]*\|[[:space:]]*$/\2/p' | head -1
+          }
+
+          if [[ "$stable_version_shape" == "true" && "$version_code_matches_version" == "true" ]]; then
+            if gh release view "$STABLE_TAG" >/dev/null 2>&1; then
+              STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
+              PUBLISHED_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
+              if [[ -z "$PUBLISHED_CODE" || ! "$PUBLISHED_CODE" =~ ^[0-9]+$ ]] || (( VERSION_CODE > PUBLISHED_CODE )); then
+                BUILD_CHANNEL="release"
+              fi
+            else
+              BUILD_CHANNEL="release"
+            fi
+          fi
+
+          {
+            echo "ZDT_BUILD_TYPE=$BUILD_CHANNEL"
+            echo "ZDT_BUILD_NUMBER=${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_ENV"
+
+          echo "[ZDT-D] Build identity: ${BUILD_CHANNEL} v${VERSION_NAME} #${GITHUB_RUN_NUMBER} (versionCode=${VERSION_CODE})"
+
       - name: Download zdtd arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdtd-arm64
           path: out/artifacts/zdtd/arm64
       - name: Download t2s arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: t2s-arm64
           path: out/artifacts/t2s/arm64
+      - name: Download d2s arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: d2s-arm64
+          path: out/artifacts/d2s/arm64
       - name: Download zygisk arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zygisk-arm64
           path: out/artifacts/zygisk/arm64
       - name: Download openvpn arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: openvpn-arm64
           path: out/artifacts/openvpn/arm64
       - name: Download amneziawg arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: amneziawg-arm64
           path: out/artifacts/amneziawg/arm64
       - name: Download wireproxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: wireproxy-arm64
           path: out/artifacts/wireproxy/arm64
       - name: Download tun2socks arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tun2socks-arm64
           path: out/artifacts/tun2socks/arm64
       - name: Download mihomo arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mihomo-arm64
           path: out/artifacts/mihomo/arm64
       - name: Download sing-box arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sing-box-arm64
           path: out/artifacts/sing-box/arm64
       - name: Download hysteria2 arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: hysteria2-arm64
           path: out/artifacts/hysteria2/arm64
       - name: Download byedpi arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: byedpi-arm64
           path: out/artifacts/byedpi/arm64
       - name: Download dnscrypt arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dnscrypt-arm64
           path: out/artifacts/dnscrypt/arm64
       - name: Download mieru arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mieru-arm64
           path: out/artifacts/mieru/arm64
       - name: Download opera-proxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: opera-proxy-arm64
           path: out/artifacts/opera-proxy/arm64
       - name: Download dpitunnel arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpitunnel-arm64
           path: out/artifacts/dpitunnel/arm64
       - name: Download torproxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: torproxy-arm64
           path: out/artifacts/torproxy/arm64
       - name: Download lyrebird arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: lyrebird-arm64
           path: out/artifacts/lyrebird/arm64
       - name: Download nfqws arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-arm64
           path: out/artifacts/nfqws/arm64
       - name: Download nfqws2 arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws2-arm64
           path: out/artifacts/nfqws2/arm64
+
       - name: Pack Magisk module archive
         run: |
           set -euo pipefail
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
+          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
           require_file() {
             local path="$1"
@@ -3607,6 +3838,7 @@ jobs:
             case "$bin" in
               zdtd) echo "out/artifacts/zdtd/$arch/zdtd" ;;
               t2s) echo "out/artifacts/t2s/$arch/t2s" ;;
+              d2s) echo "out/artifacts/d2s/$arch/d2s" ;;
               openvpn) echo "out/artifacts/openvpn/$arch/openvpn" ;;
               amneziawg-go) echo "out/artifacts/amneziawg/$arch/amneziawg-go" ;;
               awg) echo "out/artifacts/amneziawg/$arch/awg" ;;
@@ -3632,6 +3864,14 @@ jobs:
           mkdir -p "$MODULE_BUILD_DIR" out/module
           cp -a module_template/. "$MODULE_BUILD_DIR/"
           cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
+          sed -i '/^buildType=/d; /^buildNumber=/d' "$MODULE_BUILD_DIR/module.prop"
+          {
+            echo "buildType=${ZDT_BUILD_TYPE:-service}"
+            echo "buildNumber=${ZDT_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
+          } >> "$MODULE_BUILD_DIR/module.prop"
+          echo "[ZDT-D] module.prop build identity:"
+          grep -E '^(version|versionCode|buildType|buildNumber)=' "$MODULE_BUILD_DIR/module.prop" || true
+          cp -f "$MODULE_BUILD_DIR/module.prop" out/module/module.prop
 
           [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
           find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
@@ -3709,8 +3949,17 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: zdt-module-zip
-          path: out/module/zdt_module.zip
+          path: |
+            out/module/zdt_module.zip
+            out/module/module.prop
           retention-days: 1
+
+      - name: Publish archive completion
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh archives done preparing "Module archive is ready"
+
 
   build_dpi_detector:
     name: build dpi-detector ${{ matrix.abi }}
@@ -3737,7 +3986,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3882,7 +4131,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -4027,7 +4276,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -4055,6 +4304,63 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Download BusyBox source with fallback mirrors
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          VERSION="1.37.0"
+          TARBALL="busybox-${VERSION}.tar.bz2"
+          EXPECTED_SHA256="3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
+          DOWNLOAD_DIR=".tools/busybox/downloads"
+          DEST="$DOWNLOAD_DIR/$TARBALL"
+          TMP="$DEST.tmp"
+          mkdir -p "$DOWNLOAD_DIR"
+
+          sha256_file() {
+            sha256sum "$1" | awk '{print $1}'
+          }
+
+          if [[ -s "$DEST" ]] && [[ "$(sha256_file "$DEST")" == "$EXPECTED_SHA256" ]]; then
+            echo "[ZDT-D][BusyBox] cached source sha256 OK"
+            exit 0
+          fi
+          rm -f "$DEST" "$TMP"
+
+          URLS=(
+            "https://busybox.net/downloads/$TARBALL"
+            "https://mirror.slackbuilds.org/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
+            "https://plug-mirror.rcac.purdue.edu/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
+          )
+
+          for url in "${URLS[@]}"; do
+            echo "[ZDT-D][BusyBox] trying source: $url"
+            rm -f "$TMP"
+            if curl -fL --http1.1 \
+              --connect-timeout 10 \
+              --max-time 75 \
+              --speed-limit 1024 \
+              --speed-time 20 \
+              --retry 2 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              -o "$TMP" "$url"; then
+              actual="$(sha256_file "$TMP")"
+              if [[ "$actual" == "$EXPECTED_SHA256" ]]; then
+                mv -f "$TMP" "$DEST"
+                echo "ZDT_BUSYBOX_SOURCE_URL=$url" >> "$GITHUB_ENV"
+                echo "[ZDT-D][BusyBox] source downloaded and verified: $actual"
+                exit 0
+              fi
+              echo "::warning::BusyBox SHA-256 mismatch from $url: expected=$EXPECTED_SHA256 actual=$actual"
+            else
+              echo "::warning::BusyBox download failed or timed out: $url"
+            fi
+          done
+
+          rm -f "$TMP"
+          echo "::error::Unable to download verified BusyBox $VERSION source from all configured mirrors"
+          exit 1
 
       - name: Build BusyBox ${{ matrix.abi }} from source
         run: |
@@ -4100,28 +4406,79 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Publish APK stage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh apk running preparing "Building Android application"
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
-            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
-            "ndk;27.2.12479018"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          set -euo pipefail
+          yes 2>/dev/null | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              if [[ "$pkg" == platforms\;android-37.* ]]; then
+                echo "sdkmanager retry $pkg through preview/canary channel"
+                if "$SDKMANAGER" --channel=3 "$pkg"; then
+                  return 0
+                fi
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          install_sdk_package "platform-tools"
+          install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
+          test -s "$ANDROID_SDK_ROOT/platforms/android-${{ env.ANDROID_API_LEVEL }}/android.jar" || {
+            echo "::error::Android SDK platform android-${{ env.ANDROID_API_LEVEL }} was not installed correctly"
+            exit 1
+          }
+          install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NATIVE_NDK_VERSION"
+          fi
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -4131,34 +4488,37 @@ jobs:
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-read-only: false
 
       - name: Download module archive
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdt-module-zip
           path: out/module
 
       - name: Download dpi-detector arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpi-detector-arm64
           path: out/artifacts/dpi-detector/arm64
 
+
       - name: Download nfqws-tester arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
 
+
       - name: Download BusyBox arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: busybox-arm64
           path: prebuilt/bin/arm64-v8a
+
 
       - name: Verify BusyBox artifacts
         run: |
@@ -4262,6 +4622,7 @@ jobs:
             --no-daemon \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
+            "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
             "assemble${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts
@@ -4288,6 +4649,10 @@ jobs:
           done
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/module.prop' >/dev/null || { echo "::error::module.prop APK asset missing"; exit 1; }
+          APK_MODULE_PROP="$(unzip -p "$APK" assets/module.prop)"
+          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildType=(release|service)$' || { echo "::error::buildType missing from APK module.prop"; exit 1; }
+          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from APK module.prop"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }
@@ -4311,6 +4676,12 @@ jobs:
           name: zdt-module-final
           path: out/dist/zdt_module.zip
           retention-days: 30
+
+      - name: Publish APK completion
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh apk done preparing "Android application is ready"
 
   sync_prebuilt:
     name: Sync prebuilt binaries to repo
@@ -4404,15 +4775,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - name: Publish release stage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh release running preparing "Publishing GitHub releases"
+
       - name: Download APK artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdt-apk
           path: out/dist
+
 
       - name: Publish service and stable releases
         env:
@@ -4901,3 +5279,76 @@ jobs:
               echo "Stable upload attempts: \`${STABLE_UPLOAD_ATTEMPTS}\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish ready status
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-build-status.sh ready done ready "Release is ready"
+
+  publish_build_status_failure:
+    name: Publish failed build status
+    runs-on: ubuntu-latest
+    needs:
+      - build_gate
+      - module_core_ready
+      - module_binaries_ready
+      - module_zygisk_ready
+      - pack_module
+      - apk_tools_ready
+      - build_apk
+      - publish_service
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.build_gate.outputs.should_build == 'true' &&
+      (needs.module_core_ready.result != 'success' ||
+       needs.module_binaries_ready.result != 'success' ||
+       needs.module_zygisk_ready.result != 'success' ||
+       needs.pack_module.result != 'success' ||
+       needs.apk_tools_ready.result != 'success' ||
+       needs.build_apk.result != 'success' ||
+       needs.publish_service.result != 'success')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine failed stage
+        id: failed_stage
+        env:
+          CORE_RESULT: ${{ needs.module_core_ready.result }}
+          BINARIES_RESULT: ${{ needs.module_binaries_ready.result }}
+          ZYGISK_RESULT: ${{ needs.module_zygisk_ready.result }}
+          PACK_RESULT: ${{ needs.pack_module.result }}
+          APK_TOOLS_RESULT: ${{ needs.apk_tools_ready.result }}
+          APK_RESULT: ${{ needs.build_apk.result }}
+          RELEASE_RESULT: ${{ needs.publish_service.result }}
+        run: |
+          set -euo pipefail
+          stage="binaries"
+          message="Native component build failed"
+          if [[ "$CORE_RESULT" == "success" && "$BINARIES_RESULT" == "success" && "$ZYGISK_RESULT" == "success" && "$APK_TOOLS_RESULT" == "success" ]]; then
+            if [[ "$PACK_RESULT" != "success" ]]; then
+              stage="archives"
+              message="Module archive packaging failed"
+            elif [[ "$APK_RESULT" != "success" ]]; then
+              stage="apk"
+              message="Android application build failed"
+            elif [[ "$RELEASE_RESULT" != "success" ]]; then
+              stage="release"
+              message="GitHub release publishing failed"
+            fi
+          fi
+          echo "stage=$stage" >> "$GITHUB_OUTPUT"
+          echo "message=$message" >> "$GITHUB_OUTPUT"
+
+      - name: Publish failed status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          bash scripts/ci/publish-build-status.sh
+          "${{ steps.failed_stage.outputs.stage }}"
+          failed
+          failed
+          "${{ steps.failed_stage.outputs.message }}"

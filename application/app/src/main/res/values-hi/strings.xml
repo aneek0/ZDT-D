@@ -52,6 +52,10 @@ Magisk द्वारा बदलाव लागू करने के ल�
 ऐप के साथ शामिल: versionCode=%2$d।
 
 बेहतर संगतता के लिए अपडेट करने की सलाह दी जाती है। आप इसे छोड़ सकते हैं, लेकिन कुछ सुविधाएँ उपलब्ध नहीं हो सकतीं और API असंगति त्रुटियाँ हो सकती हैं।</string>
+    <string name="mv_module_build_update_prompt_text">इंस्टॉल किया गया मॉड्यूल: v%1$s (versionCode=%2$s, बिल्ड #%3$s)।
+उपलब्ध बिल्ड: %4$s v%5$s (versionCode=%6$s, बिल्ड #%7$s)।
+
+मॉड्यूल को इस ऐप के साथ शामिल बिल्ड में अपडेट करें?</string>
     <string name="mv_module_version_unsupported">इंस्टॉल किया गया मॉड्यूल संस्करण अब समर्थित नहीं है (versionCode=%1$d)। ZDT-D का उपयोग जारी रखने के लिए मॉड्यूल अपडेट करें।</string>
     <string name="mv_backup_list_read_error">बैकअप सूची पढ़ी नहीं जा सकी: %1$s</string>
     <string name="mv_backup_settings_folder_missing">सेटिंग फ़ोल्डर नहीं मिला: %1$s।</string>
@@ -228,6 +232,8 @@ Magisk द्वारा बदलाव लागू करने के ल�
     <string name="home_power_stopped">रुकी हुई</string>
     <string name="home_power_starting">शुरू हो रही है…</string>
     <string name="home_power_stopping">रोकी जा रही है…</string>
+    <string name="home_action_start_service">सेवा शुरू करें</string>
+    <string name="home_action_stop_service">सेवा रोकें</string>
     <string name="home_service_active_hint">सेवा चल रही है। इसे रोकने के लिए बटन पर टैप करें।</string>
     <string name="home_service_stopped_hint">सेवा रुकी हुई है। इसे शुरू करने के लिए बटन पर टैप करें।</string>
     <string name="home_no_log_data">(कोई लॉग डेटा नहीं)</string>
@@ -426,6 +432,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="stats_unknown_cpu">अज्ञात CPU</string>
     <string name="stats_clamped_from">%1$s%% से सीमित किया गया</string>
     <string name="stats_memory_title">मेमोरी</string>
+    <string name="stats_power_title">बैटरी</string>
     <string name="stats_total_fmt">कुल: %1$s</string>
     <string name="stats_total_unknown">कुल: —</string>
     <string name="stats_free_fmt">खाली: %1$s</string>
@@ -539,6 +546,15 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="program_updates_title">ZDT-D मॉड्यूल टूल/घटक अपडेट</string>
     <string name="program_updates_reset_cd">रीसेट</string>
     <string name="program_updates_desc">ZDT-D मॉड्यूल के टूल और घटक सीधे GitHub रिलीज़ से अपडेट करता है। जाँच केवल बटन टैप करने पर होती है।</string>
+    <string name="program_updates_bulk_title">सभी टूल अपडेट करें</string>
+    <string name="program_updates_bulk_desc">सभी टूल की जाँच करता है और चल रही सेवा को रोके बिना उपलब्ध अपडेट इंस्टॉल करता है।</string>
+    <string name="program_updates_check_all">सभी जाँचें</string>
+    <string name="program_updates_checking_all">सभी की जाँच हो रही है…</string>
+    <string name="program_updates_update_all">सभी अपडेट करें</string>
+    <string name="program_updates_updating_all">सभी अपडेट हो रहे हैं…</string>
+    <string name="program_updates_all_current">सब कुछ नवीनतम है</string>
+    <string name="program_updates_retry_check">फिर से जाँचें</string>
+    <string name="program_updates_available_count_fmt">%1$d अपडेट उपलब्ध</string>
     <string name="program_updates_service_running_title">सेवा चल रही है</string>
     <string name="program_updates_service_running_desc">जाँच/अपडेट से पहले सेवा रोकें। यह आवश्यक है ताकि बदलने के दौरान नियम और प्रोसेस फ़ाइलों का उपयोग न करें।</string>
     <string name="program_updates_stopping">रोकी जा रही है…</string>
@@ -649,7 +665,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="program_updates_err_service_running">सेवा अभी भी चल रही है। इसे रोककर फिर प्रयास करें।</string>
     <string name="program_updates_err_detect_installed">इंस्टॉल किया गया संस्करण नहीं पता चला</string>
     <string name="program_updates_warn_installed_unknown">इंस्टॉल किया गया संस्करण पता नहीं चला। फिर भी चुनी गई रिलीज़ इंस्टॉल की जा सकती है।</string>
-    <string name="program_updates_err_check_latest">नवीनतम रिलीज़ की जाँच विफल रही</string>
+    <string name="program_updates_err_check_latest">जानकारी प्राप्त नहीं हो सकी</string>
     <string name="program_updates_err_no_internet">कोई इंटरनेट कनेक्शन नहीं</string>
     <string name="program_updates_err_load_releases">रिलीज़ लोड नहीं हो सकीं</string>
     <!-- App logs (internal app events shown in UI) -->
@@ -934,6 +950,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="action_edit">संपादित करें</string>
     <string name="singbox_profile_settings_title">प्रोफ़ाइल सेटिंग</string>
     <string name="singbox_profile_settings_desc">हर sing-box प्रोफ़ाइल के अपने t2s पोर्ट, ऐप सूची और सर्वर सेट होते हैं।</string>
+    <string name="singbox_endpoint_resolve_label">सर्वर डोमेन हल करें</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box शुरू करने से पहले outbound के server फ़ील्ड में डोमेन नामों को IPv4 में हल करें।</string>
     <string name="singbox_profile_add_server">बनाएँ</string>
     <string name="singbox_profile_no_servers">इस प्रोफ़ाइल के लिए अभी कोई सर्वर नहीं बनाया गया है।</string>
     <string name="singbox_profile_ports_must_differ">t2s_port और t2s_web_port अलग होने चाहिए</string>
@@ -1336,6 +1354,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="openvpn_dns_label">DNS सर्वर</string>
     <string name="openvpn_dns_hint">स्पेस या अल्पविराम से अलग 1..8 IPv4 DNS सर्वर दर्ज करें। IPv6, डोमेन और https/tls URL की अनुमति नहीं है।</string>
     <string name="openvpn_dns_invalid">केवल 1..8 मान्य IPv4 पते दर्ज करें।</string>
+    <string name="openvpn_endpoint_resolve_label">remote डोमेन हल करें</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN शुरू करने से पहले remote निर्देशों में डोमेन नामों को हल करें।</string>
     <string name="openvpn_config_title">OpenVPN कॉन्फ़िगरेशन</string>
     <string name="openvpn_config_desc">client.ovpn की सामग्री चिपकाएँ या फ़ाइल से लोड करें। इसे profile/name/client.ovpn के रूप में सहेजा जाता है।</string>
     <string name="openvpn_config_empty">client.ovpn खाली नहीं हो सकता।</string>
@@ -2179,4 +2199,218 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="dpi_detector_share_failed">रिपोर्ट संग्रह साझा नहीं किया जा सका।</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt के लिए SOCKS5 सर्वर पूल, उपलब्धता जाँच और DIRECT फ़ॉलबैक कॉन्फ़िगर करें।</string>
+
+
+    <!-- D2S structured settings -->
+    <string name="d2s_loading_title">D2S सेटिंग लोड हो रही हैं</string>
+    <string name="d2s_loading_desc">डेमन से संरचित कॉन्फ़िगरेशन पढ़ा जा रहा है।</string>
+    <string name="d2s_load_failed_title">D2S सेटिंग उपलब्ध नहीं</string>
+    <string name="d2s_load_failed_desc">कॉन्फ़िगरेशन पढ़ा नहीं जा सका। मॉड्यूल स्थापना जाँचें और फिर प्रयास करें।</string>
+    <string name="d2s_overview_title">D2S रूटिंग</string>
+    <string name="d2s_overview_desc">DNSCrypt कनेक्शन को स्थानीय SOCKS5 सर्वरों में बाँटता है और आवश्यकता पर सीधा कनेक्शन उपयोग करता है।</string>
+    <string name="d2s_listener_label">स्थानीय D2S लिस्नर</string>
+    <string name="d2s_listener_unavailable">कॉन्फ़िगर नहीं</string>
+    <string name="d2s_listener_desc">dnscrypt-proxy.toml की सक्रिय proxy प्रविष्टि से पढ़ा जाता है।</string>
+    <string name="d2s_backends_title">SOCKS5 सर्वर</string>
+    <string name="d2s_backends_desc">स्थानीय SOCKS5 सेवाओं के पोर्ट जोड़ें। D2S केवल जाँच में सफल सर्वर उपयोग करता है।</string>
+    <string name="d2s_backends_empty">कोई SOCKS5 पोर्ट कॉन्फ़िगर नहीं है। D2S DIRECT फ़ॉलबैक उपयोग करेगा।</string>
+    <string name="d2s_backend_port_label">SOCKS5 पोर्ट</string>
+    <string name="d2s_backend_port_desc">1 से 65535 तक स्थानीय पोर्ट</string>
+    <string name="d2s_add_backend">पोर्ट जोड़ें</string>
+    <string name="d2s_remove_backend">SOCKS5 पोर्ट हटाएँ</string>
+    <string name="d2s_direct_title">DIRECT फ़ॉलबैक</string>
+    <string name="d2s_direct_desc">स्वस्थ SOCKS5 सर्वर न मिलने पर सीधे कनेक्ट करें।</string>
+    <string name="d2s_health_title">स्वास्थ्य जाँच</string>
+    <string name="d2s_health_desc">विफलता पहचान और ठीक हुए सर्वरों की रोटेशन में वापसी नियंत्रित करता है।</string>
+    <string name="d2s_healthy_interval">स्वस्थ सर्वर जाँच अंतराल</string>
+    <string name="d2s_recovery_interval">विफल सर्वर पुनः जाँच अंतराल</string>
+    <string name="d2s_failure_threshold">अनुपलब्ध होने से पहले विफलताएँ</string>
+    <string name="d2s_failure_threshold_desc">लगातार विफलताओं की संख्या</string>
+    <string name="d2s_runtime_cooldown">कनेक्शन विफलता के बाद विराम</string>
+    <string name="d2s_seconds_desc">सेकंड; शून्य से अधिक होना चाहिए</string>
+    <string name="d2s_milliseconds_desc">मिलीसेकंड; शून्य से अधिक होना चाहिए</string>
+    <string name="d2s_probe_targets_label">जाँच लक्ष्य</string>
+    <string name="d2s_probe_targets_desc">D2S प्रत्येक SOCKS5 सर्वर से इन HOST:PORT लक्ष्यों पर जुड़ता है।</string>
+    <string name="d2s_probe_target_label">HOST:PORT</string>
+    <string name="d2s_add_probe_target">लक्ष्य जोड़ें</string>
+    <string name="d2s_remove_probe_target">जाँच लक्ष्य हटाएँ</string>
+    <string name="d2s_timeouts_title">कनेक्शन टाइमआउट</string>
+    <string name="d2s_timeouts_desc">कनेक्शन, SOCKS5 बातचीत, क्लाइंट अनुरोध और जाँच की सीमाएँ।</string>
+    <string name="d2s_connect_timeout">SOCKS5 कनेक्शन टाइमआउट</string>
+    <string name="d2s_upstream_handshake_timeout">SOCKS5 हैंडशेक टाइमआउट</string>
+    <string name="d2s_backend_attempt_timeout">सर्वर प्रयास टाइमआउट</string>
+    <string name="d2s_direct_connect_timeout">DIRECT कनेक्शन टाइमआउट</string>
+    <string name="d2s_client_handshake_timeout">क्लाइंट हैंडशेक टाइमआउट</string>
+    <string name="d2s_probe_timeout">स्वास्थ्य जाँच टाइमआउट</string>
+    <string name="d2s_performance_title">प्रदर्शन और लॉग</string>
+    <string name="d2s_performance_desc">कनेक्शन सीमा, TCP व्यवहार, लॉग विवरण और सुरक्षित शटडाउन।</string>
+    <string name="d2s_max_connections">अधिकतम समकालिक कनेक्शन</string>
+    <string name="d2s_max_connections_desc">शून्य से अधिक होना चाहिए</string>
+    <string name="d2s_tcp_nodelay_title">TCP_NODELAY</string>
+    <string name="d2s_tcp_nodelay_desc">Nagle देरी के बिना छोटे पैकेट भेजें।</string>
+    <string name="d2s_log_level">लॉग स्तर</string>
+    <string name="d2s_log_level_desc">dnscrypt/log/d2s.log में लिखे विवरण को नियंत्रित करता है।</string>
+    <string name="d2s_shutdown_grace">शटडाउन प्रतीक्षा अवधि</string>
+    <string name="d2s_save">D2S सेटिंग सहेजें</string>
+    <string name="d2s_saving">सहेजा जा रहा है…</string>
+    <string name="d2s_saved">D2S सेटिंग सहेजी गईं। रोकने और शुरू करने के बाद लागू होंगी।</string>
+    <string name="d2s_error_port_required">SOCKS5 पोर्ट दर्ज करें।</string>
+    <string name="d2s_error_port_range">SOCKS5 पोर्ट 1 से 65535 के बीच होना चाहिए।</string>
+    <string name="d2s_error_duplicate_port">SOCKS5 पोर्ट दोहराए नहीं जा सकते।</string>
+    <string name="d2s_error_listener_port">सर्वर D2S लिस्नर पोर्ट उपयोग नहीं कर सकता।</string>
+    <string name="d2s_error_direct_required">SOCKS5 सूची खाली होने पर DIRECT फ़ॉलबैक आवश्यक है।</string>
+    <string name="d2s_error_positive_number">सभी संख्यात्मक मान शून्य से अधिक होने चाहिए।</string>
+    <string name="d2s_error_probe_required">SOCKS5 सर्वर होने पर कम से कम एक जाँच लक्ष्य जोड़ें।</string>
+    <string name="d2s_error_probe_target">हर जाँच लक्ष्य HOST:PORT प्रारूप में होना चाहिए।</string>
+    <string name="d2s_log_level_error">त्रुटि</string>
+    <string name="d2s_log_level_warn">चेतावनी</string>
+    <string name="d2s_log_level_info">जानकारी</string>
+    <string name="d2s_log_level_debug">डीबग</string>
+    <string name="d2s_log_level_trace">ट्रेस</string>
+
+    <string name="d2s_route_timeout">कुल SOCKS5 फ़ेलओवर टाइमआउट</string>
+    <string name="d2s_route_timeout_desc">फ़ॉलबैक से पहले SOCKS5 सर्वरों को आज़माने का अधिकतम कुल समय, मिलीसेकंड में।</string>
+    <string name="d2s_max_backend_attempts">अधिकतम सर्वर प्रयास</string>
+    <string name="d2s_max_backend_attempts_desc">एक क्लाइंट कनेक्शन के लिए आज़माए जाने वाले SOCKS5 सर्वरों की अधिकतम संख्या।</string>
+    <string name="d2s_max_connecting">अधिकतम समकालिक कनेक्शन प्रयास</string>
+    <string name="d2s_max_connecting_desc">समकालिक आउटबाउंड कनेक्शन और SOCKS5 हैंडशेक सीमित करता है।</string>
+    <string name="d2s_idle_after">निष्क्रियता पर स्वास्थ्य जाँच सुलाएँ</string>
+    <string name="d2s_idle_after_desc">क्लाइंट ट्रैफ़िक न होने के सेकंड, जिसके बाद जाँच सुला दी जाती है। 0 स्लीप बंद करता है।</string>
+    <string name="d2s_error_non_negative_number">निष्क्रियता समय शून्य या अधिक होना चाहिए।</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">मॉड्यूल ZIP संगतता पैच विफल हुआ: %1$s</string>
+    <string name="module_zip_patch_oom_warning">चेतावनी: मेमोरी में ZIP संगतता पैच के लिए ऐप मेमोरी कम पड़ गई: %1$s। कम-मेमोरी ZIP पैच मोड पर स्विच किया जा रहा है।</string>
+    <string name="module_zip_patch_low_memory_normalized">कम-मेमोरी ZIP संगतता पैच पूरा हुआ: %1$d Central Directory प्रविष्टियों से एन्क्रिप्शन फ़्लैग हटाया गया। जारी रखा जा रहा है।</string>
+    <string name="module_zip_patch_low_memory_compatible">कम-मेमोरी ZIP संगतता जाँच पूरी हुई: आर्काइव पहले से सख्त इंस्टॉलर के साथ संगत है। जारी रखा जा रहा है।</string>
+    <string name="module_zip_patch_normalized">मॉड्यूल ZIP को सख्त इंस्टॉलर के लिए सामान्यीकृत किया गया: %1$d Central Directory प्रविष्टियों से एन्क्रिप्शन फ़्लैग हटाया गया।</string>
+    <string name="module_zip_patch_compatible">मॉड्यूल ZIP पहले से सख्त इंस्टॉलर के साथ संगत है।</string>
+    <string name="module_zip_patch_protection_kept_magisk">Magisk इंस्टॉलर के लिए मॉड्यूल ZIP सुरक्षा बरकरार रखी गई।</string>
+
+    <string name="vps_reboot_server">सर्वर रीबूट करें</string>
+    <string name="vps_reboot_confirm_title">सर्वर रीबूट करें?</string>
+    <string name="vps_reboot_confirm_message">%1$s को रीबूट करें? सर्वर के पुनः शुरू होने के दौरान SSH कनेक्शन थोड़ी देर के लिए टूटेगा।</string>
+    <string name="vps_rebooting">सर्वर रीबूट हो रहा है…</string>
+    <string name="vps_reboot_failed">सर्वर रीबूट निर्धारित नहीं किया जा सका</string>
+    <string name="vps_reboot_scheduled">रीबूट निर्धारित किया गया</string>
+    <string name="vps_waiting_for_server">सर्वर के वापस आने की प्रतीक्षा…</string>
+    <string name="vps_server_online_again">सर्वर फिर से ऑनलाइन है</string>
+    <string name="vps_reboot_timeout">समय सीमा से पहले सर्वर वापस नहीं आया</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI जोड़ें</string>
+    <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">प्रमाणीकरण</string>
+    <string name="vps_auth_password">पासवर्ड</string>
+    <string name="vps_auth_private_key">SSH कुंजी</string>
+    <string name="vps_private_key">निजी SSH कुंजी</string>
+    <string name="vps_choose_private_key_file">निजी कुंजी फ़ाइल चुनें</string>
+    <string name="vps_private_key_file_selected">कुंजी फ़ाइल: %1$s</string>
+    <string name="vps_private_key_passphrase">कुंजी पासफ्रेज़ (वैकल्पिक)</string>
+    <string name="vps_private_key_storage_hint">निजी कुंजी और उसका पासफ्रेज़ Android Keystore से एन्क्रिप्ट होते हैं और केवल ऐप डेटा में रहते हैं।</string>
+    <string name="vps_private_key_read_error">चुनी गई निजी कुंजी फ़ाइल पढ़ी नहीं जा सकी।</string>
+    <string name="vps_private_key_too_large">चुनी गई फ़ाइल बहुत बड़ी है। 512 KB से छोटी SSH कुंजी चुनें।</string>
+    <string name="vps_public_key_error">यह सार्वजनिक SSH कुंजी लगती है। प्रमाणीकरण के लिए निजी कुंजी आवश्यक है।</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S कनेक्ट नहीं है</string>
+    <string name="d2s_not_connected_desc">यह प्रोग्राम DNSCrypt के साथ उपयोग के लिए कनेक्ट नहीं है। क्या आप इसे कनेक्ट करना चाहते हैं?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D 11990 से शुरू होने वाला पहला खाली स्थानीय SOCKS5 पोर्ट चुनेगा और उसे dnscrypt-proxy.toml में सहेजेगा।</string>
+    <string name="d2s_connect">कनेक्ट करें</string>
+    <string name="d2s_connecting">कनेक्ट हो रहा है…</string>
+    <string name="d2s_connect_failed">D2S कनेक्ट नहीं हो सका</string>
+    <string name="d2s_connected_fmt">D2S कनेक्ट हुआ: %1$s</string>
+
+    <!-- Mihomo managed subscriptions -->
+    <string name="mihomo_subscriptions_title">सब्सक्रिप्शन</string>
+    <string name="mihomo_subscriptions_summary">%1$d स्रोत · %2$d सक्रिय · %3$d सर्वर</string>
+    <string name="mihomo_sub_add">सब्सक्रिप्शन जोड़ें</string>
+    <string name="mihomo_sub_refresh_all">सभी अपडेट करें</string>
+    <string name="mihomo_sub_empty_title">अभी कोई सब्सक्रिप्शन नहीं है</string>
+    <string name="mihomo_sub_empty_desc">एक सब्सक्रिप्शन स्रोत जोड़ें और उसे एक या अधिक Mihomo प्रोफ़ाइल में उपयोग करें।</string>
+    <string name="mihomo_sub_saved">सब्सक्रिप्शन सहेजा गया</string>
+    <string name="mihomo_sub_delete_title">सब्सक्रिप्शन हटाएँ</string>
+    <string name="mihomo_sub_delete_message">सब्सक्रिप्शन “%1$s” हटाएँ? इसका उपयोग करने वाली प्रोफ़ाइल इस स्रोत से अलग हो जाएँगी।</string>
+    <string name="mihomo_sub_state_disabled">बंद</string>
+    <string name="mihomo_sub_state_error">अपडेट त्रुटि</string>
+    <string name="mihomo_sub_state_ready">तैयार</string>
+    <string name="mihomo_sub_state_waiting">पहले अपडेट की प्रतीक्षा</string>
+    <string name="mihomo_sub_servers">सर्वर</string>
+    <string name="mihomo_sub_profiles">प्रोफ़ाइल</string>
+    <string name="mihomo_sub_interval">अंतराल</string>
+    <string name="mihomo_sub_traffic_value">ट्रैफ़िक: %1$s</string>
+    <string name="mihomo_sub_expire_value">समाप्ति: %1$s</string>
+    <string name="mihomo_sub_used_by">प्रोफ़ाइल: %1$s</string>
+    <string name="mihomo_sub_updated_value">अपडेट किया गया: %1$s</string>
+    <string name="mihomo_sub_refresh">अपडेट</string>
+    <string name="mihomo_sub_add_title">नया सब्सक्रिप्शन</string>
+    <string name="mihomo_sub_edit_title">सब्सक्रिप्शन संपादित करें</string>
+    <string name="mihomo_sub_name">नाम</string>
+    <string name="mihomo_sub_url">सब्सक्रिप्शन URL</string>
+    <string name="mihomo_sub_basic_auth">Basic प्रमाणीकरण</string>
+    <string name="mihomo_sub_basic_auth_desc">सब्सक्रिप्शन अनुरोधों के साथ HTTP Basic उपयोगकर्ता नाम और पासवर्ड भेजें।</string>
+    <string name="mihomo_sub_username">उपयोगकर्ता नाम</string>
+    <string name="mihomo_sub_password">पासवर्ड</string>
+    <string name="mihomo_sub_hwid">HWID प्रमाणीकरण</string>
+    <string name="mihomo_sub_hwid_desc">सब्सक्रिप्शन प्रदाता द्वारा आवश्यक हार्डवेयर पहचानकर्ता भेजें।</string>
+    <string name="mihomo_sub_hwid_value">HWID</string>
+    <string name="mihomo_sub_use_device_hwid">इस डिवाइस का ID उपयोग करें</string>
+    <string name="mihomo_sub_device_headers">डिवाइस हेडर</string>
+    <string name="mihomo_sub_device_headers_desc">भाषा, Android संस्करण और डिवाइस मॉडल के Happ-संगत हेडर भेजें।</string>
+    <string name="mihomo_sub_user_agent">User-Agent</string>
+    <string name="mihomo_sub_user_agent_hint">Happ-संगत User-Agent अपने आप बनाने के लिए इसे खाली छोड़ें।</string>
+    <string name="mihomo_sub_locale">लोकेल</string>
+    <string name="mihomo_sub_os_version">Android संस्करण</string>
+    <string name="mihomo_sub_device_model">डिवाइस मॉडल</string>
+    <string name="mihomo_sub_custom_headers">अतिरिक्त HTTP हेडर</string>
+    <string name="mihomo_sub_custom_headers_hint">हर पंक्ति में एक हेडर: Header-Name: मान</string>
+    <string name="mihomo_sub_remote_interval">प्रदाता का अपडेट अंतराल उपयोग करें</string>
+    <string name="mihomo_sub_remote_interval_desc">प्रदाता द्वारा भेजे जाने पर profile-update-interval का उपयोग करें।</string>
+    <string name="mihomo_sub_fallback_interval">वैकल्पिक अंतराल, मिनट</string>
+    <string name="mihomo_sub_interval_hint">15–10080 मिनट; प्रदाता द्वारा अंतराल न दिए जाने पर उपयोग होता है।</string>
+    <string name="mihomo_tab_subscriptions">सब्सक्रिप्शन</string>
+    <string name="mihomo_tab_desc_subscriptions">इस प्रोफ़ाइल के लिए प्रबंधित सब्सक्रिप्शन स्रोत चुनें।</string>
+    <string name="mihomo_profile_subscriptions_title">सब्सक्रिप्शन</string>
+    <string name="mihomo_profile_subscriptions_desc">वे वैश्विक सब्सक्रिप्शन चुनें जिन्हें ZDT-D रनटाइम पर इस प्रोफ़ाइल में जोड़ेगा।</string>
+    <string name="mihomo_profile_subscriptions_selected">%1$d चुने गए और उपलब्ध · कुल %2$d</string>
+    <string name="mihomo_profile_subscriptions_runtime_hint">मूल config.yaml अपरिवर्तित रहता है। ZDT-D provider केवल config.runtime.yaml में जोड़ता है और उन्हें Proxy समूह से जोड़ता है।</string>
+    <string name="mihomo_profile_subscriptions_empty_desc">पहले Mihomo सब्सक्रिप्शन स्क्रीन से सब्सक्रिप्शन बनाएँ।</string>
+    <string name="mihomo_profile_subscription_servers">%1$d सर्वर</string>
+    <string name="mihomo_profile_subscription_disabled_hint">यह सब्सक्रिप्शन वैश्विक रूप से बंद है।</string>
+    <string name="subscriptions_title">सदस्यताएँ</string>
+    <string name="subscriptions_entry_desc">साझा सदस्यता स्रोत प्रबंधित करें और अलग-अलग सर्वर आयात करें।</string>
+    <string name="subscriptions_badge">लाइब्रेरी</string>
+    <string name="subscription_view_servers">सर्वर देखें</string>
+    <string name="subscription_servers_count">%1$d सर्वर</string>
+    <string name="subscription_missing_title">सर्वर अब सदस्यता में मौजूद नहीं है</string>
+    <string name="subscription_local_copy_saved">स्थानीय प्रति सुरक्षित रखी गई है।</string>
+    <string name="subscription_detach">सदस्यता से अलग करें</string>
+    <string name="subscription_nodes_empty">अभी कोई पार्स किया हुआ सर्वर नहीं है। सदस्यता रीफ़्रेश करें।</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s से जुड़ा है</string>
+    <string name="subscription_add_to_target">%1$s में जोड़ें</string>
+    <string name="subscription_unsupported_node">यह सर्वर प्रकार अभी आयात के लिए समर्थित नहीं है।</string>
+    <string name="subscription_import_title">%1$s में आयात करें</string>
+    <string name="subscription_choose_profile">प्रोफ़ाइल चुनें</string>
+    <string name="subscription_no_target_profiles">पहले लक्ष्य प्रोफ़ाइल बनाएँ।</string>
+    <string name="subscription_local_server_name">स्थानीय सर्वर नाम</string>
+    <string name="subscription_server_name_hint">अंग्रेज़ी अक्षर, अंक, अंडरस्कोर और हाइफ़न</string>
+    <string name="subscription_import_action">आयात करें</string>
+    <string name="subscription_import_success">सर्वर आयात हुआ और सदस्यता से जुड़ गया</string>
+    <string name="subscription_import_failed">सर्वर आयात नहीं हो सका</string>
+    <string name="subscription_detach_failed">सर्वर अलग नहीं किया जा सका</string>
+    <string name="subscription_link_active">सदस्यता से जुड़ा है और अपने आप सिंक होता है</string>
+    <string name="subscription_manual_import">कॉन्फ़िगरेशन आयात करें</string>
+    <string name="subscription_manual_import_desc">एक सर्वर लिंक, sing-box/Hysteria2 JSON या WireGuard कॉन्फ़िगरेशन चिपकाएँ। सर्वर बिना सदस्यता लिंक के स्थानीय रूप से बनाया जाएगा।</string>
+    <string name="subscription_manual_source">लिंक या कॉन्फ़िगरेशन</string>
+    <string name="subscription_paste">चिपकाएँ</string>
+    <string name="subscription_recognize">पहचानें</string>
+    <string name="subscription_manual_unrecognized">कॉन्फ़िगरेशन पहचाना नहीं गया या स्थापित बैकएंड इसका समर्थन नहीं करता।</string>
+    <string name="subscription_manual_target">गंतव्य: %1$s</string>
+    <string name="subscription_copy_config">कॉन्फ़िगरेशन कॉपी करें</string>
+    <string name="subscription_copy_failed">कॉपी करने के लिए कॉन्फ़िगरेशन तैयार नहीं हो सका।</string>
 </resources>
