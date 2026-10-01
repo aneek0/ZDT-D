@@ -11,10 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_API_LEVEL: 36
-  ZDT_COMPILE_SDK: 36
-  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
-  GRADLE_VERSION: "9.4.1"
+  ANDROID_API_LEVEL: "37.0"
+  ZDT_COMPILE_SDK: 37
+  ZDT_COMPILE_SDK_MINOR: 0
+  ANDROID_BUILD_TOOLS_VERSION: "37.0.0"
+  GRADLE_VERSION: "9.6.0"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: Release
@@ -354,11 +355,30 @@ jobs:
 
       - name: Install SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-$ANDROID_API_LEVEL" \
-            "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
+          yes 2>/dev/null | sdkmanager --licenses > /dev/null 2>&1 || true
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if sdkmanager "$pkg"; then
+                return 0
+              fi
+              if [[ "$pkg" == platforms\;android-37.* ]]; then
+                echo "sdkmanager retry $pkg through preview/canary channel"
+                if sdkmanager --channel=3 "$pkg"; then
+                  return 0
+                fi
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          install_sdk_package "platform-tools"
+          install_sdk_package "platforms;android-$ANDROID_API_LEVEL"
+          install_sdk_package "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
@@ -490,6 +510,7 @@ jobs:
             --configuration-cache \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=$ZDT_COMPILE_SDK" \
+            "-PzdtCompileSdkMinor=$ZDT_COMPILE_SDK_MINOR" \
             "assemble$BUILD_TYPE"
 
       - name: Collect APKs
