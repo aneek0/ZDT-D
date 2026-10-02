@@ -312,7 +312,7 @@ fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnPlan) -> Result<()> {
     let proxy = format!("socks5://127.0.0.1:{}", plan.server.setting.socks5_port);
     let logf = OpenOptions::new().create(true).write(true).truncate(true).open(&plan.tun2socks_log)?; let logf_err = logf.try_clone()?;
     let mut cmd = Command::new(bin);
-    cmd.arg("-device").arg(format!("tun://{}", plan.setting.tun)).arg("-proxy").arg(proxy).arg("-loglevel").arg(&plan.setting.tun2socks_loglevel).current_dir(profile_root(&plan.name)).stdin(Stdio::null()).stdout(Stdio::from(logf)).stderr(Stdio::from(logf_err));
+    cmd.arg("--device").arg(format!("tun://{}", plan.setting.tun)).arg("--proxy").arg(proxy).arg("--loglevel").arg(&plan.setting.tun2socks_loglevel).current_dir(profile_root(&plan.name)).stdin(Stdio::null()).stdout(Stdio::from(logf)).stderr(Stdio::from(logf_err));
     unsafe { cmd.pre_exec(|| { let _ = libc::setsid(); Ok(()) }); }
     cmd.spawn().with_context(|| format!("spawn tun2socks for hysteria2 {}", plan.name))?; Ok(())
 }
@@ -328,7 +328,7 @@ pub fn is_running() -> bool { !main_pids_exact().is_empty() }
 pub fn main_pids_exact() -> Vec<i32> { pids_matching(&format!("{} --disable-update-check", HYSTERIA2_BIN)) }
 pub fn tun2socks_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
-    let Ok(out) = shell::capture_quiet("ps -ef 2>/dev/null | grep -F 'tun2socks -device tun://' | grep -v grep || true") else { return pids };
+    let Ok(out) = shell::capture_quiet("ps -ef 2>/dev/null | grep -F 'tun2socks --device tun://' | grep -v grep || true") else { return pids };
     let mut tun_names = BTreeSet::new();
     if let Ok(active) = read_active() {
         for name in enabled_names(&active) {
