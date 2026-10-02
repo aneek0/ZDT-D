@@ -409,6 +409,8 @@ class NfqwsTesterOverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             letterSpacing = 0.06f
             includeFontPadding = false
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
             setPadding(0, dp(9), 0, dp(2))
         }
         strategyValueView = TextView(this).apply {
@@ -425,10 +427,10 @@ class NfqwsTesterOverlayService : Service() {
         headerRow.addView(titleColumn)
 
         val statusCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = CyberSectionDrawable(density, strong = false)
-            setPadding(dp(14), dp(8), dp(12), dp(8))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
         }
         val statusLabel = TextView(this).apply {
             text = "статус"
@@ -438,18 +440,20 @@ class NfqwsTesterOverlayService : Service() {
             letterSpacing = 0.08f
             includeFontPadding = false
         }
+        statusCard.addView(statusLabel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            marginEnd = dp(8)
+        })
         statusPillView = TextView(this).apply {
             setTextColor(0xFFECE3E7.toInt())
             setTextSize(2, 14f)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             includeFontPadding = false
-            setPadding(0, dp(8), 0, 0)
+            gravity = Gravity.END
         }
-        statusCard.addView(statusLabel)
-        statusCard.addView(statusPillView)
-        headerRow.addView(statusCard, LinearLayout.LayoutParams(dp(168), dp(58)).apply {
-            marginStart = dp(10)
+        statusCard.addView(statusPillView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(statusCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
         })
 
         headerCollapseButton = TextView(this).apply {
@@ -865,7 +869,7 @@ class NfqwsTesterOverlayService : Service() {
     private fun expandedOverlayWidth(): Int {
         val screenWidth = resources.displayMetrics.widthPixels
         val safeMax = max(dp(240), screenWidth - dp(24))
-        val preferred = (screenWidth * 0.56f).toInt().coerceAtLeast(dp(230))
+        val preferred = (screenWidth * 0.72f).toInt().coerceAtLeast(dp(280))
         return min(safeMax, preferred)
     }
 
