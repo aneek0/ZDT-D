@@ -99,7 +99,7 @@ use `scripts/lists/strategy_dedup.py` to strip/re-dedup consistently.
 
 ## Build
 
-Local dev machine has no Android/NDK build env; **all builds run on GitHub Actions** (push artifacts: APK `zdt-apk`, module zip `zdt-module-final`).
+This machine has a full local build env (JDK 17 at `~/.local/opt/jdk17`, Gradle 9.6.0 at `~/.local/opt/gradle-9.6.0`, Android SDK 37 at `~/Android/Sdk`, debug keystore at `application/.tools/signing/`). Local APK build: create `out/module/zdt_module.zip` + `out/module/module.prop` from `module_template/` + `prebuilt/` (with `verify_sum` sha256 files), copy `prebuilt/bin/arm64-v8a/{dpi-detector,nfqws-tester}` into `application/app/build/generated/zdt-assets/main/...`, then `cd application && JAVA_HOME=~/.local/opt/jdk17 ~/.local/opt/gradle-9.6.0/bin/gradle assembleRelease` → `app/build/outputs/apk/release/app-release.apk`. Prefer local builds for iteration; GitHub Actions remains the release pipeline (push artifacts: APK `zdt-apk`, module zip `zdt-module-final`).
 
 - Push to `main` triggers `.github/workflows/fast-build.yml` (quick: zdtd arm64 + APK only, change-gated per crate, arm64-v8a binaries only).
 - Full build is `.github/workflows/build.yml` via `workflow_dispatch` (arm64-v8a only, third-party binaries, module zip, prebuilt sync, service publish). It compiles only when tracked build paths changed (`application/`, `rust/`, `module_template/`, `prebuilt/`, `zygisk/`, ...), unless the commit message contains `auto run compile` or it is a manual run.

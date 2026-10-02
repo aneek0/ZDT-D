@@ -1,5 +1,5 @@
-# Local tools and downloaded build utilities
 /.tools/
+/application/.tools/
 
 # Local Android config
 /application/local.properties
