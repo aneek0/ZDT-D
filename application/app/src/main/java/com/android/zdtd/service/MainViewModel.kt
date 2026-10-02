@@ -686,17 +686,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       }
       .build()
 
-    try {
-      githubHttp.newCall(req).execute().use { resp ->
-        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
-        val code = resp.code
-        val newEtag = resp.header("ETag")
-        val body = if (code == 200) resp.body?.string() else null
-        return Triple(code, body, newEtag)
-      }
-    } catch (e: Exception) {
+    val resp = executeGithubRequest(req)
+    if (resp == null) {
       if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
-      throw e
+      throw IOException("GitHub unreachable on all routes")
+    }
+    resp.use {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+      val code = it.code
+      val newEtag = it.header("ETag")
+      val body = if (code == 200) it.body?.string() else null
+      return Triple(code, body, newEtag)
     }
   }
 
@@ -706,15 +706,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       .url(url)
       .header("User-Agent", "ZDT-D-Android")
       .build()
-    return try {
-      githubHttp.newCall(req).execute().use { resp ->
-        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
-        if (!resp.isSuccessful) return null
-        return resp.body?.string()
-      }
-    } catch (e: Exception) {
+    val resp = executeGithubRequest(req)
+    if (resp == null) {
       if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
-      null
+      return null
+    }
+    resp.use {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+      if (!it.isSuccessful) return null
+      return it.body?.string()
     }
   }
 
@@ -1406,7 +1406,8 @@ private fun clearDownloadedUpdateApk() {
       .header("User-Agent", "ZDT-D-Android")
       .build()
 
-    githubHttp.newCall(req).execute().use { resp ->
+    val resp = executeGithubRequest(req) ?: return null
+    resp.use { resp ->
       if (!resp.isSuccessful) return null
       val body = resp.body ?: return null
       val total = body.contentLength().takeIf { it > 0 } ?: -1L
