@@ -103,6 +103,8 @@ Local dev machine has no Android/NDK build env; **all builds run on GitHub Actio
 
 - Push to `main` triggers `.github/workflows/fast-build.yml` (quick: zdtd arm64 + APK only, change-gated per crate, arm64-v8a binaries only).
 - Full build is `.github/workflows/build.yml` via `workflow_dispatch` (arm64-v8a only, third-party binaries, module zip, prebuilt sync, service publish). It compiles only when tracked build paths changed (`application/`, `rust/`, `module_template/`, `prebuilt/`, `zygisk/`, ...), unless the commit message contains `auto run compile` or it is a manual run.
+- **Auto-versioning**: on every full build, the `bump_version` job increments the patch version and `versionCode` in `module.prop` and commits it back to `main` with `[skip ci]`; `pack_module`, `build_apk` and `publish_service` apply the bumped `module.prop` from `origin/main` before building/publishing.
+- **Auto-release**: `publish_service` always refreshes the rolling `service-build` prerelease and creates/updates a stable release `V{X.Y.Z}` (APK asset + update meta) for the bumped version.
 - After a build, `sync_prebuilt` auto-commits rebuilt binaries to `prebuilt/` (`sync prebuilt binaries [skip ci]` commits).
 - Legacy Termux path `build.sh` still exists but is not the primary flow.
 - Rust check locally: `cargo check` in `rust/zdtd/` must pass before pushing.
