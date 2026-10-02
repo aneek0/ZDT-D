@@ -99,17 +99,21 @@ Each program/profile screen may carry its own accent hue for identity
 
 ### 3.5 Card surface treatment (signature look)
 
-Shared cards are **translucent surfaces with a tinted accent border**:
+Shared cards are **translucent surfaces with a subtle outline border**:
 
 ```kotlin
 Surface(
   color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
-  border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+  border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)), // accent card
+  // neutral content card: BorderStroke(1.dp, colorScheme.outline.copy(alpha = 0.20f))
   tonalElevation = 0.dp,
   shadowElevation = 0.dp,
 )
 ```
 
+Accent border (`accent × 0.34f`) for branded/emphasis cards (SectionCard),
+neutral outline (`outline × 0.20f`) for plain content cards. Status banners
+(`errorContainer`, `secondaryContainer`) stay opaque and borderless.
 Do not introduce elevated/opaque card styles; this flat, glassy treatment is
 the product's visual identity.
 
@@ -151,7 +155,7 @@ length-adaptive values (9/10sp). Don't add new ones.
 | `SectionCard` | `CommonCards.kt` | titled translucent section card, accent border |
 | `EnabledCard` | `CommonCards.kt` | toggle row card |
 | `ProfileStatusCard` | `CommonCards.kt` | profile state w/ icon badge + enabled pill |
-| `StableLinearProgressIndicator` | `CommonCards.kt` | progress without flicker |
+| `StableLinearProgressIndicator` | `CommonCards.kt` | indeterminate placeholder that reserves space (no flicker). For determinate progress bars (fraction known) use plain `LinearProgressIndicator` — see BlockcheckScreen |
 | `TextEditorCard` / `JsonEditorCard` | `EditorCards.kt` | config editors w/ save flow |
 | `PowerWaveButton` | `PowerWaveButton.kt` | big circular power toggle + wave animation |
 
