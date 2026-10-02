@@ -79,6 +79,8 @@ zygisk/               — Zygisk native library (DO NOT touch)
 
 ## Conventions
 
+- UI: read `DESIGN.md` (repo root) before creating/modifying any Compose UI —
+  colors, typography, spacing, shapes and shared components are defined there
 - Kotlin: follow existing code style (no mass reformatting)
 - Rust: `cargo check` must pass
 - Host lists: one entry per line, lowercase, no duplicates, `#` comments
