@@ -49,11 +49,11 @@ async fn tcp_connect_probe(target: &TcpTarget, read_timeout: Duration, proxy: Op
     }
 }
 
-async fn tcp_payload_probe_staged<W: EventWriter + Send>(
+async fn tcp_payload_probe_staged<T>(
     target: &TcpTarget,
     read_timeout: Duration,
     proxy: Option<&str>,
-    mut writer_ctx: Option<(&mut W, &str, &str)>,
+    events: Option<(&ScanTx<T>, &str)>,
 ) -> ProbeResult {
     let start_all = Instant::now();
     let target_addr = format!("{}:{}", target.ip, target.port());
@@ -89,7 +89,7 @@ async fn tcp_payload_probe_staged<W: EventWriter + Send>(
 
     let mut last_ok_kb = 0usize;
     for kb in TCP_PAYLOAD_STEPS_KB.iter().copied().filter(|kb| *kb <= TCP_BLOCK_MAX_KB) {
-        if let Some((writer, stage, key)) = writer_ctx.as_mut() {
+        if let Some((tx, key)) = events {
             let mut running_checks = checks.clone();
             running_checks.push(json!({
                 "name": format!("{kb} KB"),
@@ -98,13 +98,13 @@ async fn tcp_payload_probe_staged<W: EventWriter + Send>(
                 "value": "",
                 "size_label": format!("{kb} KB")
             }));
-            let _ = (*writer).probe(
-                *stage,
-                *key,
+            send_probe(
+                tx,
+                key.to_string(),
                 "TCP payload threshold",
-                &target_addr,
+                target_addr.clone(),
                 "checking",
-                &format!("sending {kb} KB X-Pad payload"),
+                format!("sending {kb} KB X-Pad payload"),
                 json!({
                     "target": target.id,
                     "provider": target.provider,
@@ -367,27 +367,27 @@ fn random_payload(len: usize) -> String {
 }
 
 async fn probe_dns_udp_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_udp(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    futures_util::future::join_all(domains.iter().map(|domain| resolve_udp(server, domain, timeout_d)))
+        .await
+        .into_iter()
+        .filter(|result| result.is_ok())
+        .count()
 }
 
 async fn probe_doh_wire_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_doh_wire(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    futures_util::future::join_all(domains.iter().map(|domain| resolve_doh_wire(server, domain, timeout_d)))
+        .await
+        .into_iter()
+        .filter(|result| result.is_ok())
+        .count()
 }
 
 async fn probe_doh_json_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_doh_json(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    futures_util::future::join_all(domains.iter().map(|domain| resolve_doh_json(server, domain, timeout_d)))
+        .await
+        .into_iter()
+        .filter(|result| result.is_ok())
+        .count()
 }
 
 async fn resolve_udp(server: &str, domain: &str, timeout_d: Duration) -> Result<Vec<String>> {

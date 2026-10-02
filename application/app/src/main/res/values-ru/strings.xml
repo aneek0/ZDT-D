@@ -1719,6 +1719,9 @@ APatch: 10700+</string>
     <string name="dpi_detector_run">Выполнить</string>
     <string name="dpi_detector_running">Выполняется…</string>
     <string name="dpi_detector_planned_tests">Доступные проверки</string>
+    <string name="dpi_detector_select_all">Выбрать все</string>
+    <string name="dpi_detector_select_none">Сбросить</string>
+    <string name="dpi_detector_no_tests_selected">Выберите хотя бы одну проверку</string>
     <string name="dpi_detector_test_dns_title">DNS-проверки</string>
     <string name="dpi_detector_test_dns_desc">UDP DNS, признаки подмены и доступность резолверов.</string>
     <string name="dpi_detector_test_doh_title">DoH-проверки</string>

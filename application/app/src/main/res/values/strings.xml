@@ -1719,6 +1719,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_run">Run</string>
     <string name="dpi_detector_running">Running…</string>
     <string name="dpi_detector_planned_tests">Available checks</string>
+    <string name="dpi_detector_select_all">Select all</string>
+    <string name="dpi_detector_select_none">Clear</string>
+    <string name="dpi_detector_no_tests_selected">Select at least one check</string>
     <string name="dpi_detector_test_dns_title">DNS checks</string>
     <string name="dpi_detector_test_dns_desc">UDP DNS resolving, substitution signs and resolver availability.</string>
     <string name="dpi_detector_test_doh_title">DoH checks</string>

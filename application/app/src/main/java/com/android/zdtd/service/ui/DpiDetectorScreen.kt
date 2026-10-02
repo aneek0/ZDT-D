@@ -59,7 +59,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -160,6 +160,7 @@ fun DpiDetectorScreen(
   var exportBusy by remember { mutableStateOf(false) }
   var reportBundle by remember { mutableStateOf<DpiDetectorReportBundle?>(null) }
   val rawEventLines = remember { Collections.synchronizedList(mutableListOf<String>()) }
+  var selectedTestIds by remember { mutableStateOf(defaultDpiStages().map { it.id }.toSet()) }
 
   LaunchedEffect(running) {
     if (!running) {
@@ -174,7 +175,7 @@ fun DpiDetectorScreen(
 
   fun resetRunState() {
     stages.clear()
-    stages.addAll(defaultDpiStages())
+    stages.addAll(defaultDpiStages().filter { it.id in selectedTestIds })
     currentStageId = null
     currentProbe = ""
     manuallyExpandedStageIds = emptySet()
@@ -190,6 +191,8 @@ fun DpiDetectorScreen(
 
   fun startScan() {
     if (running) return
+    val testsToRun = defaultDpiStages().map { it.id }.filter { it in selectedTestIds }
+    if (testsToRun.isEmpty()) return
     resetRunState()
     hasRun = true
     running = true
@@ -201,15 +204,16 @@ fun DpiDetectorScreen(
     runnerJob = scope.launch {
       DpiDetectorRunner(context)
         .runNdjsonStream(
+          tests = testsToRun,
           quick = false,
           onRawLine = { line -> rawEventLines.add(line) },
         )
         .collect { event ->
           when (event) {
             is DpiDetectorEvent.Meta -> {
-              currentStageId = currentStageId ?: "dns_integrity"
+              currentStageId = currentStageId ?: stages.firstOrNull()?.id
               if (currentProbe.isBlank()) currentProbe = "Launching dpi-detector"
-              stages.updateStage(currentStageId ?: "dns_integrity") {
+              stages.updateStage(currentStageId ?: return@collect) {
                 it.copy(status = if (it.status == "idle") "checking" else it.status, detail = "Preparing detector process")
               }
             }
@@ -334,26 +338,52 @@ fun DpiDetectorScreen(
       DpiDetectorActionCard(
         running = running,
         runningTick = runningTick,
+        runEnabled = selectedTestIds.isNotEmpty(),
         onRun = ::startScan,
         onStop = ::stopScan,
       )
     }
     item {
       AnimatedVisibility(
-        visible = !running && !hasRun,
+        visible = !running,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(
-            text = stringResource(R.string.dpi_detector_planned_tests),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
-            modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp),
-          )
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = stringResource(R.string.dpi_detector_planned_tests),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
+              modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { selectedTestIds = defaultDpiStages().map { it.id }.toSet() }) {
+              Text(text = stringResource(R.string.dpi_detector_select_all))
+            }
+            TextButton(onClick = { selectedTestIds = emptySet() }) {
+              Text(text = stringResource(R.string.dpi_detector_select_none))
+            }
+          }
+          if (selectedTestIds.isEmpty()) {
+            Text(
+              text = stringResource(R.string.dpi_detector_no_tests_selected),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+              modifier = Modifier.padding(horizontal = 2.dp),
+            )
+          }
           defaultDpiPlannedTests().forEach { test ->
-            DpiPlannedTestCard(test = test)
+            DpiPlannedTestCard(
+              test = test,
+              selected = test.stageId in selectedTestIds,
+              onToggle = {
+                selectedTestIds = if (test.stageId in selectedTestIds) selectedTestIds - test.stageId else selectedTestIds + test.stageId
+              },
+            )
           }
         }
       }
@@ -572,6 +602,7 @@ private fun DpiDetectorHeroCard(compact: Boolean) {
 private fun DpiDetectorActionCard(
   running: Boolean,
   runningTick: Int,
+  runEnabled: Boolean,
   onRun: () -> Unit,
   onStop: () -> Unit,
 ) {
@@ -620,7 +651,7 @@ private fun DpiDetectorActionCard(
         }
         Button(
           onClick = onRun,
-          enabled = !running,
+          enabled = !running && runEnabled,
           modifier = Modifier
             .weight(1f)
             .animateContentSize(),
@@ -1143,12 +1174,31 @@ private fun DpiStatusPill(status: String) {
 }
 
 @Composable
-private fun DpiPlannedTestCard(test: DpiPlannedTest) {
+private fun DpiPlannedTestCard(
+  test: DpiPlannedTest,
+  selected: Boolean,
+  onToggle: () -> Unit,
+) {
   Card(
-    modifier = Modifier.fillMaxWidth(),
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable(onClick = onToggle),
     shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f)),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    colors = CardDefaults.cardColors(
+      containerColor = if (selected) {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.54f)
+      } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+      },
+    ),
+    border = BorderStroke(
+      1.dp,
+      if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
+      } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+      },
+    ),
   ) {
     Row(
       modifier = Modifier.padding(13.dp),
@@ -1171,11 +1221,27 @@ private fun DpiPlannedTestCard(test: DpiPlannedTest) {
           text = stringResource(test.titleRes),
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.SemiBold,
+          color = if (selected) Color.Unspecified else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
         )
         Text(
           text = stringResource(test.descRes),
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (selected) 0.62f else 0.45f),
+        )
+      }
+      if (selected) {
+        Icon(
+          imageVector = Icons.Outlined.CheckCircle,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(22.dp),
+        )
+      } else {
+        Icon(
+          imageVector = Icons.Outlined.RadioButtonUnchecked,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+          modifier = Modifier.size(22.dp),
         )
       }
     }
