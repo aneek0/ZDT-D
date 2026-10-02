@@ -1063,22 +1063,26 @@ private fun DpiProbeChecksTable(checks: List<DpiProbeCheckUiState>) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             DpiWorkflowStatusIcon(status = check.status)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text(
                 text = check.name.ifBlank { stringResource(R.string.dpi_detector_probe_check_unknown) },
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
               )
+              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (check.sizeLabel.isNotBlank()) {
+                  DpiSizePill(sizeLabel = check.sizeLabel)
+                }
+                DpiStatusPill(status = check.status)
+              }
               Text(
                 text = listOf(check.value, check.detail).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "—" },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
               )
             }
-            if (check.sizeLabel.isNotBlank()) {
-              DpiSizePill(sizeLabel = check.sizeLabel)
-            }
-            DpiStatusPill(status = check.status)
           }
         }
       }
@@ -1169,6 +1173,8 @@ private fun DpiStatusPill(status: String) {
       text = statusLabel(status),
       style = MaterialTheme.typography.labelSmall,
       fontWeight = FontWeight.SemiBold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
       modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
     )
   }
