@@ -2900,9 +2900,11 @@ fi""".trimIndent()
         val pct2 = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
         _backup.update { st -> st.copy(progressText = str(R.string.mv_copied_count, i + 1, dirs.size), progressPercent = pct2) }
       }
-  
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-  
+
+      // Apply the theme mode stored in the backup manifest (if present and valid).
+      v.themeMode?.let { setThemeMode(it) }
+
       // After status becomes OFF we must allow a short cool-down window before sending start.
       // Restore work can happen inside this window.
       val elapsedSinceStopped = System.currentTimeMillis() - (stoppedAt ?: System.currentTimeMillis())
@@ -4934,11 +4936,12 @@ fi""".trimIndent()
       .put("app_version", BuildConfig.VERSION_NAME)
       .put("app_version_code", readInstalledModuleVersionCode() ?: readBundledModuleVersionCode() ?: BuildConfig.VERSION_CODE)
       .put("folders", folders)
+      .put("theme_mode", root.getThemeMode())
 
     return obj.toString(2)
   }
 
-  private data class BackupValidation(val ok: Boolean, val error: String? = null, val versionMismatch: Boolean = false)
+  private data class BackupValidation(val ok: Boolean, val error: String? = null, val versionMismatch: Boolean = false, val themeMode: String? = null)
 
   private data class BackupArchiveReadResult(
     val entries: List<String>,
@@ -5233,7 +5236,9 @@ fi""".trimIndent()
       )
     }
 
-    return BackupValidation(true, null)
+    val themeFromBackup = manifestObj.optString("theme_mode", "").trim().lowercase()
+    val themeMode = if (themeFromBackup in setOf("system", "light", "dark", "amoled")) themeFromBackup else null
+    return BackupValidation(true, null, themeMode = themeMode)
   }
 
 private fun shQuote(s: String): String {
