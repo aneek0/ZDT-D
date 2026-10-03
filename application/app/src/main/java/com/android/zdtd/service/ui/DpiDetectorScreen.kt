@@ -945,11 +945,13 @@ private fun DpiProbeRow(probe: DpiProbeUiState) {
             maxLines = if (expanded) 3 else 1,
             overflow = TextOverflow.Ellipsis,
           )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (probe.sizeLabel.isNotBlank()) {
+              DpiSizePill(sizeLabel = probe.sizeLabel)
+            }
+            DpiStatusPill(status = probe.status)
+          }
         }
-        if (probe.sizeLabel.isNotBlank()) {
-          DpiSizePill(sizeLabel = probe.sizeLabel)
-        }
-        DpiStatusPill(status = probe.status)
         Icon(
           imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
           contentDescription = null,

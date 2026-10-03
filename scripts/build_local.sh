@@ -62,7 +62,9 @@ build_rust_binaries() {
       cargo_build "$crate" "$src" "$bin" && rebuilt=1
     fi
   done
-  [[ "$rebuilt" == 1 ]] && echo "NOTE: rust binaries were rebuilt — commit the updated prebuilt/ files."
+  if [[ "$rebuilt" == 1 ]]; then
+    echo "NOTE: rust binaries were rebuilt — commit the updated prebuilt/ files."
+  fi
 }
 
 cargo_build() {
