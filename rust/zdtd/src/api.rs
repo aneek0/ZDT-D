@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, power_mode, protector, settings, stats, traffic_total};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, power_mode, protector, settings, stats, traffic_total};
 use crate::runtime::simple_enabled_json;
 
 const MAX_HEADER: usize = 16 * 1024;
@@ -7170,13 +7170,34 @@ match (method.as_str(), path.as_str()) {
         }
 
         ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {
-            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
+            write_json(stream, 200, energy_saver::api_snapshot())
         }
         ("POST", "/api/energy-saver") | ("PUT", "/api/energy-saver") => {
-            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
+            let res = (|| -> Result<serde_json::Value> {
+                let wrapper: serde_json::Value = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let cfg: energy_saver::EnergySaverSettings = if let Some(settings) = wrapper.get("settings") {
+                    serde_json::from_value(settings.clone())
+                        .map_err(|e| anyhow::anyhow!("bad JSON settings: {e}"))?
+                } else {
+                    serde_json::from_value(wrapper)
+                        .map_err(|e| anyhow::anyhow!("bad JSON settings: {e}"))?
+                };
+                let _saved = energy_saver::save_settings(cfg)?;
+                energy_saver::refresh(services_running);
+                Ok(energy_saver::api_snapshot())
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
         }
         ("POST", "/api/energy-saver/apply") => {
-            write_json(stream, 501, json!({"ok": false, "error": "energy_saver not available"}))
+            let res = energy_saver::apply_affinity_now();
+            match res {
+                Ok(applied) => write_json(stream, 200, json!({"ok": true, "applied": applied, "active": energy_saver::active()})),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
         }
 
         ("POST", "/api/fs/read_text") => {
