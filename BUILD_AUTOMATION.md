@@ -27,6 +27,33 @@ make
 ./build.sh apk
 ```
 
+## Локальная сборка на рабочей станции (Linux x64)
+
+Одна команда собирает module zip + release APK (без GitHub Actions):
+
+```bash
+scripts/build_local.sh           # module zip + APK
+scripts/build_local.sh --module  # только module zip
+scripts/build_local.sh --install # + adb install на подключённое устройство
+```
+
+Скрипт:
+
+- пересобирает рустовые бинарники (`zdtd`, `dpi-detector`, `nfqws-tester`) автоматически,
+  если их исходники новее файлов в `prebuilt/bin/arm64-v8a/` (защита от «протухшего»
+  демона в модуле);
+- пакует module zip из `module_template/` + `prebuilt/` (arm64-v8a, с verify_sum);
+- верифицирует, что APK реально содержит свежий `zdt_module.zip` (sha256),
+  и падает, если gradle подсунул устаревший из кэша.
+
+Установка окружения с нуля (JDK 17, Gradle 9.6.0, Android SDK/NDK, Rust, target
+aarch64-linux-android):
+
+```bash
+scripts/install_deps.sh           # установка недостающего
+scripts/install_deps.sh --check   # только проверка, ничего не ставит
+```
+
 ## lzhiyong aapt2 для Termux
 
 Стандартный Termux `aapt2` может не читать `android-35/android.jar` и `android-36/android.jar`.
