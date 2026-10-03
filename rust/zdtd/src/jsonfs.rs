@@ -7,8 +7,8 @@
 //! Behavior is unchanged: the two reader variants keep the exact error-context strings
 //! their original per-module copies produced, so log output and API error text stay
 //! byte-identical. Modules with genuinely different contracts (api.rs / tgwsproxy.rs use
-//! their own read_text(), ports.rs returns Value with its own messages, hysteria2.rs adds
-//! no parse context, proxyinfo.rs requires T: Default) intentionally keep their own copy.
+//! their own read_text(), ports.rs returns Value with its own messages,
+//! proxyinfo.rs requires T: Default) intentionally keep their own copy.
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;

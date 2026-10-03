@@ -193,8 +193,7 @@ by the Android UI. Main roots include:
 
 ```text
 working_folder/byedpi
-working_folder/dpitunnel
-working_folder/nfqws
+working_folder/nfqws2
 working_folder/nfqws2
 working_folder/singbox
 working_folder/wireproxy
@@ -277,10 +276,8 @@ Some components do not own the main traffic path but modify or observe behavior:
 The daemon has integration modules for:
 
 - `dnscrypt`;
-- `nfqws`;
 - `nfqws2`;
 - `byedpi`;
-- `dpitunnel`;
 - `operaproxy`;
 - `singbox`;
 - `wireproxy`;

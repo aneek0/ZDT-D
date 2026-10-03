@@ -907,10 +907,8 @@ private fun programDescription(id: String): String {
 internal fun programIconRes(id: String): Int? {
   return when (id) {
     "operaproxy" -> R.drawable.ic_tool_operaproxy
-    "nfqws" -> R.drawable.ic_tool_zapret
     "nfqws2" -> R.drawable.ic_tool_zapret2
     "byedpi" -> R.drawable.ic_tool_byedpi
-    "dpitunnel" -> R.drawable.ic_tool_dpitunnel
     "wireproxy" -> R.drawable.ic_tool_wireproxy
     "tor" -> R.drawable.ic_tool_tor
     "myproxy" -> R.drawable.ic_tool_myproxy
@@ -922,7 +920,6 @@ internal fun programIconRes(id: String): Int? {
     "mihomo" -> R.drawable.ic_tool_mihomo
     "mieru" -> R.drawable.ic_tool_mieru
     "sing-box" -> R.drawable.ic_tool_sing_box
-    "hysteria2" -> R.drawable.ic_tool_hysteria2
     else -> null
   }
 }
@@ -931,10 +928,8 @@ internal fun programIcon(id: String): ImageVector {
   return when (id) {
     "dnscrypt" -> Icons.Outlined.Dns
     "operaproxy" -> Icons.Outlined.SwapHoriz
-    "nfqws" -> Icons.Outlined.Tune
     "nfqws2" -> Icons.Outlined.Tune
     "byedpi" -> Icons.Outlined.Public
-    "dpitunnel" -> Icons.Outlined.AltRoute
     "wireproxy" -> Icons.Outlined.AltRoute
     "tor" -> Icons.Outlined.Public
     "myproxy" -> Icons.Outlined.SwapHoriz
@@ -946,7 +941,6 @@ internal fun programIcon(id: String): ImageVector {
     "mihomo" -> Icons.Outlined.AltRoute
     "mieru" -> Icons.Outlined.Extension
     "sing-box" -> Icons.Outlined.Extension
-    "hysteria2" -> Icons.Outlined.Extension
     "tgwsproxy" -> Icons.Outlined.AddCircleOutline
     else -> Icons.Outlined.Extension
   }

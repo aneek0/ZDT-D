@@ -18,7 +18,6 @@ enum class VpsServiceKind(val wireId: String) {
   DNSCRYPT("dnscrypt"),
   OPENVPN("openvpn"),
   XRAY("xray"),
-  HYSTERIA2("hysteria2"),
   WIREPROXY("wireproxy");
 
   companion object {

@@ -48,8 +48,8 @@ DPI bypass resources used by ZDT-D strategies.
 - `strategic/bin/` — binary fake packets and protocol payloads, such as TLS ClientHello, QUIC Initial, WireGuard, STUN, DNS, NTP, and other payload samples.
 - `strategic/certificate/` — certificate resources, including the CA bundle.
 - `strategic/list/` — domain, host, IP, hostlist, and ipset lists used by strategies.
-- `strategic/lua/` — Lua helper scripts for zapret/nfqws logic.
-- `strategic/strategicvar/` — predefined strategy presets for `byedpi`, `dpitunnel`, `nfqws`, and `nfqws2`.
+- `strategic/lua/` — Lua helper scripts for zapret/nfqws2 logic.
+- `strategic/strategicvar/` — predefined strategy presets for `byedpi`, `nfqws`, and `nfqws2`.
 - `strategic/scan/` — atomic strategy catalogs for the `nfqws2` strategy scan (one candidate per entry, ported from zapretgui), plus `blobs.txt`, the registry of the blob names those catalogs reference.
 - `strategic/instructions.md` — notes and guidance for strategy resources.
 
@@ -60,11 +60,10 @@ Initial runtime configuration and default profiles for ZDT-D programs.
 Examples include:
 
 - `working_folder/dnscrypt/` — default dnscrypt-proxy configuration, resolver lists, allowlists, blocklists, and related settings.
-- `working_folder/nfqws/` — default nfqws profiles, including the default YouTube profile.
 - `working_folder/nfqws2/` — initial nfqws2 profile state.
 - `working_folder/operaproxy/` — default opera-proxy settings, byedpi arguments, SNI configuration, bootstrap DNS list, and port configuration.
 - `working_folder/singbox/` — initial sing-box profile state.
-- `working_folder/byedpi/` and `working_folder/dpitunnel/` — initial profile state for those programs.
+- `working_folder/byedpi/` — initial profile state for that program.
 - `working_folder/proxyInfo/` — reserved runtime location for proxy information features.
 
 ### `zygisk/`

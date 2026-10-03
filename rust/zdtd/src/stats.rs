@@ -28,14 +28,11 @@ pub struct StatusReport {
     /// are intentionally exposed in more than one compatibility bucket.
     pub total: UsageAgg,
     pub zdtd: UsageAgg,
-    pub zapret: UsageAgg,   // nfqws
     pub zapret2: UsageAgg,  // nfqws2
     pub byedpi: UsageAgg,   // non-opera byedpi
     pub dnscrypt: UsageAgg,
     pub d2s: UsageAgg,
-    pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
-    pub hysteria2: UsageAgg,
     pub wireproxy: UsageAgg,
     pub myproxy: UsageAgg,
     pub myprogram: UsageAgg,
@@ -73,13 +70,10 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.push(std::process::id());
     pids.extend(pidof("dnscrypt"));
     pids.extend(pidof("d2s"));
-    pids.extend(pidof("nfqws"));
     pids.extend(pidof("nfqws2"));
-    pids.extend(pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]));
     pids.extend(pidof("t2s"));
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
-    pids.extend(hysteria2_pids());
     pids.extend(wireproxy_pids());
     pids.extend(pidof("tg-ws-proxy"));
     pids.extend(myproxy_t2s_pids());
@@ -107,8 +101,8 @@ pub fn collect_status() -> Result<StatusReport> {
 ///
 /// Every pid lookup below costs at least one `pidof` process, and falls back to `pgrep -f` plus
 /// `ps -A` when nothing matches, so probing all engines when only a few are enabled is the most
-/// expensive part of startup. Accepted ids are the pid-group names used below: "nfqws",
-/// "nfqws2", "byedpi", "dnscrypt", "d2s", "dpitunnel", "singbox", "hysteria2", "wireproxy", "myproxy",
+/// expensive part of startup. Accepted ids are the pid-group names used below: "nfqws2",
+/// "byedpi", "dnscrypt", "d2s", "singbox", "wireproxy", "myproxy",
 /// "myprogram", "openvpn", "amneziawg", "tun2socks", "mihomo", "mieru", "tgwsproxy",
 /// "tun2proxy", "tor", "t2s", "operaproxy".
 ///
@@ -131,11 +125,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     // This matters on Android where some apps/binaries can have overlapping names.
     let dnscrypt_pids = if want("dnscrypt") { pidof("dnscrypt") } else { Vec::new() };
     let d2s_pids = if want("d2s") { pidof("d2s") } else { Vec::new() };
-    let nfqws_pids = if want("nfqws") { pidof("nfqws") } else { Vec::new() };
     let nfqws2_pids = if want("nfqws2") { pidof("nfqws2") } else { Vec::new() };
-    // dpitunnel-cli may present a different process name (e.g. "DPITunnel-cli")
-    // depending on the build. Collect both variants.
-    let dpitunnel_pids = if want("dpitunnel") { pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]) } else { Vec::new() };
     // t2s is used by multiple programs (opera-proxy and sing-box).
     // We expose a global `t2s` aggregate for UI, and keep `opera.t2s` as a legacy bucket
     // (t2s processes without "--web-port" in cmdline).
@@ -155,7 +145,6 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     }
     let opera_proxy_pids = if want("operaproxy") { pidof("opera-proxy") } else { Vec::new() };
     let singbox_pids = if want("singbox") { singbox_pids() } else { Vec::new() };
-    let hysteria2_pids = if want("hysteria2") { hysteria2_pids() } else { Vec::new() };
     let wireproxy_pids = if want("wireproxy") { wireproxy_pids() } else { Vec::new() };
     let myproxy_pids = if want("myproxy") { myproxy_t2s_pids() } else { Vec::new() };
     let myprogram_pids = if want("myprogram") { myprogram_main_pids() } else { Vec::new() };
@@ -198,14 +187,11 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     let mut all_pids = Vec::new();
     all_pids.push(self_pid);
     for group in [
-        &nfqws_pids,
         &nfqws2_pids,
         &byedpi_pids,
         &dnscrypt_pids,
         &d2s_pids,
-        &dpitunnel_pids,
         &singbox_pids,
-        &hysteria2_pids,
         &wireproxy_pids,
         &myproxy_pids,
         &myprogram_pids,
@@ -231,14 +217,11 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     Ok(StatusReport {
         total: agg_from_map(&all_pids, &usage),
         zdtd: agg_from_map(&[self_pid], &usage),
-        zapret: agg_from_map(&nfqws_pids, &usage),
         zapret2: agg_from_map(&nfqws2_pids, &usage),
         byedpi: agg_from_map(&byedpi_pids, &usage),
         dnscrypt: agg_from_map(&dnscrypt_pids, &usage),
         d2s: agg_from_map(&d2s_pids, &usage),
-        dpitunnel: agg_from_map(&dpitunnel_pids, &usage),
         sing_box: agg_from_map(&singbox_pids, &usage),
-        hysteria2: agg_from_map(&hysteria2_pids, &usage),
         wireproxy: agg_from_map(&wireproxy_pids, &usage),
         myproxy: agg_from_map(&myproxy_pids, &usage),
         myprogram: agg_from_map(&myprogram_pids, &usage),
@@ -298,49 +281,6 @@ fn pidof_any(names: &[&str]) -> Vec<u32> {
     all.sort_unstable();
     all.dedup();
     all
-}
-/// Best-effort detection of sing-box pids.
-/// Some Android builds may not report the binary name consistently for `pidof`,
-/// so we fall back to parsing `ps -A` output.
-
-
-fn hysteria2_pids() -> Vec<u32> {
-    let mut pids = pidof_any(&["hysteria2"]);
-    if !pids.is_empty() {
-        return pids;
-    }
-
-    // Hysteria2 is launched by ZDT-D as:
-    // /data/adb/modules/ZDT-D/bin/hysteria2 --disable-update-check ... client
-    // Use a strict cmdline pattern to avoid unrelated hysteria processes.
-    if let Ok(out) = shell::capture_quiet(
-        "sh -c \"pgrep -f '/data/adb/modules/ZDT-D/bin/hysteria2 --disable-update-check' 2>/dev/null || true\"",
-    ) {
-        pids.extend(parse_pids(&out));
-        pids.sort_unstable();
-        pids.dedup();
-        if !pids.is_empty() {
-            return pids;
-        }
-    }
-
-    let out = shell::capture_quiet("ps -A").unwrap_or_default();
-    for line in out.lines() {
-        if !(line.contains("/data/adb/modules/ZDT-D/bin/hysteria2")
-            || line.contains("/bin/hysteria2"))
-        {
-            continue;
-        }
-        for tok in line.split_whitespace() {
-            if let Ok(pid) = tok.parse::<u32>() {
-                pids.push(pid);
-                break;
-            }
-        }
-    }
-    pids.sort_unstable();
-    pids.dedup();
-    pids
 }
 
 fn wireproxy_pids() -> Vec<u32> {

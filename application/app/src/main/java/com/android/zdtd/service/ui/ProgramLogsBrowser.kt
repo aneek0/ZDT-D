@@ -560,20 +560,12 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
     }
   } else {
     when (target.programId) {
-      "nfqws" -> addStatic("nfqws.log", "/data/adb/modules/ZDT-D/working_folder/nfqws/$profile/log/nfqws.log")
       "nfqws2" -> addStatic("nfqws.log", "/data/adb/modules/ZDT-D/working_folder/nfqws2/$profile/log/nfqws.log")
       "byedpi" -> addStatic("byedpi.log", "/data/adb/modules/ZDT-D/working_folder/byedpi/$profile/log/byedpi.log")
-      "dpitunnel" -> addStatic("dpitunnel.log", "/data/adb/modules/ZDT-D/working_folder/dpitunnel/$profile/log/dpitunnel.log")
       "sing-box" -> {
         val base = "/data/adb/modules/ZDT-D/working_folder/singbox/profile/$profile"
         addStatic("t2s.log", "$base/log/t2s.log")
         addFindExact("$base/server", 3, "sing-box.log")
-      }
-      "hysteria2" -> {
-        val base = "/data/adb/modules/ZDT-D/working_folder/hysteria2/profile/$profile"
-        addStatic("t2s.log", "$base/log/t2s.log")
-        addStatic("tun2socks.log", "$base/log/tun2socks.log")
-        addFindExact("$base/server", 3, "hysteria2.log")
       }
       "wireproxy" -> {
         val base = "/data/adb/modules/ZDT-D/working_folder/wireproxy/profile/$profile"

@@ -267,9 +267,6 @@ fn capture_inner(line: &str, log_exec: bool) -> Result<String> {
     }
 }
 
-pub fn capture(line: &str) -> Result<String> {
-    capture_inner(line, true)
-}
 
 pub fn capture_quiet(line: &str) -> Result<String> {
     capture_inner(line, false)

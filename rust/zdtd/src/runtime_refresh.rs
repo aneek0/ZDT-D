@@ -165,7 +165,7 @@ pub fn register_nat(
     dest_port: u16,
     proto_choice: crate::iptables::iptables_port::ProtoChoice,
     ifaces_raw: Option<&str>,
-    opt: &crate::iptables::iptables_port::DpiTunnelOptions,
+    opt: &crate::iptables::iptables_port::IptablesDpiOptions,
 ) {
     let proto_choice = match proto_choice {
         crate::iptables::iptables_port::ProtoChoice::Tcp => "tcp",
@@ -188,7 +188,7 @@ pub fn register_tproxy(
     dest_port: u16,
     proto_choice: crate::iptables::iptables_port::ProtoChoice,
     ifaces_raw: Option<&str>,
-    opt: &crate::iptables::iptables_port::DpiTunnelOptions,
+    opt: &crate::iptables::iptables_port::IptablesDpiOptions,
     mark: u32,
     table: u32,
 ) {
@@ -232,12 +232,12 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
             }
             RoutingSnapshot::Nat { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
-                let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
+                let opt = crate::iptables::iptables_port::IptablesDpiOptions { port_preference, dpi_ports };
                 crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;
             }
             RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
-                let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
+                let opt = crate::iptables::iptables_port::IptablesDpiOptions { port_preference, dpi_ports };
                 // Preserve the exact TPROXY protocol coverage captured in the
                 // snapshot (TCP+UDP for most tools, per-profile TCP/TCP+UDP for
                 // myproxy) when replaying on network refresh or live app changes.
@@ -299,7 +299,7 @@ pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<
             let _ = crate::proxyinfo::refresh_runtime(true)?;
             Ok(RefreshOutcome::Applied)
         }
-        "nfqws" | "nfqws2" | "byedpi" | "dpitunnel" | "wireproxy" | "tor" | "operaproxy" | "myproxy" | "myprogram" => {
+        "nfqws2" | "byedpi" | "wireproxy" | "tor" | "operaproxy" | "myproxy" | "myprogram" => {
             let input = app_input_path(program, profile, slot)?;
             let output = uid_output_from_input(&input);
             rebuild_uid_file(&input, &output)?;
@@ -316,17 +316,6 @@ pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<
             }
             Ok(routing)
         }
-        "hysteria2" => {
-            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
-            let input = app_input_path(program, Some(profile), slot)?;
-            let output = uid_output_from_input(&input);
-            rebuild_uid_file(&input, &output)?;
-            let routing = refresh_routing_by_uid_file(&output)?;
-            if slot == "common" || slot == "user" {
-                let _ = crate::vpn_netd::refresh_profile_users("hysteria2", profile, &input, &output)?;
-            }
-            Ok(routing)
-        }
         other => bail!("runtime_refresh: unsupported program {other}"),
     }
 }
@@ -338,17 +327,13 @@ fn app_input_path(program: &str, profile: Option<&str>, slot: &str) -> Result<Pa
         _ => "user_program",
     };
     let p = match program {
-        "nfqws" | "nfqws2" | "byedpi" | "dpitunnel" => {
+        "nfqws2" | "byedpi" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/{program}/{profile}/app/uid/{file}"))
         }
         "sing-box" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/singbox/profile/{profile}/app/uid/{file}"))
-        }
-        "hysteria2" => {
-            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
-            PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/hysteria2/profile/{profile}/app/uid/{file}"))
         }
         "wireproxy" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;

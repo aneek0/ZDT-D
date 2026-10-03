@@ -1198,11 +1198,9 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     let mut global = BTreeSet::new();
     local.insert(API_PORT);
     collect_byedpi_ports(&mut local)?;
-    collect_dpitunnel_ports(&mut local)?;
     collect_operaproxy_ports(&mut local)?;
     collect_dnscrypt_d2s_ports(&mut local)?;
     collect_singbox_ports(&mut local)?;
-    collect_hysteria2_ports(&mut local)?;
     collect_wireproxy_ports(&mut local)?;
     collect_tor_ports(&mut local)?;
     collect_myproxy_ports(&mut local, &mut global)?;
@@ -1252,29 +1250,6 @@ fn collect_byedpi_ports(out: &mut BTreeSet<u16>) -> Result<()> {
     }
     let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
     let root = working_program_dir("byedpi");
-    for (name, st) in active.profiles {
-        if !st.enabled {
-            continue;
-        }
-        let p = root.join(&name).join("port.json");
-        if !p.is_file() {
-            continue;
-        }
-        let port: ProfilePortJson = read_json_file(&p).unwrap_or_default();
-        if port.port > 0 {
-            out.insert(port.port);
-        }
-    }
-    Ok(())
-}
-
-fn collect_dpitunnel_ports(out: &mut BTreeSet<u16>) -> Result<()> {
-    let active_path = working_program_dir("dpitunnel").join("active.json");
-    if !active_path.is_file() {
-        return Ok(());
-    }
-    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
-    let root = working_program_dir("dpitunnel");
     for (name, st) in active.profiles {
         if !st.enabled {
             continue;
@@ -1564,44 +1539,6 @@ fn collect_mihomo_ports(out: &mut BTreeSet<u16>) -> Result<()> {
             }
         }
         collect_mihomo_yaml_ports_from_dir(&profile_dir, out);
-    }
-    Ok(())
-}
-
-
-
-fn collect_hysteria2_ports(out: &mut BTreeSet<u16>) -> Result<()> {
-    let active_path = working_program_dir("hysteria2").join("active.json");
-    if !active_path.is_file() { return Ok(()); }
-    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
-    let root = working_program_dir("hysteria2").join("profile");
-    for (name, st) in active.profiles {
-        if !st.enabled { continue; }
-        let profile_dir = root.join(&name);
-        let setting_path = profile_dir.join("setting.json");
-        if let Ok(v) = read_json_file::<Value>(&setting_path) {
-            let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s");
-            if mode != "vpn" {
-                for key in ["t2s_port", "t2s_web_port"] {
-                    if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                        if port != 0 { out.insert(port); }
-                    }
-                }
-            }
-        }
-        let server_root = profile_dir.join("server");
-        if let Ok(rd) = fs::read_dir(&server_root) {
-            for ent in rd.flatten() {
-                let server_dir = ent.path();
-                if !server_dir.is_dir() { continue; }
-                let setting_path = server_dir.join("setting.json");
-                let Ok(v) = read_json_file::<Value>(&setting_path) else { continue; };
-                if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
-                if let Some(port) = v.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                    if port != 0 { out.insert(port); }
-                }
-            }
-        }
     }
     Ok(())
 }

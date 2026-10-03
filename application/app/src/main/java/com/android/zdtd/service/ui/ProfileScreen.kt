@@ -80,7 +80,7 @@ fun ProfileScreen(
 
     when (tab) {
       0 -> {
-        if (programId == "nfqws" || programId == "nfqws2" || programId == "dpitunnel") {
+        if (programId == "nfqws" || programId == "nfqws2") {
           NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost, programs = programs)
         } else {
           AppListPickerCard(
@@ -94,7 +94,7 @@ fun ProfileScreen(
         }
       }
       1 -> {
-        if (programId == "nfqws" || programId == "nfqws2" || programId == "dpitunnel" || programId == "byedpi") {
+        if (programId == "nfqws" || programId == "nfqws2" || programId == "byedpi") {
           StrategicVarConfigCard(
             programId = programId,
             profile = profile,
@@ -252,9 +252,7 @@ internal fun StrategicProfileTabs(
 private fun strategicAccentFor(programId: String, checked: Boolean): Color {
   if (!checked) return Color(0xFF94A3B8)
   return when (programId) {
-    "nfqws" -> Color(0xFF38BDF8)
     "nfqws2" -> Color(0xFF60A5FA)
-    "dpitunnel" -> Color(0xFFA78BFA)
     "byedpi" -> Color(0xFFF97316)
     else -> Color(0xFF22C55E)
   }

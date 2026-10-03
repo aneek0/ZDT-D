@@ -67,16 +67,13 @@ fn binary_map() -> BTreeMap<&'static str, bool> {
     out.insert("t2s", binary_available("/data/adb/modules/ZDT-D/bin/t2s"));
     out.insert("sing-box", binary_available("/data/adb/modules/ZDT-D/bin/sing-box"));
     out.insert("wireproxy", binary_available("/data/adb/modules/ZDT-D/bin/wireproxy"));
-    out.insert("hysteria2", binary_available("/data/adb/modules/ZDT-D/bin/hysteria2"));
     out.insert("tun2socks", binary_available("/data/adb/modules/ZDT-D/bin/tun2socks"));
     out.insert("openvpn", binary_available("/data/adb/modules/ZDT-D/bin/openvpn"));
     out.insert("amneziawg-go", binary_available("/data/adb/modules/ZDT-D/bin/amneziawg-go"));
     out.insert("awg", binary_available("/data/adb/modules/ZDT-D/bin/awg"));
     out.insert("mihomo", binary_available("/data/adb/modules/ZDT-D/bin/mihomo"));
     out.insert("mieru", binary_available("/data/adb/modules/ZDT-D/bin/mieru"));
-    out.insert("nfqws", binary_available("/data/adb/modules/ZDT-D/bin/nfqws"));
     out.insert("nfqws2", binary_available("/data/adb/modules/ZDT-D/bin/nfqws2"));
-    out.insert("dpitunnel-cli", binary_available("/data/adb/modules/ZDT-D/bin/dpitunnel-cli"));
     out.insert("torproxy", binary_available("/data/adb/modules/ZDT-D/bin/torproxy"));
     out.insert("lyrebird", binary_available("/data/adb/modules/ZDT-D/bin/lyrebird"));
     out

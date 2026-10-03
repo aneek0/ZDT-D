@@ -81,7 +81,7 @@ class NfqwsTesterOverlayService : Service() {
     private var compactStateView: TextView? = null
     private var compactIconView: ImageView? = null
 
-    private var currentProgram: String = "nfqws"
+    private var currentProgram: String = "nfqws2"
     private var strategies: List<String> = emptyList()
     private var currentIndex: Int = -1
     private val working = mutableListOf<String>()
@@ -103,7 +103,7 @@ class NfqwsTesterOverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val program = intent.getStringExtra(EXTRA_PROGRAM)?.trim().orEmpty().ifBlank { "nfqws" }
+                val program = intent.getStringExtra(EXTRA_PROGRAM)?.trim().orEmpty().ifBlank { "nfqws2" }
                 startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.nfqws_tester_notification_running)))
                 serviceScope.launch { beginSession(program) }
             }
@@ -863,7 +863,7 @@ class NfqwsTesterOverlayService : Service() {
     }
 
     private fun programBadgeIcon(program: String): Int {
-        return if (program == "nfqws2") R.drawable.ic_tool_zapret2 else R.drawable.ic_tool_zapret
+        return R.drawable.ic_tool_zapret2
     }
 
     private fun expandedOverlayWidth(): Int {

@@ -21,16 +21,6 @@ fn pidof(name: &str) -> Vec<i32> {
         .collect()
 }
 
-fn pidof_any(names: &[&str]) -> Vec<i32> {
-    let mut all: Vec<i32> = Vec::new();
-    for &n in names {
-        all.extend(pidof(n));
-    }
-    all.sort_unstable();
-    all.dedup();
-    all
-}
-
 fn pid_alive(pid: i32) -> bool {
     let dir = Path::new("/proc").join(pid.to_string());
     if !dir.is_dir() {
@@ -164,15 +154,10 @@ fn kill_exact_pids(label: &str, pids: &[i32]) -> Result<()> {
     kill_pids_with_escalation(label, pids)
 }
 
-fn kill_by_any(names: &[&str]) -> Result<()> {
-    kill_pids_with_escalation(&format!("pidof {:?}", names), &pidof_any(names))
-}
-
 fn stop_process_groups_parallel() -> Result<()> {
     let mut jobs = Vec::new();
 
     for name in [
-        "nfqws",
         "nfqws2",
         "dnscrypt",
         "d2s",
@@ -180,15 +165,12 @@ fn stop_process_groups_parallel() -> Result<()> {
         "t2s",
         "opera-proxy",
         "sing-box",
-        "hysteria2",
         "wireproxy",
         "tg-ws-proxy",
     ] {
         let proc_name = name.to_string();
         jobs.push(thread::spawn(move || kill_by_name(&proc_name)));
     }
-
-    jobs.push(thread::spawn(|| kill_by_any(&["DPITunnel-cli", "dpitunnel-cli"])));
 
     for job in jobs {
         match job.join() {
@@ -239,8 +221,6 @@ pub fn stop_services_and_restore_iptables(services_possibly_active: bool) -> Res
         kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
         kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;
         kill_exact_pids("mieru tun2proxy -device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
-        kill_exact_pids("hysteria2 client <profile config>", &crate::programs::hysteria2::main_pids_exact())?;
-        kill_exact_pids("hysteria2 tun2socks -device tun://<profile tun>", &crate::programs::hysteria2::tun2socks_pids_exact())?;
         kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
 
         // IMPORTANT: do not stop plain substring/name matches for Tor.

@@ -774,7 +774,7 @@ private fun buildStudioGraph(
 
   // Programs that actually route through t2s get a dedicated t2s card placed
   // right after the app list (apps -> t2s -> program -> backends -> internet).
-val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram", "sing-box", "hysteria2")
+val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram", "sing-box")
   fun usesT2s(programId: String): Boolean = normalizeRouteProgramId(programId) in t2sFronted
 
   val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } } || vpnItems.any { it.proxyEndpoint != null }
@@ -1197,7 +1197,6 @@ private fun programColor(programId: String): Color = when (normalizeRouteProgram
   "mihomo" -> Color(0xFF8B5CF6)
   "mieru" -> Color(0xFF14B8A6)
   "sing-box" -> Color(0xFF3B82F6)
-  "hysteria2" -> Color(0xFFFFBC00)
   "wireproxy" -> Color(0xFF22C55E)
   "tor" -> Color(0xFF7C3AED)
   "operaproxy" -> Color(0xFFEF4444)
@@ -2175,9 +2174,9 @@ private fun deriveEditableAppPath(group: StudioAppGroup): String? {
   return when (program) {
     "tor" -> "/api/programs/tor/apps"
     "operaproxy" -> "/api/programs/operaproxy/apps/$kind"
-    "nfqws", "nfqws2", "dpitunnel" -> profile?.let { "/api/programs/$program/profiles/$it/apps/$kind" }
+    "nfqws2" -> profile?.let { "/api/programs/$program/profiles/$it/apps/$kind" }
     "byedpi" -> profile?.let { "/api/programs/$program/profiles/$it/apps/user" }
-"sing-box", "hysteria2", "wireproxy", "myproxy", "myprogram", "mihomo", "mieru", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
+"sing-box", "wireproxy", "myproxy", "myprogram", "mihomo", "mieru", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
       profile?.let { "/api/programs/$program/profiles/$it/apps/user" }
     else -> null
   }
@@ -2203,7 +2202,7 @@ private fun deriveEditableVpnAppPath(vpn: ApiModels.VpnTraffic): String? {
   val program = normalizeRouteProgramId(vpn.ownerProgram)
   val profile = vpn.profile.takeIf { it.isNotBlank() }
   return when (program) {
-"mihomo", "mieru", "hysteria2", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
+"mihomo", "mieru", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
       profile?.let { "/api/programs/$program/profiles/$it/apps/user" }
     else -> null
   }
@@ -2235,7 +2234,6 @@ private fun displayProgramName(programs: List<ApiModels.Program>, id: String): S
 
 private fun normalizeRouteProgramId(id: String): String = when (id) {
   "singbox" -> "sing-box"
-  "hysteria2" -> "hysteria2"
   else -> id
 }
 

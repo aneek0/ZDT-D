@@ -29,9 +29,9 @@ Modes:
 
 Usage:
 ```bash
-python3 strategy_dedup.py --program nfqws            # dry-run one program dir
-python3 strategy_dedup.py --program nfqws --apply     # write .new files
-python3 strategy_dedup.py --program nfqws --apply --inplace
+python3 strategy_dedup.py --program nfqws2           # dry-run one program dir
+python3 strategy_dedup.py --program nfqws2 --apply    # write .new files
+python3 strategy_dedup.py --program nfqws2 --apply --inplace
 python3 strategy_dedup.py --program nfqws2 --dedup --apply
 ```
 

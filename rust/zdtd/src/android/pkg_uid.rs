@@ -511,7 +511,6 @@ fn sha256sum(path: &Path) -> Result<String> {
     let candidates = [
         vec!["sha256sum".to_string(), p.clone()],
         vec!["toybox".to_string(), "sha256sum".to_string(), p.clone()],
-        vec!["busybox".to_string(), "sha256sum".to_string(), p.clone()],
     ];
 
     for cmd in candidates {

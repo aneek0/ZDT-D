@@ -37,7 +37,6 @@ selected UID -> iptables mangle -> NFQUEUE -> userspace DPI engine
 
 Used by:
 
-- `nfqws`;
 - `nfqws2`.
 
 This model is used for packet-level DPI bypass strategies. The daemon owns the
@@ -230,36 +229,6 @@ Detailed documentation: `rust/nfqws-tester/README.md`.
 > `--hostlist-auto=` blocks are data-driven and kept as-is. This means the
 > hostlist/IP-set binding is owned by the daemon, not by individual strategy
 > files.
-
-### `nfqws`
-
-`nfqws` is a userspace packet processor from the zapret project.
-
-How ZDT-D uses it:
-
-- reads enabled profiles from `working_folder/nfqws`;
-- resolves selected apps into UIDs;
-- applies `mangle` table NFQUEUE rules;
-- starts `nfqws` with the selected strategy/config;
-- tracks process/log state;
-- cleans rules and process state on stop.
-
-Routing model:
-
-```text
-selected UID -> iptables mangle -> NFQUEUE -> nfqws
-```
-
-Purpose:
-
-- DPI circumvention;
-- packet manipulation;
-- zapret strategy execution;
-- per-app NFQUEUE routing.
-
-Upstream:
-
-- https://github.com/bol-van/zapret
 
 ### `nfqws2`
 

@@ -264,7 +264,6 @@ data class ProgramUpdatesUiState(
   val bulkUpdating: Boolean = false,
   val bulkCheckCompleted: Boolean = false,
   val bulkCheckHadFailures: Boolean = false,
-  val zapret: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret_title),
   val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title),
   val mihomo: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title),
   val mieru: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mieru_title),
@@ -3002,22 +3001,6 @@ fi""".trimIndent()
         bulkUpdating = false,
         bulkCheckCompleted = false,
         bulkCheckHadFailures = false,
-        zapret = st.zapret.copy(
-          checking = false,
-          updating = false,
-          progressPercent = 0,
-          latestVersion = null,
-          latestDownloadUrl = null,
-          updateAvailable = false,
-          statusText = "",
-          errorText = null,
-          warningText = null,
-          selectedVersion = null,
-          selectedDownloadUrl = null,
-          releases = emptyList(),
-          releasesLoading = false,
-          releasesError = null,
-        ),
         zapret2 = st.zapret2.copy(
           checking = false,
           updating = false,
@@ -3086,11 +3069,6 @@ fi""".trimIndent()
     }
   }
 
-  fun loadZapretReleases() {
-    if (_rootState.value != RootState.GRANTED) return
-    launchIO { loadReleasesInternal(which = "zapret") }
-  }
-
   fun loadZapret2Releases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "zapret2") }
@@ -3111,24 +3089,6 @@ fi""".trimIndent()
     launchIO { loadReleasesInternal(which = "operaproxy") }
   }
 
-  fun selectZapretRelease(version: String?, downloadUrl: String?) {
-    _programUpdates.update { st ->
-      val installed = st.zapret.installedVersion
-      val latest = st.zapret.latestVersion
-      val target = version ?: latest
-      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
-      val warn = if (!target.isNullOrBlank()) buildDowngradeWarning(program = "zapret", targetVersion = target) else null
-      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
-      st.copy(
-        zapret = st.zapret.copy(
-          selectedVersion = version,
-          selectedDownloadUrl = downloadUrl,
-          warningText = warn ?: detectWarn,
-          updateAvailable = updAvail,
-        )
-      )
-    }
-  }
 
   fun selectZapret2Release(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
@@ -3220,14 +3180,13 @@ fi""".trimIndent()
       try {
         // Keep checks independent: a broken/changed repository or an unexpected failure
         // in one tool must never prevent the remaining tools from being checked.
-        runProgramUpdateCheckSafely("zapret") { checkZapretInternal() }
         runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
         runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
         runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
         runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
       } finally {
         _programUpdates.update { st ->
-          val failed = listOf(st.zapret, st.zapret2, st.mihomo, st.mieru, st.operaProxy)
+          val failed = listOf(st.zapret2, st.mihomo, st.mieru, st.operaProxy)
             .any { it.errorText != null }
           st.copy(
             bulkChecking = false,
@@ -3243,19 +3202,17 @@ fi""".trimIndent()
     if (_rootState.value != RootState.GRANTED) return
     val snapshot = _programUpdates.value
     if (snapshot.bulkChecking || snapshot.bulkUpdating) return
-    val updateZapret = snapshot.zapret.updateAvailable
     val updateZapret2 = snapshot.zapret2.updateAvailable
     val updateMihomo = snapshot.mihomo.updateAvailable
     val updateMieru = snapshot.mieru.updateAvailable
     val updateOperaProxy = snapshot.operaProxy.updateAvailable
-    if (!listOf(updateZapret, updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return
+    if (!listOf(updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return
 
     launchIO {
       _programUpdates.update { it.copy(bulkUpdating = true) }
       try {
         // Sequential updates keep disk/root operations predictable. A failure in one
         // component does not prevent other already-discovered updates from installing.
-        if (updateZapret) runProgramUpdateInstallSafely("zapret") { updateZapretInternal() }
         if (updateZapret2) runProgramUpdateInstallSafely("zapret2") { updateZapret2Internal() }
         if (updateMihomo) runProgramUpdateInstallSafely("mihomo") { updateMihomoInternal() }
         if (updateMieru) runProgramUpdateInstallSafely("mieru") { updateMieruInternal() }
@@ -3276,7 +3233,6 @@ fi""".trimIndent()
       _programUpdates.update { st ->
         val error = str(R.string.program_updates_err_check_latest)
         when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
           "mihomo" -> st.copy(mihomo = st.mihomo.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
           "mieru" -> st.copy(mieru = st.mieru.copy(checking = false, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = error, statusText = ""))
@@ -3297,7 +3253,6 @@ fi""".trimIndent()
       _programUpdates.update { st ->
         val error = str(R.string.prog_update_error_install_failed)
         when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(updating = false, errorText = error, statusText = ""))
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = error, statusText = ""))
           "mihomo" -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = error, statusText = ""))
           "mieru" -> st.copy(mieru = st.mieru.copy(updating = false, errorText = error, statusText = ""))
@@ -3308,19 +3263,9 @@ fi""".trimIndent()
     }
   }
 
-  fun checkZapretNow() {
-    if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkZapretInternal() }
-  }
-
   fun checkZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkZapret2Internal() }
-  }
-
-  fun updateZapretNow() {
-    if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateZapretInternal() }
   }
 
   fun updateZapret2Now() {
@@ -3359,48 +3304,6 @@ fi""".trimIndent()
   }
 
 
-  private suspend fun checkZapretInternal() {
-    _programUpdates.update { st ->
-      st.copy(zapret = st.zapret.copy(checking = true, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
-    }
-
-    val installed = runCatching {
-      readInstalledVersionAny(
-        listOf(
-          "/data/adb/modules/ZDT-D/bin/nfqws",
-          "/data/adb/modules_update/ZDT-D/bin/nfqws",
-        )
-      )
-    }.getOrNull()
-    val latest = fetchLatestZapretAsset()
-    if (latest == null) {
-      _programUpdates.update { st ->
-        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = installed, latestVersion = null, latestDownloadUrl = null, updateAvailable = false, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
-      }
-      return
-    }
-
-    val (latestVer, latestUrl) = latest
-    val targetVer = _programUpdates.value.zapret.selectedVersion ?: latestVer
-    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
-    val warn = buildDowngradeWarning(program = "zapret", targetVersion = targetVer)
-    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
-
-    _programUpdates.update { st ->
-      st.copy(
-        zapret = st.zapret.copy(
-          checking = false,
-          installedVersion = installed,
-          latestVersion = latestVer,
-          latestDownloadUrl = latestUrl,
-          warningText = warn ?: detectWarn,
-          updateAvailable = updAvail,
-          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
-          errorText = null,
-        )
-      )
-    }
-  }
 
   private suspend fun checkZapret2Internal() {
     _programUpdates.update { st ->
@@ -3566,78 +3469,6 @@ fi""".trimIndent()
     }
   }
 
-  private suspend fun updateZapretInternal() {
-    // Ensure we have target info (latest or selected).
-    val stBefore = _programUpdates.value.zapret
-    if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
-      checkZapretInternal()
-    }
-    val st0 = _programUpdates.value.zapret
-    val url = st0.selectedDownloadUrl ?: st0.latestDownloadUrl
-    val targetVer = st0.selectedVersion ?: st0.latestVersion
-    if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
-
-    _programUpdates.update { st ->
-      st.copy(zapret = st.zapret.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
-    }
-
-    val zipFile = File(ctx.cacheDir, "zapret_target.zip")
-    val extracted = File(ctx.cacheDir, "zapret_nfqws_${System.currentTimeMillis()}")
-    runCatching { zipFile.delete() }
-    runCatching { extracted.delete() }
-
-    val okDl = downloadToFileWithProgress(url, zipFile) { pct ->
-      _programUpdates.update { st ->
-        val cur = st.zapret
-        if (cur.progressPercent == pct) st else st.copy(zapret = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
-      }
-    }
-    if (!okDl) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
-      return
-    }
-
-    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = str(R.string.mv_auto_057))) }
-    val okExtract = extractZipSingle(zipFile, { name -> name.endsWith("/binaries/android-arm64/nfqws") }, extracted)
-    if (!okExtract) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
-      runCatching { zipFile.delete() }
-      return
-    }
-
-    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
-    val okInstall = installZapretBinary(extracted)
-    runCatching { zipFile.delete() }
-    runCatching { extracted.delete() }
-
-    if (!okInstall) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
-      return
-    }
-
-    val installed = runCatching {
-      readInstalledVersionAny(
-        listOf(
-          "/data/adb/modules/ZDT-D/bin/nfqws",
-          "/data/adb/modules_update/ZDT-D/bin/nfqws",
-        )
-      )
-    }.getOrNull()
-    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
-    val warn = if (!targetVer.isNullOrBlank()) buildDowngradeWarning(program = "zapret", targetVersion = targetVer) else null
-    _programUpdates.update { st ->
-      st.copy(
-        zapret = st.zapret.copy(
-          updating = false,
-          installedVersion = installed ?: st.zapret.installedVersion,
-          updateAvailable = updAvail,
-          warningText = warn,
-          statusText = str(R.string.prog_update_status_installed),
-          errorText = null,
-        )
-      )
-    }
-  }
 
   private suspend fun updateZapret2Internal() {
     val stBefore = _programUpdates.value.zapret2
@@ -3928,7 +3759,6 @@ fi""".trimIndent()
   private suspend fun loadReleasesInternal(which: String) {
     _programUpdates.update { st ->
       when (which) {
-        "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = true, releasesError = null))
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = true, releasesError = null))
         "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = true, releasesError = null))
         "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = true, releasesError = null))
@@ -3938,7 +3768,6 @@ fi""".trimIndent()
     }
 
     val spec = when (which) {
-      "zapret" -> ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip")
       "zapret2" -> ReleaseAssetSpec(repo = "bol-van/zapret2", assetPrefix = "zapret2-v", assetSuffix = ".zip")
       "mihomo" -> ReleaseAssetSpec(repo = "MetaCubeX/mihomo", assetPrefix = "mihomo-android-arm64-v8-v", assetSuffix = ".gz")
       "mieru" -> ReleaseAssetSpec(
@@ -3955,7 +3784,6 @@ fi""".trimIndent()
     if (releases == null || releases.isEmpty()) {
       _programUpdates.update { st ->
         when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
@@ -3968,7 +3796,6 @@ fi""".trimIndent()
 
     _programUpdates.update { st ->
       when (which) {
-        "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = null, releases = releases))
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = null, releases = releases))
         "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = null, releases = releases))
         "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = null, releases = releases))
@@ -4219,9 +4046,6 @@ fi""".trimIndent()
     return null
   }
 
-  private suspend fun fetchLatestZapretAsset(): Pair<String, String>? {
-    return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip"))
-  }
 
   private suspend fun fetchLatestZapret2Asset(): Pair<String, String>? {
     return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret2", assetPrefix = "zapret2-v", assetSuffix = ".zip"))
@@ -4349,7 +4173,6 @@ fi""".trimIndent()
 
   private fun buildDowngradeWarning(program: String, targetVersion: String): String? {
     val min = when (program) {
-      "zapret" -> "v71.4"
       "zapret2" -> "v0.8.6"
       else -> return null
     }
@@ -4528,9 +4351,6 @@ fi""".trimIndent()
     """.trimIndent()
     return root.execRootSh(script).isSuccess
   }
-
-  private suspend fun installZapretBinary(src: File): Boolean =
-    installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/nfqws")
 
   private suspend fun installMihomoBinary(src: File): Boolean =
     installBinaryAtomically(src, "/data/adb/modules/ZDT-D/bin/mihomo")
@@ -5632,15 +5452,9 @@ private fun shQuote(s: String): String {
     data[offset + 1] = ((value shr 8) and 0xff).toByte()
   }
 
-  private fun preferredNativeAssetAbi(): String = when {
-    Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64"
-    Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "arm32"
-    else -> "arm64"
-  }
-
   private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val busyBoxAbi = preferredNativeAssetAbi()
-    val busyBoxAssetName = if (busyBoxAbi == "arm32") "busybox-arm32" else "busybox-arm64"
+    // The APK bundles only the arm64 busybox asset; the module is arm64-only.
+    val busyBoxAssetName = "busybox-arm64"
     val expected = readSha256Asset("busybox/${busyBoxAssetName}.sha256")
       ?: return@withContext (false to "asset busybox/${busyBoxAssetName}.sha256 missing or invalid")
     val cacheBusyBox = File(ctx.cacheDir, busyBoxAssetName)
@@ -6065,7 +5879,7 @@ private fun shQuote(s: String): String {
   }
 
   /**
-   * Check whether any two enabled profiles of mihomo or zapret (nfqws/nfqws2)
+   * Check whether any two enabled profiles of mihomo or zapret (nfqws2)
    * share common applications. Returns an error message if overlap is found,
    * or null if everything is fine.
    */
@@ -6102,8 +5916,8 @@ private fun shQuote(s: String): String {
       }
     }
 
-    // For zapret (nfqws + nfqws2): collect apps per profile and check for overlap
-    val zapretProgramIds = listOf("nfqws", "nfqws2")
+    // For zapret (nfqws2): collect apps per profile and check for overlap
+    val zapretProgramIds = listOf("nfqws2")
     val zapretAppsByProfile = linkedMapOf<String, MutableSet<String>>()
     for (progId in zapretProgramIds) {
       val profiles = enabledProfilesByProgram[progId] ?: continue
@@ -6311,12 +6125,9 @@ private fun shQuote(s: String): String {
   }
 
   private val guardedProfileProgramIds = setOf(
-    "nfqws",
     "nfqws2",
     "byedpi",
-    "dpitunnel",
     "sing-box",
-    "hysteria2",
     "wireproxy",
     "myproxy",
     "myprogram",
@@ -6492,36 +6303,6 @@ private fun shQuote(s: String): String {
         log("OK", "sing-box/$safeProfile/$safeServer deleted")
       } else {
         log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
-      }
-      withContext(Dispatchers.Main.immediate) { onDone(ok) }
-    }
-  }
-
-
-  fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit) {
-    launchIO {
-      val safeProfile = profile.trim()
-      val safeServer = server.trim()
-      val ok = runCatching { api.createHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
-      if (ok) {
-        log("OK", "hysteria2/$safeProfile/$safeServer created (apply after stop/start)")
-        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
-      } else {
-        log("ERR", "hysteria2/$safeProfile/$safeServer create failed")
-        withContext(Dispatchers.Main.immediate) { onDone(null) }
-      }
-    }
-  }
-
-  fun deleteHysteria2Server(profile: String, server: String, onDone: (Boolean) -> Unit) {
-    launchIO {
-      val safeProfile = profile.trim()
-      val safeServer = server.trim()
-      val ok = runCatching { api.deleteHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
-      if (ok) {
-        log("OK", "hysteria2/$safeProfile/$safeServer deleted")
-      } else {
-        log("ERR", "hysteria2/$safeProfile/$safeServer delete failed")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }

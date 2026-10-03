@@ -977,7 +977,7 @@ fn security_from_definition(definition: &JsonValue) -> String {
 
 fn targets_for_protocol(protocol: &str, transport: &str) -> Vec<String> {
     match protocol {
-        "hysteria2" => vec!["hysteria2".to_string()],
+        "hysteria2" => vec!["sing-box".to_string()],
         "wireguard" => vec!["wireproxy".to_string()],
         // Only transports rendered by this importer are offered. The bundled
         // sing-box 1.13.x does not implement XHTTP, so those nodes stay
@@ -1216,7 +1216,6 @@ fn target_server_root(target: &str, profile: &str, server: &str) -> Result<PathB
     crate::programs::singbox::ensure_valid_profile_name(server)?;
     let program = match target {
         "sing-box" => "singbox",
-        "hysteria2" => "hysteria2",
         "wireproxy" => "wireproxy",
         _ => bail!("unsupported subscription import target"),
     };
@@ -1226,8 +1225,8 @@ fn target_server_root(target: &str, profile: &str, server: &str) -> Result<PathB
 }
 
 fn ensure_target_accepts_new_server(target: &str, profile: &str) -> Result<()> {
-    if !matches!(target, "sing-box" | "hysteria2") { return Ok(()); }
-    let program = if target == "sing-box" { "singbox" } else { "hysteria2" };
+    if target != "sing-box" { return Ok(()); }
+    let program = "singbox";
     let root = PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/{program}/profile/{profile}"));
     let vpn_mode = fs::read_to_string(root.join("setting.json")).ok()
         .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
@@ -1533,7 +1532,7 @@ fn parse_manual_source(raw: &str) -> Result<ParsedManualSource> {
             return Ok(ParsedManualSource {
                 node,
                 exact_content: Some(serde_json::to_string_pretty(&value)?),
-                exact_target: Some("hysteria2"),
+                exact_target: Some("sing-box"),
                 format: "json",
             });
         }
@@ -1586,7 +1585,6 @@ pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
     fs::create_dir_all(root.join("log"))?;
     let local_port = match target.as_str() {
         "sing-box" => next_local_port(2080),
-        "hysteria2" => next_local_port(11590),
         "wireproxy" => next_local_port(1167),
         _ => bail!("unsupported import target"),
     };
@@ -1595,22 +1593,12 @@ pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
             "sing-box" => {
                 let content = match parsed.exact_content.as_deref() {
                     Some(content) => content.to_string(),
-                    None => render_singbox_config(&parsed.node, local_port)?,
+                    None => if parsed.node.protocol == "hysteria2" { render_hysteria2_config(&parsed.node, local_port)? } else { render_singbox_config(&parsed.node, local_port)? },
                 };
                 write_text_atomic(&root.join("config.json"), &content)?;
                 write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"port":local_port}))?;
                 write_text_atomic(&root.join("log/sing-box.log"), "")?;
                 crate::programs::singbox::normalize_config_for_profile_server(&profile, &server_name)?;
-            }
-            "hysteria2" => {
-                let content = match parsed.exact_content.as_deref() {
-                    Some(content) => content.to_string(),
-                    None => render_hysteria2_config(&parsed.node, local_port)?,
-                };
-                write_text_atomic(&root.join("config.json"), &content)?;
-                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"socks5_port":local_port,"log_level":"info"}))?;
-                write_text_atomic(&root.join("log/hysteria2.log"), "")?;
-                crate::programs::hysteria2::normalize_config_for_profile_server(&profile, &server_name)?;
             }
             "wireproxy" => {
                 let content = match parsed.exact_content.as_deref() {
@@ -1653,9 +1641,6 @@ fn local_port_for_link(link: &SubscriptionLink) -> u16 {
         ("sing-box", Some(root)) => fs::read_to_string(root.join("setting.json")).ok()
             .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
             .map(|v| json_u16_any(&v, &["port"])).filter(|v| *v > 0).unwrap_or(2080),
-        ("hysteria2", Some(root)) => fs::read_to_string(root.join("setting.json")).ok()
-            .and_then(|raw| serde_json::from_str::<JsonValue>(&raw).ok())
-            .map(|v| json_u16_any(&v, &["socks5_port"])).filter(|v| *v > 0).unwrap_or(11590),
         ("wireproxy", Some(root)) => fs::read_to_string(root.join("config.conf")).ok()
             .and_then(|raw| raw.lines().find_map(|line| {
                 let (key, value) = line.split_once('=')?;
@@ -1673,8 +1658,7 @@ fn write_link_config(link: &SubscriptionLink, node: &SubscriptionNode) -> Result
     if !root.is_dir() { bail!("linked local server no longer exists"); }
     let port = local_port_for_link(link);
     let (path, content) = match link.target.as_str() {
-        "sing-box" => (root.join("config.json"), render_singbox_config(node, port)?),
-        "hysteria2" => (root.join("config.json"), render_hysteria2_config(node, port)?),
+        "sing-box" => (root.join("config.json"), if node.protocol == "hysteria2" { render_hysteria2_config(node, port)? } else { render_singbox_config(node, port)? }),
         "wireproxy" => (root.join("config.conf"), render_wireproxy_config(node, port)?),
         _ => bail!("unsupported subscription import target"),
     };
@@ -1704,21 +1688,16 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
     fs::create_dir_all(root.join("log"))?;
     let local_port = match target.as_str() {
         "sing-box" => next_local_port(2080),
-        "hysteria2" => next_local_port(11590),
         "wireproxy" => next_local_port(1167),
         _ => bail!("unsupported subscription import target"),
     };
     let create_result = (|| -> Result<()> {
         match target.as_str() {
             "sing-box" => {
-                write_text_atomic(&root.join("config.json"), &render_singbox_config(&node, local_port)?)?;
+                let content = if node.protocol == "hysteria2" { render_hysteria2_config(&node, local_port)? } else { render_singbox_config(&node, local_port)? };
+                write_text_atomic(&root.join("config.json"), &content)?;
                 write_json_atomic(&root.join("setting.json"), &json!({"enabled":false, "port":local_port}))?;
                 write_text_atomic(&root.join("log/sing-box.log"), "")?;
-            }
-            "hysteria2" => {
-                write_text_atomic(&root.join("config.json"), &render_hysteria2_config(&node, local_port)?)?;
-                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false, "socks5_port":local_port, "log_level":"info"}))?;
-                write_text_atomic(&root.join("log/hysteria2.log"), "")?;
             }
             "wireproxy" => {
                 write_text_atomic(&root.join("config.conf"), &render_wireproxy_config(&node, local_port)?)?;

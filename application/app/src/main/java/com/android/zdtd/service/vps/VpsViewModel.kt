@@ -152,7 +152,6 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     refreshServer(serverId)
     loadServices(serverId, silent = true)
     if (kind != VpsServiceKind.DNSCRYPT) loadProfiles(serverId, kind, silent = true)
-    if (kind == VpsServiceKind.HYSTERIA2) loadProfiles(serverId, VpsServiceKind.XRAY, silent = true)
   }
 
   fun stopServiceMonitoring(serverId: String, kind: VpsServiceKind) = stopMonitor("service:$serverId:${kind.wireId}")

@@ -9,7 +9,7 @@ use log::{info, warn};
 use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path, time::Duration};
 
 use crate::{settings, shell::Capture, xtables_lock};
-use super::iptables_port::{DpiTunnelOptions, ProtoChoice};
+use super::iptables_port::{IptablesDpiOptions, ProtoChoice};
 
 /// Legacy compatibility entrypoint for stale callers.
 /// New t2s routing should use `programs::common::apply_t2s_routing`, which
@@ -19,7 +19,7 @@ pub fn apply_or_fallback(
     dest_port: u16,
     proto_choice: ProtoChoice,
     ifaces_raw: Option<&str>,
-    opt: &DpiTunnelOptions,
+    opt: &IptablesDpiOptions,
 ) -> Result<()> {
     warn!(
         "TPROXY: legacy fallback entrypoint called; use apply_t2s_routing for real TPROXY, \
@@ -158,7 +158,7 @@ pub fn disabled_reason() -> Option<String> {
     fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-pub fn scope_label(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> String {
+pub fn scope_label(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &IptablesDpiOptions) -> String {
     format!(
         "tproxy:uid={}:dest={}:proto={:?}:ifaces={}:pref={}:ports={}",
         uid_file.display(),
@@ -302,12 +302,12 @@ fn route_mask_hex() -> String { format!("0x{ROUTE_MARK:08x}/0x{ROUTE_MASK:08x}")
 fn old_route_mask_hex() -> String { format!("0x{OLD_ROUTE_MARK:08x}/0x{OLD_ROUTE_MASK:08x}") }
 fn legacy_route_mask_hex() -> String { format!("0x{LEGACY_ROUTE_MARK:08x}/0x{LEGACY_ROUTE_MASK:08x}") }
 
-pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> std::result::Result<(), TproxyApplyError> {
+pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &IptablesDpiOptions) -> std::result::Result<(), TproxyApplyError> {
     let _xtables_guard = xtables_lock::lock();
     apply_locked(uid_file, dest_port, proto_choice, ifaces_raw, opt)
 }
 
-fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> std::result::Result<(), TproxyApplyError> {
+fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &IptablesDpiOptions) -> std::result::Result<(), TproxyApplyError> {
     match settings::load_api_settings() {
         Ok(st) if st.tproxy_enabled => {}
         Ok(_) => return Err(unsupported("disabled by setting: tproxy_enabled=false")),
@@ -566,7 +566,7 @@ fn finish_scoped_chain(chain: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn cleanup_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> Result<()> {
+pub fn cleanup_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &IptablesDpiOptions) -> Result<()> {
     let scope = scope_label(uid_file, dest_port, proto_choice, ifaces_raw, opt);
     let _guard = xtables_lock::lock();
     cleanup_scope_by_label(&scope)

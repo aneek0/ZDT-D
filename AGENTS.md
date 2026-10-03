@@ -46,8 +46,8 @@ scripts/
 module_template/      — Magisk module template (shipped to device)
   strategic/
     list/             — Host lists (one host per line, # comments)
-    lua/              — nfqws Lua scripts
-    strategicvar/     — Strategy configs for byedpi/dpitunnel/nfqws
+    lua/              — nfqws2 Lua scripts
+    strategicvar/     — Strategy configs for byedpi/nfqws2
   bin/                — Compiled binaries (prebuilt)
   customize.sh        — Module install script (DO NOT touch)
   service.sh          — Module boot script (DO NOT touch)
@@ -87,9 +87,9 @@ zygisk/               — Zygisk native library (DO NOT touch)
 - Commits: conventional style (`feat:`, `fix:`, `perf:`, `refactor:`)
 - Package name: `com.android.zdtd.service` — DO NOT change
 
-### nfqws / nfqws2 strategy selection
+### nfqws2 strategy selection
 
-The daemon owns hostlist/IP-set binding for `nfqws`/`nfqws2`. At apply time it
+The daemon owns hostlist/IP-set binding for `nfqws2` (and `byedpi` profiles). At apply time it
 strips every `--hostlist*` / `--ipset*` token from each `--new` block and
 re-injects the user selection into every section (`rust/zdtd/src/api.rs
 apply_selection_to_config`). So do not rely on hardcoded `--hostlist*` /

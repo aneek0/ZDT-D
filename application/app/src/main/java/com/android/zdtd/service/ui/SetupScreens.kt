@@ -72,8 +72,8 @@ private const val REMOTE_SETUP_ENTRY_ENABLED = false
 
 
 private fun isArm64OnlySupported(): Boolean {
-  // Module binaries are built for arm64-v8a and armeabi-v7a.
-  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" || it == "armeabi-v7a" }
+  // Module binaries are built for arm64-v8a only.
+  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
 }
 
 private fun isModuleInstallOsSupported(): Boolean {

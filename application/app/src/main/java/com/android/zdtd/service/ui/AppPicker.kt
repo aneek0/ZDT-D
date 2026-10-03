@@ -330,10 +330,7 @@ internal fun AppPickerSheet(
   val slotMobileLabel = stringResource(R.string.apps_conflict_slot_mobile)
   val programOperaLabel = stringResource(R.string.apps_conflict_program_operaproxy)
   val programSingboxLabel = stringResource(R.string.apps_conflict_program_singbox)
-  val programHysteria2Label = "hysteria2"
-  val programDpitunnelLabel = stringResource(R.string.apps_conflict_program_dpitunnel)
   val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
-  val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
   val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
   val programWireproxyLabel = stringResource(R.string.apps_conflict_program_wireproxy)
   val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
@@ -356,10 +353,7 @@ internal fun AppPickerSheet(
   fun programLabel(programId: String): String = when (programId) {
     "operaproxy" -> programOperaLabel
     "sing-box" -> programSingboxLabel
-    "hysteria2" -> programHysteria2Label
-    "dpitunnel" -> programDpitunnelLabel
     "byedpi" -> programByedpiLabel
-    "nfqws" -> programZapretLabel
     "nfqws2" -> programZapret2Label
     "wireproxy" -> programWireproxyLabel
     "tor" -> programTorLabel
@@ -375,8 +369,8 @@ internal fun AppPickerSheet(
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
-    "nfqws", "nfqws2" -> "zapret"
+    "operaproxy", "sing-box", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
+    "nfqws2" -> "zapret"
     else -> null
   }
 
@@ -421,7 +415,7 @@ internal fun AppPickerSheet(
       if (programGroup(entry.programId) != null) {
         for (other in data.lists) {
           if (other.path == entry.path) continue
-          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo" && entry.programId != "mieru" && other.programId != "mieru" && entry.programId != "hysteria2" && other.programId != "hysteria2" && entry.programId != "amneziawg" && other.programId != "amneziawg"
+          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo" && entry.programId != "mieru" && other.programId != "mieru" && entry.programId != "amneziawg" && other.programId != "amneziawg"
           if (requiresSameSlot && other.slot != entry.slot) continue
           if (!appListsConflict(entry.programId, other.programId)) continue
           if (isAssignmentEnabled(other) != active) continue

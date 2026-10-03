@@ -20,7 +20,7 @@ use crate::{
     android::pkg_uid::{self, Sha256Tracker, Mode as UidMode},
     iptables::{
         hotspot,
-        iptables_port::{DpiTunnelOptions, ProtoChoice},
+        iptables_port::{IptablesDpiOptions, ProtoChoice},
     },
     programs::dnscrypt,
     settings,
@@ -505,7 +505,7 @@ pub fn start_if_enabled() -> Result<()> {
     // 6) Apply iptables_port for selected apps -> t2s_port, proto tcp
     // - user list applies to ALL interfaces (no -o)
     // - mobile/wifi lists apply to specified interfaces from port.json
-    let opt = DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() };
+    let opt = IptablesDpiOptions { port_preference: 1, ..IptablesDpiOptions::default() };
 
     apply_t2s_routing(
         Path::new(APP_OUT_USER),

@@ -184,8 +184,6 @@ fun StatsScreen(
           )
         )
         add(ProcRow("dnscrypt", "DNSCrypt", r?.dnscrypt ?: ApiModels.ProcAgg(), "dnscrypt", configuredEnabled = enabled("dnscrypt")))
-        add(ProcRow("dpitunnel", "DPITunnel", r?.dpitunnel ?: ApiModels.ProcAgg(), "dpitunnel", configuredEnabled = enabled("dpitunnel")))
-        add(ProcRow("hysteria2", "hysteria2", r?.hysteria2 ?: ApiModels.ProcAgg(), "hysteria2", configuredEnabled = enabled("hysteria2")))
         add(ProcRow("mihomo", "Mihomo", r?.mihomo ?: ApiModels.ProcAgg(), "mihomo", configuredEnabled = enabled("mihomo")))
         add(ProcRow("mieru", "mieru", r?.mieru ?: ApiModels.ProcAgg(), "mieru", configuredEnabled = enabled("mieru")))
         add(ProcRow("openvpn", "OpenVPN", r?.openVpn ?: ApiModels.ProcAgg(), "openvpn", configuredEnabled = enabled("openvpn")))
@@ -217,7 +215,6 @@ fun StatsScreen(
           )
         )
         add(ProcRow("wireproxy", "WireProxy", r?.wireProxy ?: ApiModels.ProcAgg(), "wireproxy", configuredEnabled = enabled("wireproxy")))
-        add(ProcRow("zapret", "Zapret", r?.zapret ?: ApiModels.ProcAgg(), "nfqws", configuredEnabled = enabled("nfqws")))
         add(ProcRow("zapret2", "Zapret 2", r?.zapret2 ?: ApiModels.ProcAgg(), "nfqws2", configuredEnabled = enabled("nfqws2")))
       }.sortedWith(
         compareBy<ProcRow> {

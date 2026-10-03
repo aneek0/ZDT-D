@@ -17,9 +17,9 @@ sealed class AppsRoute {
   data object ConstructionStudio : AppsRoute()
   data object DpiDetector : AppsRoute()
   data object NfqwsTester : AppsRoute()
-  data class Blockcheck(val program: String = "nfqws", val profile: String = "default") : AppsRoute()
+  data class Blockcheck(val program: String = "nfqws2", val profile: String = "default") : AppsRoute()
   data object Subscriptions : AppsRoute()
   data class Program(val programId: String) : AppsRoute()
   data class Profile(val programId: String, val profile: String) : AppsRoute()
 }
-internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "hysteria2_profiles" || type == "wireproxy_profiles" || type == "myproxy_profiles" || type == "myprogram_profiles" || type == "openvpn_profiles" || type == "tun2socks_profiles" || type == "myvpn_profiles" || type == "mihomo_profiles" || type == "mieru_profiles" || type == "amneziawg_profiles"
+internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "wireproxy_profiles" || type == "myproxy_profiles" || type == "myprogram_profiles" || type == "openvpn_profiles" || type == "tun2socks_profiles" || type == "myvpn_profiles" || type == "mihomo_profiles" || type == "mieru_profiles" || type == "amneziawg_profiles"

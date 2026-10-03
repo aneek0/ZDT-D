@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
+use crate::iptables::iptables_port::{IptablesDpiOptions, ProtoChoice};
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -275,7 +275,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false, false)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();
@@ -335,7 +335,7 @@ pub fn start_if_enabled() -> Result<()> {
             plan.proxy.proto_choice(),
             plan.proxy.proto_choice(),
             None,
-            DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
+            IptablesDpiOptions { port_preference: 1, ..IptablesDpiOptions::default() },
         )
         .with_context(|| format!("iptables profile={}", plan.name))?;
 

@@ -52,12 +52,12 @@ impl ProtoChoice {
 
 /// Options equivalent to external vars in shell (`port_preference`, `dpi_ports`).
 #[derive(Debug, Clone)]
-pub struct DpiTunnelOptions {
+pub struct IptablesDpiOptions {
     pub port_preference: u8, // 0 -> dpi_ports, 1 -> all ports
     pub dpi_ports: String,
 }
 
-impl Default for DpiTunnelOptions {
+impl Default for IptablesDpiOptions {
     fn default() -> Self {
         Self {
             port_preference: 0,
@@ -76,13 +76,13 @@ fn allow_loopback_redirect_enabled() -> bool {
     }
 }
 
-/// Rust port of `load_config_dpi_tunnel()`.
+/// iptables DPI redirect setup (Rust port of the shell-era `load_config_dpi_tunnel()`).
 ///
 /// - Creates NAT_DPI chain and hooks OUTPUT -> NAT_DPI (nat table).
 /// - Creates MANGLE_APP chain once and hooks OUTPUT -> MANGLE_APP (mangle table).
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
-pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
+pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: IptablesDpiOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
     let allow_loopback_redirect = allow_loopback_redirect_enabled();
     let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;

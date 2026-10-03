@@ -58,7 +58,7 @@ sec "Magisk Module Pre-checks"
 ui_print "## Requirements:"
 ui_print "## - Android 9+ (SDK >= 28)"
 ui_print "## - Officially supported: Android 11+ (SDK >= 30)"
-ui_print "## - arm64-v8a / armeabi-v7a"
+ui_print "## - arm64-v8a"
 hr
 
 
@@ -179,17 +179,9 @@ elif [ "$UNAME_M" = "aarch64" ]; then
   ZDT_BIN_ARCH="arm64-v8a"
   ZDT_ZYGISK_SO_NAME="arm64-v8a.so"
   ok "aarch64 detected"
-elif echo "$ABILIST $ABI" | grep -qE '(^|[ ,])armeabi-v7a([ ,]|$)'; then
-  ZDT_BIN_ARCH="arm-v7a"
-  ZDT_ZYGISK_SO_NAME="armeabi-v7a.so"
-  ok "armeabi-v7a detected"
-elif [ "$UNAME_M" = "armv7l" ] || [ "$UNAME_M" = "armv8l" ] || [ "$UNAME_M" = "arm" ]; then
-  ZDT_BIN_ARCH="arm-v7a"
-  ZDT_ZYGISK_SO_NAME="armeabi-v7a.so"
-  ok "ARM 32-bit detected ($UNAME_M)"
 else
   warn "Unsupported architecture detected"
-  fail "arm64-v8a or armeabi-v7a required. Detected ABI64='${ABI64:-unknown}' ABI='${ABI:-unknown}' uname='${UNAME_M:-unknown}'"
+  fail "arm64-v8a required. Detected ABI64='${ABI64:-unknown}' ABI='${ABI:-unknown}' uname='${UNAME_M:-unknown}'"
 fi
 export ZDT_BIN_ARCH ZDT_ZYGISK_SO_NAME
 ui_print "## - selected binary arch: $ZDT_BIN_ARCH"
@@ -284,7 +276,7 @@ if [ -f "$ZYGISK_MARKER" ]; then
       [ -e "$zdt_zygisk_so" ] || continue
       chmod 644 "$zdt_zygisk_so" 2>/dev/null || fail "chmod 644 failed: $zdt_zygisk_so"
     done
-    ok "Zygisk $ZDT_ZYGISK_SO_NAME found; keeping both arm64-v8a.so and armeabi-v7a.so when present"
+    ok "Zygisk $ZDT_ZYGISK_SO_NAME found"
   else
     fail_code "ZDTD_ZYGISK_LIBRARY_MISSING" "Zygisk marker exists, but library not found: $ZYGISK_SO"
   fi

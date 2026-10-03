@@ -89,7 +89,7 @@ fun ProgramScreen(
 
   val scope = rememberCoroutineScope()
 
-  val hasStrategicFiles = program.id == "nfqws" || program.id == "nfqws2"
+  val hasStrategicFiles = program.id == "nfqws2"
   var programTab by remember(program.id) { mutableStateOf(0) }
   var dnscryptTab by remember(program.id) { mutableStateOf(0) }
 
@@ -178,7 +178,7 @@ fun ProgramScreen(
     // Global enabled toggle:
     // - MUST exist for dnscrypt + operaproxy (per Danil)
     // - sing-box has a custom enabled inside its own setting.json
-    // - MUST NOT exist for zapret/dpitunnel/byedpi (it's useless there)
+    // - MUST NOT exist for zapret/byedpi (it's useless there)
     if (program.id == "dnscrypt") {
       item {
         EnabledCard(

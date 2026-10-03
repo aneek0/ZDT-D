@@ -249,7 +249,7 @@
     <string name="setup_features_body">• 绕过封锁和限速\n• 便捷的图形化配置界面</string>
     <string name="setup_notes_title">重要说明</string>
     <string name="setup_notes_body">• 隐私与安全：模块不收集个人数据，也不会损害设备功能。\n• 自由与开放：完全免费，并将一直保持免费。</string>
-    <string name="setup_arch_unsupported_fmt">不支持的架构。ZDT-D 支持 arm64-v8a 和 armeabi-v7a。当前设备：%1$s。</string>
+    <string name="setup_arch_unsupported_fmt">不支持的架构。ZDT-D 支持 arm64-v8a。当前设备：%1$s。</string>
     <string name="setup_root_title">需要 root 权限</string>
     <string name="setup_root_body">ZDT-D 是一个用于绕过 DPI 封锁和流量限制的 root 模块（Magisk / KernelSU / APatch）。之所以需要 root，是因为模块会在操作系统层级运行系统脚本和网络组件，这是普通应用无法做到的。\n\nroot 还用于安装/更新模块、控制守护进程以及读取模块文件（令牌和日志）。root 请求始终会通过你的 root 管理器确认，权限也可随时撤销。</string>
     <string name="setup_root_waiting">正在等待 root 管理器响应…</string>
@@ -505,10 +505,8 @@ APatch：10700+</string>
     <string name="apps_list_chip_enabled_count">已启用 %1$d</string>
     <string name="apps_list_desc_dnscrypt">DNSCrypt 加密 DNS 解析器</string>
     <string name="apps_list_desc_operaproxy">使用 ByeDPI 和 t2s 的 Opera Proxy 链</string>
-    <string name="apps_list_desc_nfqws">Zapret NFQUEUE DPI 绕过</string>
     <string name="apps_list_desc_nfqws2">Zapret 2 NFQUEUE DPI 绕过</string>
     <string name="apps_list_desc_byedpi">ByeDPI 本地 TCP 代理</string>
-    <string name="apps_list_desc_dpitunnel">DPITunnel TCP/UDP 隧道</string>
     <string name="apps_list_desc_singbox">sing-box 实验性路由工具</string>
     <string name="apps_list_desc_default">配置和管理此工具</string>
 
@@ -559,7 +557,6 @@ APatch：10700+</string>
     <string name="program_updates_service_running_desc">检查/更新前请停止服务。这是为了防止规则和进程在替换期间使用这些文件。</string>
     <string name="program_updates_stopping">正在停止…</string>
     <string name="program_updates_stop_and_check">停止并检查</string>
-    <string name="program_updates_pick_zapret_title">Zapret 版本</string>
     <string name="program_updates_pick_zapret2_title">Zapret 2 版本</string>
     <string name="program_updates_pick_mihomo_title">Mihomo 版本</string>
     <string name="program_updates_pick_mieru_title">Mieru 版本</string>
@@ -657,7 +654,6 @@ APatch：10700+</string>
     <string name="opera_ports_title">端口</string>
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
-    <string name="program_updates_zapret_title">Zapret（nfqws）</string>
     <string name="program_updates_zapret2_title">Zapret 2（nfqws2 + lua）</string>
     <string name="program_updates_mihomo_title">Mihomo</string>
     <string name="program_updates_mieru_title">Mieru</string>
@@ -938,9 +934,7 @@ APatch：10700+</string>
     <string name="apps_conflict_slot_mobile">移动网络</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
     <string name="apps_conflict_program_byedpi">ByeDPI</string>
-    <string name="apps_conflict_program_zapret">Zapret</string>
     <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">应用已在使用中</string>
     <string name="settings_proxyinfo_conflict_body">这些应用已用于工具规则。是否将其从那些工具中移除并添加到端口扫描保护？</string>
@@ -2017,73 +2011,6 @@ APatch：10700+</string>
     <string name="tgws_copy_command">复制命令</string>
     <string name="tgws_command_copied">命令已复制</string>
 
-    <!-- Hysteria2 profile UI -->
-    <string name="hysteria2_t2s_panel_desc">原生 t2s 状态面板</string>
-    <string name="hysteria2_panel">面板</string>
-    <string name="hysteria2_fill_t2s_port">填写 T2S 端口</string>
-    <string name="hysteria2_fill_t2s_web_port">填写 T2S Web 端口</string>
-    <string name="hysteria2_profile_ports_must_differ">配置文件端口必须不同</string>
-    <string name="hysteria2_enter_tun_interface">输入 TUN 接口</string>
-    <string name="hysteria2_enter_dns">输入 DNS</string>
-    <string name="hysteria2_vpn_requires_one_enabled_server">Hysteria2 VPN 模式要求仅启用一个服务器</string>
-    <string name="hysteria2_t2s_port_busy_fmt">T2S 端口已被使用：%1$s</string>
-    <string name="hysteria2_t2s_web_port_busy_fmt">T2S Web 端口已被使用：%1$s</string>
-    <string name="hysteria2_autosave_failed">Hysteria2 自动保存失败</string>
-    <string name="hysteria2_server_created_fmt">已创建 Hysteria2 服务器：%1$s</string>
-    <string name="hysteria2_json_saved_settings_failed">JSON 已保存，但无法更新服务器设置</string>
-    <string name="hysteria2_json_title_fmt">Hysteria2 JSON：%1$s</string>
-    <string name="hysteria2_client_config_json">客户端配置 JSON</string>
-    <string name="hysteria2_parse_error">解析错误</string>
-    <string name="hysteria2_invalid_json_fmt">JSON 无效：%1$s</string>
-    <string name="hysteria2_apps_title">Hysteria2 应用</string>
-    <string name="hysteria2_vpn_only_one_server_allowed">Hysteria2 VPN 模式仅允许启用一个服务器</string>
-    <string name="hysteria2_t2s_settings_title">Hysteria2 T2S 设置</string>
-    <string name="hysteria2_t2s_settings_desc">Hysteria2 配置文件的本地 t2s/web 端口</string>
-    <string name="hysteria2_t2s_port_label">T2S 端口</string>
-    <string name="hysteria2_t2s_web_port_label">T2S Web 端口</string>
-    <string name="hysteria2_apply_after_restart">服务停止/启动后生效</string>
-    <string name="hysteria2_route_mode_title">路由模式</string>
-    <string name="hysteria2_route_mode_desc">Hysteria2 后端始终为 SOCKS5；请在下方选择 t2s 模式</string>
-    <string name="hysteria2_mode_title">Hysteria2 模式</string>
-    <string name="hysteria2_mode_desc">多服务器使用 T2S，单服务器使用 VPN/tun2proxy</string>
-    <string name="hysteria2_mode_t2s_desc">通过 SOCKS5 后端使用多个 Hysteria2 服务器</string>
-    <string name="hysteria2_mode_vpn_desc">通过 tun2socks 使用一个 Hysteria2 服务器</string>
-    <string name="hysteria2_vpn_structure_invalid_title">Hysteria2 VPN 结构无效</string>
-    <string name="hysteria2_vpn_structure_invalid_desc">对于 VPN/tun2proxy，请仅保留一个服务器或切换到 T2S。</string>
-    <string name="hysteria2_switch_to_t2s">切换到 T2S</string>
-    <string name="hysteria2_vpn_profile_title">Hysteria2 VPN / tun2proxy</string>
-    <string name="hysteria2_vpn_profile_desc">tun2socks 的 TUN、DNS 和日志级别设置</string>
-    <string name="hysteria2_tun_example">例如 hytun0</string>
-    <string name="hysteria2_dns_supporting">IPv4 DNS，每行一个</string>
-    <string name="hysteria2_auto_save_restart_hint">自动保存，并在停止/启动后生效</string>
-    <string name="hysteria2_servers_title">Hysteria2 服务器</string>
-    <string name="hysteria2_servers_vpn_desc">VPN：必须仅启用一个服务器</string>
-    <string name="hysteria2_servers_t2s_desc">T2S：可以添加多个服务器</string>
-    <string name="hysteria2_add_server">添加服务器</string>
-    <string name="hysteria2_no_servers">尚无服务器</string>
-    <string name="hysteria2_socks5_port_busy_fmt">SOCKS5 端口已被使用：%1$s</string>
-    <string name="hysteria2_delete_server_title">删除 Hysteria2 服务器</string>
-    <string name="hysteria2_delete_server_message_fmt">删除 Hysteria2 服务器 %1$s / %2$s？</string>
-    <string name="hysteria2_socks5_autosave_hint">SOCKS5 端口自动保存</string>
-    <string name="hysteria2_socks5_backend_port">SOCKS5 后端端口</string>
-    <string name="hysteria2_port_busy_fmt">端口被占用：%1$s</string>
-    <string name="hysteria2_new_server_title">新建 Hysteria2 服务器</string>
-    <string name="hysteria2_server_name_rules">服务器名称：拉丁字母、数字、_ 和 -</string>
-    <string name="hysteria2_server_name_label">服务器名称</string>
-    <string name="hysteria2_server_exists">Hysteria2 服务器已存在</string>
-    <string name="hysteria2_server_ui_title">Hysteria2 服务器界面</string>
-    <string name="hysteria2_enabled">已启用</string>
-    <string name="hysteria2_server_field_label">服务器，例如 example.com:443</string>
-    <string name="hysteria2_local_socks5_port">本地 SOCKS5 端口</string>
-    <string name="hysteria2_obfs_type_label">obfs 类型，例如 salamander</string>
-    <string name="hysteria2_bandwidth_up_label">上传带宽，例如 20 mbps</string>
-    <string name="hysteria2_bandwidth_down_label">下载带宽，例如 100 mbps</string>
-    <string name="hysteria2_congestion_type_label">congestion.type：bbr 或 reno</string>
-    <string name="hysteria2_socks5_username_optional">SOCKS5 用户名（可选）</string>
-    <string name="hysteria2_socks5_password_optional">SOCKS5 密码（可选）</string>
-    <string name="hysteria2_server_required">服务器为必填项</string>
-    <string name="hysteria2_invalid_socks5_port">SOCKS5 端口无效</string>
-
 <!-- VPS server manager -->
     <string name="vps_servers_title">VPS 服务器</string>
     <string name="vps_servers_entry_desc">通过 SSH 连接、监控服务器、安装服务并创建客户端配置。</string>
@@ -2121,8 +2048,6 @@ APatch：10700+</string>
     <string name="vps_service_openvpn_desc">可创建多个 TCP 或 UDP 服务器配置，并为客户端使用可单独撤销的证书。</string>
     <string name="vps_service_xray">Xray</string>
     <string name="vps_service_xray_desc">支持具有独立 UUID 的 VLESS Reality TCP 和 VLESS WebSocket TLS 配置。</string>
-    <string name="vps_service_hysteria2">Hysteria2</string>
-    <string name="vps_service_hysteria2_desc">支持自动 TLS 和独立用户凭据的 UDP 配置。</string>
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">创建与 WireProxy 兼容客户端配置的 WireGuard 服务器配置。</string>
     <string name="vps_install">安装</string>
@@ -2142,7 +2067,6 @@ APatch：10700+</string>
     <string name="vps_domain">域名</string>
     <string name="vps_letsencrypt_email">Let’s Encrypt 邮箱</string>
     <string name="vps_automatic_tls_hint">域名必须指向此 VPS。ZDT-D 将自动申请并续期 TLS 证书。</string>
-    <string name="vps_shared_port_hint">Xray 已使用 TCP %1$d。Hysteria2 可以同时安全地使用 UDP %1$d。</string>
     <string name="vps_no_profiles">尚未创建配置</string>
     <string name="vps_no_profiles_hint">先创建服务器配置，然后添加独立的客户端配置。</string>
     <string name="vps_delete_profile_title">删除配置？</string>

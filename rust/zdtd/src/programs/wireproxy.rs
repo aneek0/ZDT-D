@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::{hotspot, iptables_port::{DpiTunnelOptions, ProtoChoice}};
+use crate::iptables::{hotspot, iptables_port::{IptablesDpiOptions, ProtoChoice}};
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -225,9 +225,9 @@ pub fn start_if_enabled() -> Result<()> {
                 plan.setting.t2s_port,
                 ProtoChoice::Tcp,
                 None,
-                DpiTunnelOptions {
+                IptablesDpiOptions {
                     port_preference: 1,
-                    ..DpiTunnelOptions::default()
+                    ..IptablesDpiOptions::default()
                 },
             )
             .with_context(|| format!("iptables profile={}", plan.name))?;
@@ -394,9 +394,9 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
             plan.setting.t2s_port,
             ProtoChoice::Tcp,
             None,
-            DpiTunnelOptions {
+            IptablesDpiOptions {
                 port_preference: 1,
-                ..DpiTunnelOptions::default()
+                ..IptablesDpiOptions::default()
             },
         )
         .with_context(|| format!("iptables profile={}", plan.name))?;

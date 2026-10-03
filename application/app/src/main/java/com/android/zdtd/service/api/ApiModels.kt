@@ -23,14 +23,11 @@ object ApiModels {
   data class StatusReport(
     val total: ProcAgg = ProcAgg(),
     val zdtd: ProcAgg = ProcAgg(),
-    val zapret: ProcAgg = ProcAgg(),
     val zapret2: ProcAgg = ProcAgg(),
     val byedpi: ProcAgg = ProcAgg(),
     val dnscrypt: ProcAgg = ProcAgg(),
     val d2s: ProcAgg = ProcAgg(),
-    val dpitunnel: ProcAgg = ProcAgg(),
     val singBox: ProcAgg = ProcAgg(),
-    val hysteria2: ProcAgg = ProcAgg(),
     val wireProxy: ProcAgg = ProcAgg(),
     val tor: ProcAgg = ProcAgg(),
     val openVpn: ProcAgg = ProcAgg(),
@@ -412,14 +409,11 @@ object ApiModels {
     return StatusReport(
       total = parseProcAgg(o.optJSONObject("total")),
       zdtd = parseProcAgg(o.optJSONObject("zdtd")),
-      zapret = parseProcAgg(o.optJSONObject("zapret")),
       zapret2 = parseProcAgg(o.optJSONObject("zapret2")),
       byedpi = parseProcAgg(o.optJSONObject("byedpi")),
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
       d2s = parseProcAgg(o.optJSONObject("d2s")),
-      dpitunnel = parseProcAgg(o.optJSONObject("dpitunnel")),
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
-      hysteria2 = parseProcAgg(o.optJSONObject("hysteria2")),
       wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
       tor = parseProcAgg(o.optJSONObject("tor")),
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
@@ -481,7 +475,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.d2s.count + r.dpitunnel.count + r.singBox.count + r.hysteria2.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.d2s.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -511,14 +505,11 @@ object ApiModels {
     }
     val parts = buildList {
       add(r.zdtd)
-      add(r.zapret)
       add(r.zapret2)
       add(r.byedpi)
       add(r.dnscrypt)
       add(r.d2s)
-      add(r.dpitunnel)
       add(r.singBox)
-      add(r.hysteria2)
       add(r.wireProxy)
       add(r.tor)
       add(r.openVpn)
@@ -1062,9 +1053,7 @@ object ApiModels {
       val rawName = o.optString("name").takeIf { it.isNotBlank() }
       val displayName = when (id) {
         "dnscrypt" -> rawName?.takeUnless { it.equals("dnscrypt", ignoreCase = true) } ?: "DNSCrypt"
-        "dpitunnel" -> rawName?.takeUnless { it.equals("dpitunnel", ignoreCase = true) } ?: "DPITunnel"
         "openvpn" -> rawName?.takeUnless { it.equals("openvpn", ignoreCase = true) } ?: "OpenVPN"
-        "nfqws" -> rawName?.takeUnless { it.equals("nfqws", ignoreCase = true) || it.equals("zapret", ignoreCase = true) } ?: "Zapret"
         "nfqws2" -> rawName?.takeUnless { it.equals("nfqws2", ignoreCase = true) || it.equals("zapret2", ignoreCase = true) || it.equals("zapret 2", ignoreCase = true) } ?: "Zapret 2"
         "byedpi" -> rawName?.takeUnless { it.equals("byedpi", ignoreCase = true) } ?: "ByeDPI"
         "wireproxy" -> rawName?.takeUnless { it.equals("wireproxy", ignoreCase = true) } ?: "WireProxy"

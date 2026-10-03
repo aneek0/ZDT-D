@@ -11,8 +11,8 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
-    programs::{singbox, wireproxy, hysteria2},
+    programs::{amneziawg, byedpi, dnscrypt, myproxy, myprogram, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
+    programs::{singbox, wireproxy},
     stats,
     settings,
     shell,
@@ -104,26 +104,21 @@ pub fn start_full() -> Result<()> {
             }
         });
 
-    // Run NFQUEUE-based programs together first, then wait until both are done.
-    let nfqws_handle = thread::spawn(nfqws::start_active_profiles);
+    // Run NFQUEUE-based programs together first, then wait until done.
     let nfqws2_handle = thread::spawn(nfqws2::start_active_profiles);
     wait_start_group(
         "nfqueue",
-        vec![("nfqws", nfqws_handle), ("nfqws2", nfqws2_handle)],
+        vec![("nfqws2", nfqws2_handle)],
     );
 
     // Then start DPI/tunnel stack in parallel and wait for all of them.
-    let dpitunnel_handle = thread::spawn(dpitunnel::start_active_profiles);
     let byedpi_handle = thread::spawn(byedpi::start_active_profiles);
     let singbox_handle = thread::spawn(singbox::start_t2s_if_enabled);
-    let hysteria2_handle = thread::spawn(hysteria2::start_t2s_if_enabled);
     wait_start_group(
         "dpi-stack",
         vec![
-            ("dpitunnel", dpitunnel_handle),
             ("byedpi", byedpi_handle),
             ("sing-box", singbox_handle),
-            ("hysteria2", hysteria2_handle),
         ],
     );
 
@@ -156,7 +151,6 @@ pub fn start_full() -> Result<()> {
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles()
-        || hysteria2::has_enabled_vpn_profiles()
         || hotspot_vpn_selection.is_some();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
@@ -165,7 +159,7 @@ pub fn start_full() -> Result<()> {
             // eight hand-written match blocks this replaces. Order matters: vpn_netd::start_profiles()
             // consumes the accumulated list, so engines must be started in this exact sequence.
             // The log label and the user-facing Russian text are kept per engine, unchanged.
-            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 8] = [
+            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 7] = [
                 ("openvpn", "OpenVPN: ошибка запуска, запуск продолжен", openvpn::start_profiles_for_netd),
                 ("amneziawg", "AmneziaWG: ошибка запуска, запуск продолжен", amneziawg::start_profiles_for_netd),
                 ("tun2socks", "tun2socks: ошибка запуска, запуск продолжен", tun2socks::start_profiles_for_netd),
@@ -173,7 +167,6 @@ pub fn start_full() -> Result<()> {
                 ("mihomo", "mihomo: ошибка запуска, запуск продолжен", mihomo::start_profiles_for_netd),
                 ("mieru", "mieru: ошибка запуска, запуск продолжен", mieru::start_profiles_for_netd),
                 ("sing-box vpn", "sing-box: ошибка запуска, запуск продолжен", singbox::start_profiles_for_netd),
-                ("hysteria2 vpn", "hysteria2: ошибка запуска, запуск продолжен", hysteria2::start_profiles_for_netd),
             ];
             for (log_label, user_message, start_profiles) in netd_starters {
                 match start_profiles() {
@@ -243,7 +236,7 @@ pub fn start_full() -> Result<()> {
 
 
 // Post-start sanity check:
-// The Android app infers "running" from dpitunnel/byedpi/zapret/zapret2/opera-proxy.
+// The Android app infers "running" from byedpi/zapret/zapret2/opera-proxy.
 // If none of these are running after startup, treat it as a failed start:
 // log an error and stop everything (return to OFF state).
 if !any_main_service_running() {
@@ -341,7 +334,6 @@ if !any_main_service_running() {
 fn validate_no_profile_app_overlap() -> Result<()> {
     // Read enabled profiles for each program
     let mihomo_enabled = read_enabled_profile_names(mihomo::active_path());
-    let nfqws_enabled = read_enabled_profile_names(nfqws::active_path());
     let nfqws2_enabled = read_enabled_profile_names(nfqws2::active_path());
 
     // Check mihomo profile overlap
@@ -368,16 +360,8 @@ fn validate_no_profile_app_overlap() -> Result<()> {
         }
     }
 
-    // Check zapret (nfqws + nfqws2) profile overlap
+    // Check zapret (nfqws2) profile overlap
     let mut zapret_apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for name in &nfqws_enabled {
-        let profile_dir = nfqws::profile_root(name);
-        let mut pkgs = BTreeSet::new();
-        for slot in &["user_program", "mobile_program", "wifi_program"] {
-            pkgs.extend(read_app_packages(&profile_dir.join(format!("app/uid/{slot}")))?);
-        }
-        zapret_apps_by_profile.insert(format!("nfqws/{name}"), pkgs);
-    }
     for name in &nfqws2_enabled {
         let profile_dir = nfqws2::profile_root(name);
         let mut pkgs = BTreeSet::new();
@@ -528,8 +512,7 @@ fn can_adopt_existing_runtime() -> bool {
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
-        || singbox::has_enabled_vpn_profiles()
-        || hysteria2::has_enabled_vpn_profiles();
+        || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
         return false;
@@ -574,12 +557,9 @@ fn enabled_runtime_processes_look_complete() -> bool {
         }};
     }
 
-    require_profile_program!("nfqws", r.zapret.count);
     require_profile_program!("nfqws2", r.zapret2.count);
     require_profile_program!("byedpi", r.byedpi.count);
-    require_profile_program!("dpitunnel", r.dpitunnel.count);
     require_profile_program!("singbox", r.sing_box.count);
-    require_profile_program!("hysteria2", r.hysteria2.count);
     require_profile_program!("wireproxy", r.wireproxy.count);
     require_profile_program!("myproxy", r.myproxy.count);
     require_profile_program!("myprogram", r.myprogram.count);
@@ -605,13 +585,6 @@ fn enabled_runtime_processes_look_complete() -> bool {
         }
     }
 
-    if hysteria2::has_enabled_vpn_profiles() {
-        expected_any = true;
-        if !vpn_netd_has_applied_owner("hysteria2") {
-            log::info!("runtime adoption: enabled hysteria2 VPN profiles exist but vpn_netd snapshot has no hysteria2 owner");
-            return false;
-        }
-    }
 
     if tor_enabled() {
         expected_any = true;
@@ -686,12 +659,9 @@ fn tor_enabled() -> bool {
 
 fn actual_runtime_has_services() -> bool {
     if let Ok(r) = stats::collect_status() {
-        if r.zapret.count > 0
-            || r.zapret2.count > 0
+        if r.zapret2.count > 0
             || r.byedpi.count > 0
-            || r.dpitunnel.count > 0
             || r.sing_box.count > 0
-            || r.hysteria2.count > 0
             || r.wireproxy.count > 0
             || r.myproxy.count > 0
             || r.myprogram.count > 0
@@ -713,16 +683,13 @@ fn actual_runtime_has_services() -> bool {
         || tun2socks::is_running()
         || mihomo::is_running()
         || mieru::is_running()
-        || hysteria2::is_running()
         || vpn_netd_has_applied_owner("myvpn")
-        || vpn_netd_has_applied_owner("hysteria2")
 }
 
 fn runtime_uses_iptables_paths() -> bool {
     let app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
         || profile_program_has_routed_app_outputs("wireproxy")
         || profile_program_has_routed_app_outputs("singbox")
-        || profile_program_has_routed_app_outputs("hysteria2")
         || (tor_enabled() && tor_has_routed_app_outputs());
 
     match stats::collect_status() {
@@ -732,10 +699,8 @@ fn runtime_uses_iptables_paths() -> bool {
             // anchors. Only require those anchors when their resolved UID output
             // files contain real app routes. Hotspot-only PREROUTING is not this
             // OUTPUT/MANGLE anchor path.
-            r.zapret.count > 0
-                || r.zapret2.count > 0
+            r.zapret2.count > 0
                 || r.byedpi.count > 0
-                || r.dpitunnel.count > 0
                 || r.myproxy.count > 0
                 || r.myprogram.count > 0
                 || r.dnscrypt.count > 0
@@ -924,9 +889,6 @@ where
 fn validate_start_plan_best_effort() {
     let mut had_warning = false;
 
-    // NOTE: hysteria2::validate_start_plan() is deliberately NOT listed here. It was not
-    // called before this refactor either; the list is kept identical so behavior does not
-    // change. Pending maintainer decision on whether that omission is intentional.
     let start_plans: [(&str, fn() -> Result<()>); 7] = [
         ("openvpn", openvpn::validate_start_plan),
         ("amneziawg", amneziawg::validate_start_plan),
@@ -959,8 +921,8 @@ fn validate_vpn_claims_unique() -> Result<()> {
 
 fn validate_vpn_tun_claims_unique() -> Result<()> {
     let mut seen = BTreeMap::<String, String>::new();
-    // Same eight sources in the same order as the previous .chain() sequence.
-    let tun_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
+    // Same seven sources in the same order as the previous .chain() sequence.
+    let tun_claim_sources: [fn() -> Vec<(String, String)>; 7] = [
         openvpn::enabled_tun_claims,
         amneziawg::enabled_tun_claims,
         tun2socks::enabled_tun_claims,
@@ -968,7 +930,6 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
         mihomo::enabled_tun_claims,
         mieru::enabled_tun_claims,
         singbox::enabled_tun_claims,
-        hysteria2::enabled_tun_claims,
     ];
     for (label, tun) in tun_claim_sources.into_iter().flat_map(|claims| claims())
     {
@@ -980,16 +941,15 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
 }
 
 fn validate_vpn_cidr_claims_unique() -> Result<()> {
-    // Same seven sources in the same order as the previous .chain() sequence.
+    // Same six sources in the same order as the previous .chain() sequence.
     // NOTE: openvpn::enabled_cidr_claims() is intentionally absent, exactly as before.
-    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 7] = [
+    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 6] = [
         amneziawg::enabled_cidr_claims,
         tun2socks::enabled_cidr_claims,
         myvpn::enabled_cidr_claims,
         mihomo::enabled_cidr_claims,
         mieru::enabled_cidr_claims,
         singbox::enabled_cidr_claims,
-        hysteria2::enabled_cidr_claims,
     ];
     let claims = cidr_claim_sources
         .into_iter()
@@ -1044,7 +1004,7 @@ fn ipv4_to_u32(s: &str) -> Option<u32> {
 }
 
 fn any_main_service_running() -> bool {
-    // The Android app infers "running" from dpitunnel/byedpi/zapret/zapret2/opera-proxy.
+    // The Android app infers "running" from byedpi/zapret/zapret2/opera-proxy.
     // However, some users intentionally run only dnscrypt. In that case, consider startup
     // successful if dnscrypt is enabled and running.
     let dnscrypt_expected = dnscrypt::active_listen_port().ok().flatten().is_some();
@@ -1054,17 +1014,14 @@ fn any_main_service_running() -> bool {
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
     let singbox_vpn_expected = singbox::has_enabled_vpn_profiles();
-    let hysteria2_vpn_expected = hysteria2::has_enabled_vpn_profiles();
     let tgwsproxy_expected = tgwsproxy_enabled();
 
     // Probe only the buckets this check actually reads, and only the optional ones that are
     // expected. The engines below are checked through their own is_running() helpers instead, so
     // asking stats for them would just add pidof/pgrep/ps calls on every one of the 20 attempts.
     let mut wait_probe: Vec<&str> = vec![
-        "nfqws",
         "nfqws2",
         "byedpi",
-        "dpitunnel",
         "singbox",
         "wireproxy",
         "myproxy",
@@ -1079,10 +1036,8 @@ fn any_main_service_running() -> bool {
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
     for _ in 0..20 {
         if let Ok(r) = stats::collect_status_for(&wait_probe) {
-            if r.zapret.count > 0
-                || r.zapret2.count > 0
+            if r.zapret2.count > 0
                 || r.byedpi.count > 0
-                || r.dpitunnel.count > 0
                 || r.sing_box.count > 0
                 || r.wireproxy.count > 0
                 || r.myproxy.count > 0
@@ -1098,7 +1053,6 @@ fn any_main_service_running() -> bool {
                 || (mihomo_expected && mihomo::is_running())
                 || (mieru::has_enabled_profiles() && mieru::is_running())
                 || (singbox_vpn_expected && singbox::is_running() && vpn_netd_has_applied_owner("singbox"))
-                || (hysteria2_vpn_expected && hysteria2::is_running() && vpn_netd_has_applied_owner("hysteria2"))
             {
                 return true;
             }

@@ -29,14 +29,11 @@ private fun ApiModels.StatusReport.widgetProcessCount(): Int {
   val operaCount = (opera?.opera?.count ?: 0) + (opera?.byedpi?.count ?: 0)
   return listOf(
     zdtd.count,
-    zapret.count,
     zapret2.count,
     byedpi.count,
     dnscrypt.count,
     d2s.count,
-    dpitunnel.count,
     singBox.count,
-    hysteria2.count,
     wireProxy.count,
     tor.count,
     openVpn.count,

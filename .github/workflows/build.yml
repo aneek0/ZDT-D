@@ -47,15 +47,11 @@ env:
   TUN2SOCKS_REF: "v2.7.0"
   MIHOMO_REF: "v1.19.30"
   SING_BOX_REF: "v1.14.1"
-  HYSTERIA_REF: "app/v2.9.3"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
   DNSCRYPT_PROXY_REF: "2.1.18"
   MIERU_REF: "v3.38.0"
   OPERA_PROXY_REF: "v1.28.0"
-  DPITUNNEL_REF: "main"
-  DPITUNNEL_ANDROID_API_LEVEL: 24
-  DPITUNNEL_OPENSSL_REF: "openssl-3.5.9"
   TOR_REF: "tor-0.4.9.13"
   TOR_ANDROID_API_LEVEL: 24
   TOR_OPENSSL_REF: "openssl-3.5.9"
@@ -1800,114 +1796,6 @@ jobs:
             out/artifacts/sing-box/sing-box.dynamic.txt
           retention-days: 1
 
-  build_hysteria2:
-    name: build hysteria2 ${{ matrix.abi }}
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            artifact_suffix: arm64
-            hy_platform: android/arm64
-            hy_output: hysteria-android-arm64
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '${{ env.GO_VERSION }}'
-          cache: false
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v10.2.0
-
-      - name: Prepare Android NDK
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          NDK_VERSION="$NATIVE_NDK_VERSION"
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
-            "$SDKMANAGER" "ndk;$NDK_VERSION"
-          fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Build Hysteria from official source
-        run: |
-          set -euo pipefail
-          WORK="$PWD/out/build/hysteria2-android"
-          SRC="$WORK/src"
-          ARTIFACT_DIR="$PWD/out/artifacts/hysteria2"
-          mkdir -p "$SRC" "$ARTIFACT_DIR"
-          HYSTERIA_REPO="https://github.com/apernet/hysteria"
-          HYSTERIA_DIR="$SRC/hysteria"
-          git init "$HYSTERIA_DIR"
-          git -C "$HYSTERIA_DIR" remote add origin "$HYSTERIA_REPO"
-          # Upstream Hysteria release refs may be tagged either as vX.Y.Z or app/vX.Y.Z.
-          # Try both forms before failing with a useful refs listing.
-          HYSTERIA_FETCHED_REF=""
-          for ref in "$HYSTERIA_REF" "app/$HYSTERIA_REF" "${HYSTERIA_REF#app/}" "refs/tags/$HYSTERIA_REF" "refs/tags/app/$HYSTERIA_REF"; do
-            [[ -n "$ref" ]] || continue
-            if git -C "$HYSTERIA_DIR" fetch --depth 1 origin "$ref"; then
-              HYSTERIA_FETCHED_REF="$ref"
-              break
-            fi
-          done
-          if [[ -z "$HYSTERIA_FETCHED_REF" ]]; then
-            echo "::error::Could not fetch Hysteria ref '$HYSTERIA_REF'. Upstream often uses app/vX.Y.Z tags; check https://github.com/apernet/hysteria/tags"
-            git ls-remote --heads --tags "$HYSTERIA_REPO" | grep -E 'refs/(heads|tags)/(app/)?v?[0-9]' | tail -80 || true
-            exit 1
-          fi
-          git -C "$HYSTERIA_DIR" checkout --detach FETCH_HEAD
-          HYSTERIA_COMMIT="$(git -C "$HYSTERIA_DIR" rev-parse HEAD)"
-          printf '%s\n' "$HYSTERIA_COMMIT" | tee "$ARTIFACT_DIR/hysteria2.commit"
-          pushd "$SRC/hysteria" >/dev/null
-          HY_APP_PLATFORMS="${{ matrix.hy_platform }}" uv run python hyperbole.py build -r
-          popd >/dev/null
-          cp -f "$SRC/hysteria/build/${{ matrix.hy_output }}" "$ARTIFACT_DIR/hysteria2"
-          chmod 755 "$ARTIFACT_DIR/hysteria2"
-          cat > "$ARTIFACT_DIR/hysteria2.version" <<EOF_HYSTERIA2_VERSION
-          source=https://github.com/apernet/hysteria
-          ref=$HYSTERIA_REF
-          commit=$HYSTERIA_COMMIT
-          binary=hysteria2
-          upstream_output=${{ matrix.hy_output }}
-          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF_HYSTERIA2_VERSION
-          file "$ARTIFACT_DIR/hysteria2"
-          readelf -h "$ARTIFACT_DIR/hysteria2" | grep -E 'Class:|Machine:'
-          readelf -d "$ARTIFACT_DIR/hysteria2" | tee "$ARTIFACT_DIR/hysteria2.dynamic.txt" || true
-          "$ARTIFACT_DIR/hysteria2" version || true
-
-      - name: Upload Hysteria2 binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: hysteria2-${{ matrix.artifact_suffix }}
-          path: |
-            out/artifacts/hysteria2/hysteria2
-            out/artifacts/hysteria2/hysteria2.version
-            out/artifacts/hysteria2/hysteria2.commit
-            out/artifacts/hysteria2/hysteria2.dynamic.txt
-          retention-days: 1
-
-
   build_byedpi:
     name: build byedpi ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -2469,432 +2357,6 @@ jobs:
             out/artifacts/opera-proxy/opera-proxy.version
             out/artifacts/opera-proxy/opera-proxy.commit
             out/artifacts/opera-proxy/opera-proxy.dynamic.txt
-          retention-days: 1
-
-  build_dpitunnel:
-    name: build DPITunnel ${{ matrix.abi }}
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            module_arch: arm64-v8a
-            artifact_suffix: arm64
-            rust_target: aarch64-linux-android
-            clang_prefix: aarch64-linux-android
-            clang_target_api21: aarch64-linux-android21
-            goarch: arm64
-            goarm: "7"
-            cgo_enabled: "0"
-            android_abi: arm64-v8a
-            openssl_target: android-arm64
-            tor_host: aarch64-linux-android
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Cache Android NDK
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
-          key: ndk-${{ env.NDK_VERSION }}
-      - name: Install Android NDK and build tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            ca-certificates \
-            cmake \
-            curl \
-            file \
-            git \
-            make \
-            ninja-build \
-            perl
-
-          NDK_VERSION="27.2.12479018"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager "ndk;$NDK_VERSION"
-          fi
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-          {
-            echo "NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_HOME=$NDK_ROOT"
-            echo "PATH=$NDK_BIN:$PATH"
-            echo "DPITUNNEL_TARGET=${{ matrix.tor_host }}"
-            echo "DPITUNNEL_CC=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang"
-            echo "DPITUNNEL_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang++"
-            echo "DPITUNNEL_STRIP=$NDK_BIN/llvm-strip"
-          } >> "$GITHUB_ENV"
-
-      - name: Build DPITunnel-cli from official source
-        run: |
-          set -euo pipefail
-
-          test -x "$DPITUNNEL_CC" || { echo "::error::Android C compiler not found: $DPITUNNEL_CC"; exit 1; }
-          test -x "$DPITUNNEL_CXX" || { echo "::error::Android C++ compiler not found: $DPITUNNEL_CXX"; exit 1; }
-          "$DPITUNNEL_CXX" --version | head -1
-
-          WORK="$PWD/out/build/dpitunnel-android"
-          SRC="$WORK/src"
-          BUILD_DIR="$WORK/build"
-          DEPS_DIR="$WORK/deps"
-          ARTIFACT_DIR="$PWD/out/artifacts/dpitunnel"
-          mkdir -p "$SRC" "$BUILD_DIR" "$DEPS_DIR" "$ARTIFACT_DIR"
-
-          echo "=== Fetch OpenSSL source ==="
-          git clone --depth 1 --branch "$DPITUNNEL_OPENSSL_REF" https://github.com/openssl/openssl "$SRC/openssl"
-
-          echo "=== Build OpenSSL for Android arm64 ==="
-          pushd "$SRC/openssl" > /dev/null
-          ./Configure ${{ matrix.openssl_target }} \
-            no-shared \
-            no-tests \
-            no-apps \
-            --prefix="$DEPS_DIR" \
-            --openssldir="$DEPS_DIR/ssl" \
-            -D__ANDROID_API__=$DPITUNNEL_ANDROID_API_LEVEL
-          make -j"$(nproc)"
-          make install_sw
-          popd > /dev/null
-
-          echo "=== Fetch official DPITunnel-cli source ==="
-          git clone --depth 1 --branch "$DPITUNNEL_REF" https://github.com/nomoresat/DPITunnel-cli "$SRC/DPITunnel-cli"
-          DPITUNNEL_COMMIT="$(git -C "$SRC/DPITunnel-cli" rev-parse HEAD)"
-          printf '%s\n' "$DPITUNNEL_COMMIT" | tee "$ARTIFACT_DIR/dpitunnel-cli.commit"
-
-          echo "=== Patch DPITunnel bundled libnl for Android pkt_sched headers ==="
-          LIBNL_TYPES="$SRC/DPITunnel-cli/libnl/include/netlink-private/types.h"
-          if [[ -f "$LIBNL_TYPES" ]] && ! grep -q 'ZDT_ANDROID_CBQ_COMPAT' "$LIBNL_TYPES"; then
-            python3 - "$LIBNL_TYPES" <<'PY_DPI_LIBNL'
-          from pathlib import Path
-          import sys
-          path = Path(sys.argv[1])
-          text = path.read_text()
-          compat = '\n#ifdef __ANDROID__\n#ifndef ZDT_ANDROID_CBQ_COMPAT\n#define ZDT_ANDROID_CBQ_COMPAT 1\nstruct tc_cbq_lssopt { unsigned char zdt_dummy; };\nstruct tc_cbq_wrropt { unsigned char zdt_dummy; };\nstruct tc_cbq_ovl { unsigned char zdt_dummy; };\nstruct tc_cbq_fopt { unsigned char zdt_dummy; };\nstruct tc_cbq_police { unsigned char zdt_dummy; };\n#endif\n#endif\n'
-          insert_after = '#include <linux/pkt_sched.h>'
-          if insert_after in text:
-              text = text.replace(insert_after, insert_after + compat, 1)
-          else:
-              text = compat + text
-          path.write_text(text)
-          PY_DPI_LIBNL
-          fi
-          LIBNL_INET6="$SRC/DPITunnel-cli/libnl/lib/route/link/inet6.c"
-          if [[ -f "$LIBNL_INET6" ]] && grep -q '__ICMP6_MIB_MAX == 6' "$LIBNL_INET6"; then
-            python3 - "$LIBNL_INET6" <<'PY_DPI_INET6'
-          from pathlib import Path
-          import sys
-          path = Path(sys.argv[1])
-          text = path.read_text()
-          text = text.replace('_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);', '#ifndef __ANDROID__\n\t\t_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);\n#endif')
-          path.write_text(text)
-          PY_DPI_INET6
-          fi
-          for LIBNL_ANDROID_QDISC_SRC in             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/cbq.c"             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/dsmark.c"; do
-            if [[ -f "$LIBNL_ANDROID_QDISC_SRC" ]]; then
-              cat > "$LIBNL_ANDROID_QDISC_SRC" <<'EOF_DPI_QDISC_STUB'
-          /*
-           * Android NDK headers do not expose the legacy CBQ/DSMARK qdisc
-           * constants used by these optional libnl modules. DPITunnel-cli does
-           * not use these qdisc helpers, so keep the bundled libnl buildable by
-           * compiling them as empty translation units for Android builds.
-           */
-          EOF_DPI_QDISC_STUB
-            fi
-          done
-
-          echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
-          cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=${{ matrix.android_abi }} \
-            -DANDROID_PLATFORM=android-$DPITUNNEL_ANDROID_API_LEVEL \
-            -DANDROID_STL=c++_static \
-            -DCMAKE_CXX_STANDARD=14 \
-            -DOPENSSL_ROOT_DIR="$DEPS_DIR" \
-            -DOPENSSL_INCLUDE_DIR="$DEPS_DIR/include" \
-            -DOPENSSL_SSL_LIBRARY="$DEPS_DIR/lib/libssl.a" \
-            -DOPENSSL_CRYPTO_LIBRARY="$DEPS_DIR/lib/libcrypto.a" \
-            -DOPENSSL_USE_STATIC_LIBS=TRUE \
-            -DSTATIC_BINARY=FALSE
-          cmake --build "$BUILD_DIR" --target DPITunnel-cli-exec --parallel "$(nproc)"
-
-          test -s "$BUILD_DIR/DPITunnel-cli-exec" || { echo "::error::DPITunnel-cli output binary not found"; find "$BUILD_DIR" -maxdepth 3 -type f | sort; exit 1; }
-          cp -f "$BUILD_DIR/DPITunnel-cli-exec" "$ARTIFACT_DIR/dpitunnel-cli"
-          "$DPITUNNEL_STRIP" --strip-unneeded "$ARTIFACT_DIR/dpitunnel-cli" || true
-          chmod 755 "$ARTIFACT_DIR/dpitunnel-cli"
-
-          cat > "$ARTIFACT_DIR/dpitunnel-cli.version" <<EOF_DPITUNNEL_VERSION
-          source=https://github.com/nomoresat/DPITunnel-cli
-          ref=$DPITUNNEL_REF
-          commit=$DPITUNNEL_COMMIT
-          upstream_binary=DPITunnel-cli-exec
-          packaged_binary=dpitunnel-cli
-          target=android-arm64
-          android_api=$DPITUNNEL_ANDROID_API_LEVEL
-          openssl_ref=$DPITUNNEL_OPENSSL_REF
-          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF_DPITUNNEL_VERSION
-
-          echo "=== Verify DPITunnel-cli artifact ==="
-          file "$ARTIFACT_DIR/dpitunnel-cli"
-          readelf -h "$ARTIFACT_DIR/dpitunnel-cli" | grep -E 'Class:|Machine:'
-          readelf -d "$ARTIFACT_DIR/dpitunnel-cli" | tee "$ARTIFACT_DIR/dpitunnel-cli.dynamic.txt" || true
-          "$ARTIFACT_DIR/dpitunnel-cli" --help | head -80 || true
-          ls -lh "$ARTIFACT_DIR"
-          cat "$ARTIFACT_DIR/dpitunnel-cli.version"
-
-      - name: Upload DPITunnel binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: dpitunnel-${{ matrix.artifact_suffix }}
-          path: |
-            out/artifacts/dpitunnel/dpitunnel-cli
-            out/artifacts/dpitunnel/dpitunnel-cli.version
-            out/artifacts/dpitunnel/dpitunnel-cli.commit
-            out/artifacts/dpitunnel/dpitunnel-cli.dynamic.txt
-          retention-days: 1
-
-  build_nfqws:
-    name: build nfqws ${{ matrix.abi }}
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            module_arch: arm64-v8a
-            artifact_suffix: arm64
-            rust_target: aarch64-linux-android
-            clang_prefix: aarch64-linux-android
-            clang_target_api21: aarch64-linux-android21
-            goarch: arm64
-            goarm: "7"
-            cgo_enabled: "0"
-            android_abi: arm64-v8a
-            openssl_target: android-arm64
-            tor_host: aarch64-linux-android
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Cache Android NDK
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
-          key: ndk-${{ env.NDK_VERSION }}
-      - name: Install Android NDK and build tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            autoconf \
-            automake \
-            bzip2 \
-            curl \
-            file \
-            libtool \
-            make \
-            pkg-config \
-            python3 \
-            xz-utils \
-            zlib1g-dev \
-            gcc-multilib \
-            g++-multilib
-
-          NDK_VERSION="27.2.12479018"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager "ndk;$NDK_VERSION"
-          fi
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-          {
-            echo "NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_HOME=$NDK_ROOT"
-            echo "PATH=$NDK_BIN:$PATH"
-            echo "NFQWS_ANDROID_API=21"
-            echo "NFQWS_TARGET=${{ matrix.tor_host }}"
-            echo "NFQWS_CC=$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
-            echo "NFQWS_AR=$NDK_BIN/llvm-ar"
-            echo "NFQWS_RANLIB=$NDK_BIN/llvm-ranlib"
-            echo "NFQWS_STRIP=$NDK_BIN/llvm-strip"
-          } >> "$GITHUB_ENV"
-
-      - name: Build nfqws from latest zapret release tag
-        run: |
-          set -euo pipefail
-
-          for tool in "$NFQWS_CC" "$NFQWS_AR" "$NFQWS_RANLIB" "$NFQWS_STRIP"; do
-            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
-          done
-
-          WORK="$PWD/out/build/nfqws-android"
-          SRC="$WORK/src"
-          BUILD="$WORK/build"
-          DEPS_DIR="$WORK/deps"
-          ARTIFACT_DIR="$PWD/out/artifacts/nfqws"
-          mkdir -p "$SRC" "$BUILD" "$DEPS_DIR" "$ARTIFACT_DIR"
-
-          export CC="$NFQWS_CC"
-          export AR="$NFQWS_AR"
-          export RANLIB="$NFQWS_RANLIB"
-          export STRIP="$NFQWS_STRIP"
-          export PKG_CONFIG_PATH="$DEPS_DIR/lib/pkgconfig"
-
-          download() {
-            local url="$1"
-            local out="$2"
-            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
-            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
-          }
-
-          echo "=== Resolve latest zapret release tag ==="
-          ZAPRET_REF="$(git ls-remote --tags --refs https://github.com/bol-van/zapret.git 'v*' \
-            | awk -F/ '{print $NF}' \
-            | sort -V \
-            | tail -1)"
-          if [[ -z "$ZAPRET_REF" ]]; then
-            echo "::error::Unable to resolve latest zapret tag"
-            exit 1
-          fi
-          echo "ZAPRET_REF=$ZAPRET_REF"
-
-          echo "=== Fetch zapret $ZAPRET_REF ==="
-          git clone --depth 1 --branch "$ZAPRET_REF" https://github.com/bol-van/zapret.git "$SRC/zapret"
-          ZAPRET_COMMIT="$(git -C "$SRC/zapret" rev-parse HEAD)"
-          echo "$ZAPRET_REF" | tee "$ARTIFACT_DIR/zapret.ref"
-          echo "$ZAPRET_COMMIT" | tee "$ARTIFACT_DIR/zapret.commit"
-
-          echo "=== Download netfilter/zlib dependencies ==="
-          download "https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2" "$SRC/libnfnetlink.tar.bz2"
-          download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
-          download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
-
-          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
-          test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
-          download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
-
-          tar -xjf "$SRC/libnfnetlink.tar.bz2" -C "$BUILD"
-          tar -xjf "$SRC/libmnl.tar.bz2" -C "$BUILD"
-          tar -xjf "$SRC/libnetfilter_queue.tar.bz2" -C "$BUILD"
-          tar -xzf "$SRC/zlib.tar.gz" -C "$BUILD"
-
-          echo "=== Patch libnetfilter_queue for Android ==="
-          patch -p1 -d "$BUILD"/libnetfilter_queue-* -i "$SRC/zapret/.github/workflows/libnetfilter_queue-android.patch"
-
-          echo "=== Build netfilter dependencies ==="
-          for lib in libmnl libnfnetlink libnetfilter_queue; do
-            libdir="$(find "$BUILD" -maxdepth 1 -type d -name "${lib}-*" | head -1)"
-            test -d "$libdir" || { echo "::error::Source directory not found for $lib"; exit 1; }
-            pushd "$libdir" > /dev/null
-            CFLAGS="-Os -flto=auto -Wno-implicit-function-declaration" \
-              ./configure \
-                --prefix= \
-                --host="$NFQWS_TARGET" \
-                --enable-static \
-                --disable-shared \
-                --disable-dependency-tracking
-            make -j"$(nproc)"
-            make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
-            popd > /dev/null
-            sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" "$DEPS_DIR/lib/pkgconfig/$lib.pc"
-          done
-
-          echo "=== Build zlib $ZLIB_REF ==="
-          zlibdir="$(find "$BUILD" -maxdepth 1 -type d -name 'zlib-*' | head -1)"
-          test -d "$zlibdir" || { echo "::error::zlib source directory not found"; exit 1; }
-          pushd "$zlibdir" > /dev/null
-          CFLAGS="-Os -flto=auto" ./configure --prefix= --static
-          make -j"$(nproc)"
-          make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
-          popd > /dev/null
-
-          echo "=== Build nfqws from zapret $ZAPRET_REF ==="
-          NFQWS_VERSION_CFLAGS="-DZAPRET_GH_VER=\\\"$ZAPRET_REF\\\" -DZAPRET_GH_HASH=\\\"$ZAPRET_COMMIT\\\""
-          CFLAGS="-Os -flto=auto -I$DEPS_DIR/include $NFQWS_VERSION_CFLAGS" \
-          LDFLAGS="-L$DEPS_DIR/lib -Wl,-z,max-page-size=16384" \
-            make -C "$SRC/zapret/nfq" android -j"$(nproc)"
-
-          cp -f "$SRC/zapret/nfq/nfqws" "$ARTIFACT_DIR/nfqws"
-          chmod 755 "$ARTIFACT_DIR/nfqws"
-
-          echo "=== Clean and verify nfqws ELF ==="
-          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
-          if [[ -n "$CLEANER_TAG" ]]; then
-            download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
-            chmod +x "$WORK/termux-elf-cleaner"
-            "$WORK/termux-elf-cleaner" --api-level "$NFQWS_ANDROID_API" "$ARTIFACT_DIR/nfqws"
-          fi
-          "$NFQWS_STRIP" --strip-unneeded "$ARTIFACT_DIR/nfqws" || true
-
-          cat > "$ARTIFACT_DIR/nfqws.version" <<EOF_NFQWS_VERSION
-          source=https://github.com/bol-van/zapret
-          zapret_ref=$ZAPRET_REF
-          zapret_commit=$ZAPRET_COMMIT
-          binary=nfqws
-          target=android-arm64
-          android_api=$NFQWS_ANDROID_API
-          zlib_ref=$ZLIB_REF
-          libmnl_version=1.0.5
-          libnfnetlink_version=1.0.2
-          libnetfilter_queue_version=1.0.5
-          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF_NFQWS_VERSION
-
-          file "$ARTIFACT_DIR/nfqws"
-          readelf -h "$ARTIFACT_DIR/nfqws" | grep -E 'Class:|Machine:'
-          readelf -d "$ARTIFACT_DIR/nfqws" | tee "$ARTIFACT_DIR/nfqws.dynamic.txt" || true
-          ls -lh "$ARTIFACT_DIR"
-          cat "$ARTIFACT_DIR/nfqws.version"
-
-      - name: Upload nfqws binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: nfqws-${{ matrix.artifact_suffix }}
-          path: |
-            out/artifacts/nfqws/nfqws
-            out/artifacts/nfqws/nfqws.version
-            out/artifacts/nfqws/zapret.ref
-            out/artifacts/nfqws/zapret.commit
-            out/artifacts/nfqws/nfqws.dynamic.txt
           retention-days: 1
 
   build_nfqws2:
@@ -3552,7 +3014,7 @@ jobs:
           retention-days: 1
 
   module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + Tor + lyrebird + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -3561,15 +3023,12 @@ jobs:
       - build_tun2socks
       - build_mihomo
       - build_singbox
-      - build_hysteria2
       - build_byedpi
       - build_dnscrypt
       - build_mieru
       - build_operaproxy
-      - build_dpitunnel
       - build_torproxy
       - build_lyrebird
-      - build_nfqws
       - build_nfqws2
     if: >-
       needs.build_openvpn.result == 'success' &&
@@ -3578,15 +3037,12 @@ jobs:
       needs.build_tun2socks.result == 'success' &&
       needs.build_mihomo.result == 'success' &&
       needs.build_singbox.result == 'success' &&
-      needs.build_hysteria2.result == 'success' &&
       needs.build_byedpi.result == 'success' &&
       needs.build_dnscrypt.result == 'success' &&
       needs.build_mieru.result == 'success' &&
       needs.build_operaproxy.result == 'success' &&
-      needs.build_dpitunnel.result == 'success' &&
       needs.build_torproxy.result == 'success' &&
       needs.build_lyrebird.result == 'success' &&
-      needs.build_nfqws.result == 'success' &&
       needs.build_nfqws2.result == 'success'
 
     steps:
@@ -3817,11 +3273,6 @@ jobs:
         with:
           name: sing-box-arm64
           path: out/artifacts/sing-box/arm64
-      - name: Download hysteria2 arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: hysteria2-arm64
-          path: out/artifacts/hysteria2/arm64
       - name: Download byedpi arm64
         uses: actions/download-artifact@v8
         with:
@@ -3842,11 +3293,6 @@ jobs:
         with:
           name: opera-proxy-arm64
           path: out/artifacts/opera-proxy/arm64
-      - name: Download dpitunnel arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: dpitunnel-arm64
-          path: out/artifacts/dpitunnel/arm64
       - name: Download torproxy arm64
         uses: actions/download-artifact@v8
         with:
@@ -3857,11 +3303,6 @@ jobs:
         with:
           name: lyrebird-arm64
           path: out/artifacts/lyrebird/arm64
-      - name: Download nfqws arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: nfqws-arm64
-          path: out/artifacts/nfqws/arm64
       - name: Download nfqws2 arm64
         uses: actions/download-artifact@v8
         with:
@@ -3874,7 +3315,7 @@ jobs:
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
+          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box byedpi dnscrypt mieru opera-proxy torproxy lyrebird nfqws2"
 
           require_file() {
             local path="$1"
@@ -3895,15 +3336,12 @@ jobs:
               tun2socks) echo "out/artifacts/tun2socks/$arch/tun2socks" ;;
               mihomo) echo "out/artifacts/mihomo/$arch/mihomo" ;;
               sing-box) echo "out/artifacts/sing-box/$arch/sing-box" ;;
-              hysteria2) echo "out/artifacts/hysteria2/$arch/hysteria2" ;;
               byedpi) echo "out/artifacts/byedpi/$arch/byedpi" ;;
               dnscrypt) echo "out/artifacts/dnscrypt/$arch/dnscrypt" ;;
               mieru) echo "out/artifacts/mieru/$arch/mieru" ;;
               opera-proxy) echo "out/artifacts/opera-proxy/$arch/opera-proxy" ;;
-              dpitunnel-cli) echo "out/artifacts/dpitunnel/$arch/dpitunnel-cli" ;;
               torproxy) echo "out/artifacts/torproxy/$arch/torproxy" ;;
               lyrebird) echo "out/artifacts/lyrebird/$arch/lyrebird" ;;
-              nfqws) echo "out/artifacts/nfqws/$arch/nfqws" ;;
               nfqws2) echo "out/artifacts/nfqws2/$arch/nfqws2" ;;
               *) echo "::error::Unknown binary: $bin"; exit 1 ;;
             esac

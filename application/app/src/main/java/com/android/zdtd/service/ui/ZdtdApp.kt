@@ -1098,12 +1098,12 @@ private fun MainShell(
   val internalOnOpenConstructionStudio: () -> Unit = { appsRoute = AppsRoute.ConstructionStudio }
   val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
   val internalOnOpenProgram: (String) -> Unit = { appsRoute = AppsRoute.Program(it) }
-  // Remember the most recent nfqws/nfqws2 profile so blockcheck applies to the
+  // Remember the most recent nfqws2 profile so blockcheck applies to the
   // same profile the user was configuring, instead of a hard-coded default.
-  var lastStrategyProfile by rememberSaveable { mutableStateOf("nfqws" to "default") }
+  var lastStrategyProfile by rememberSaveable { mutableStateOf("nfqws2" to "default") }
   LaunchedEffect(appsRoute) {
     val r = appsRoute
-    if (r is AppsRoute.Profile && (r.programId == "nfqws" || r.programId == "nfqws2")) {
+    if (r is AppsRoute.Profile && r.programId == "nfqws2") {
       lastStrategyProfile = r.programId to r.profile
     }
   }
@@ -2848,12 +2848,9 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
     programId in setOf("operaproxy", "dnscrypt", "tor", "tgwsproxy")
   } else {
     programId in setOf(
-      "nfqws",
       "nfqws2",
       "byedpi",
-      "dpitunnel",
       "sing-box",
-      "hysteria2",
       "wireproxy",
       "myproxy",
       "myprogram",

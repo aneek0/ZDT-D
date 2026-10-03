@@ -90,7 +90,7 @@ pub fn enabled_app_list_empty(path: &Path) -> bool {
         .unwrap_or(true)
 }
 
-// from programs/dpitunnel.rs
+// shared default
 pub fn default_iface() -> String {
     "auto".to_string()
 }
@@ -279,17 +279,15 @@ pub const NETID_SINGBOX: (u32, u32) = (22200, 22999);
 pub const NETID_MYVPN: (u32, u32) = (23200, 23999);
 pub const NETID_MIHOMO: (u32, u32) = (24200, 24999);
 pub const NETID_MIERU: (u32, u32) = (25200, 25999);
-pub const NETID_HYSTERIA2: (u32, u32) = (26200, 26999);
 pub const NETID_AMNEZIAWG: (u32, u32) = (27200, 27999);
 
-pub const NETID_BLOCKS: [(&str, (u32, u32)); 8] = [
+pub const NETID_BLOCKS: [(&str, (u32, u32)); 7] = [
     ("openvpn", NETID_OPENVPN),
     ("tun2socks", NETID_TUN2SOCKS),
     ("singbox", NETID_SINGBOX),
     ("myvpn", NETID_MYVPN),
     ("mihomo", NETID_MIHOMO),
     ("mieru", NETID_MIERU),
-    ("hysteria2", NETID_HYSTERIA2),
     ("amneziawg", NETID_AMNEZIAWG),
 ];
 
@@ -441,7 +439,7 @@ use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 
 use crate::iptables::{
-    iptables_port::{self, DpiTunnelOptions, ProtoChoice},
+    iptables_port::{self, IptablesDpiOptions, ProtoChoice},
     iptables_tproxy,
 };
 use crate::settings;
@@ -602,7 +600,7 @@ pub fn apply_t2s_routing(
     dest_port: u16,
     proto_choice: ProtoChoice,
     ifaces_raw: Option<&str>,
-    opt: DpiTunnelOptions,
+    opt: IptablesDpiOptions,
 ) -> Result<()> {
     // Legacy entrypoint: the TPROXY path always covers TCP+UDP regardless of the
     // requested `proto_choice` (kept for back-compat and logging). All existing
@@ -628,7 +626,7 @@ pub fn apply_t2s_routing_ext(
     tproxy_proto_choice: ProtoChoice,
     requested_proto: ProtoChoice,
     ifaces_raw: Option<&str>,
-    opt: DpiTunnelOptions,
+    opt: IptablesDpiOptions,
 ) -> Result<()> {
     let dnat_fallback_proto_choice = ProtoChoice::Tcp;
 

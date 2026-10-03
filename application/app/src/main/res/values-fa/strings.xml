@@ -249,7 +249,7 @@
     <string name="setup_features_body">• دور زدن مسدودسازی و محدودیت سرعت\n• رابط گرافیکی مناسب برای پیکربندی</string>
     <string name="setup_notes_title">نکات مهم</string>
     <string name="setup_notes_body">• حریم خصوصی و امنیت: ماژول داده‌های شخصی را جمع‌آوری نمی‌کند و به عملکرد دستگاه آسیب نمی‌زند.\n• آزادی و متن‌باز بودن: کاملاً رایگان است و رایگان خواهد ماند.</string>
-    <string name="setup_arch_unsupported_fmt">معماری پشتیبانی نمی‌شود. ZDT-D از arm64-v8a و armeabi-v7a پشتیبانی می‌کند. دستگاه فعلی: %1$s.</string>
+    <string name="setup_arch_unsupported_fmt">معماری پشتیبانی نمی‌شود. ZDT-D از arm64-v8a پشتیبانی می‌کند. دستگاه فعلی: %1$s.</string>
     <string name="setup_root_title">دسترسی روت لازم است</string>
     <string name="setup_root_body">ZDT-D یک ماژول روت (Magisk / KernelSU / APatch) برای دور زدن مسدودسازی DPI و محدودیت‌های ترافیک است. روت لازم است زیرا ماژول اسکریپت‌های سیستمی و اجزای شبکه را در سطح سیستم‌عامل اجرا می‌کند؛ کاری که برنامه‌های عادی نمی‌توانند انجام دهند.\n\nروت همچنین برای نصب/به‌روزرسانی ماژول، کنترل daemon و خواندن فایل‌های ماژول (توکن و گزارش‌ها) استفاده می‌شود. درخواست‌های روت همیشه از طریق مدیر روت شما تأیید می‌شوند و مجوزها را می‌توان هر زمان لغو کرد.</string>
     <string name="setup_root_waiting">در انتظار پاسخ مدیر روت…</string>
@@ -505,10 +505,8 @@ APatch: 10700+</string>
     <string name="apps_list_chip_enabled_count">%1$d فعال</string>
     <string name="apps_list_desc_dnscrypt">حل‌کننده DNS رمزگذاری‌شده DNSCrypt</string>
     <string name="apps_list_desc_operaproxy">زنجیره Opera Proxy با ByeDPI و t2s</string>
-    <string name="apps_list_desc_nfqws">دور زدن DPI با Zapret NFQUEUE</string>
     <string name="apps_list_desc_nfqws2">دور زدن DPI با Zapret 2 NFQUEUE</string>
     <string name="apps_list_desc_byedpi">پروکسی TCP محلی ByeDPI</string>
-    <string name="apps_list_desc_dpitunnel">تونل TCP/UDP ‏DPITunnel</string>
     <string name="apps_list_desc_singbox">ابزار مسیریابی آزمایشی sing-box</string>
     <string name="apps_list_desc_default">پیکربندی و مدیریت این ابزار</string>
 
@@ -559,7 +557,6 @@ APatch: 10700+</string>
     <string name="program_updates_service_running_desc">پیش از بررسی/به‌روزرسانی سرویس را متوقف کنید. این کار لازم است تا قوانین و فرایندها هنگام جایگزینی از فایل‌ها استفاده نکنند.</string>
     <string name="program_updates_stopping">در حال توقف…</string>
     <string name="program_updates_stop_and_check">توقف و بررسی</string>
-    <string name="program_updates_pick_zapret_title">نسخه‌های Zapret</string>
     <string name="program_updates_pick_zapret2_title">نسخه‌های Zapret 2</string>
     <string name="program_updates_pick_mihomo_title">نسخه‌های Mihomo</string>
     <string name="program_updates_pick_mieru_title">نسخه‌های Mieru</string>
@@ -657,7 +654,6 @@ APatch: 10700+</string>
     <string name="opera_ports_title">پورت‌ها</string>
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
-    <string name="program_updates_zapret_title">Zapret ‏(nfqws)</string>
     <string name="program_updates_zapret2_title">Zapret 2 ‏(nfqws2 + lua)</string>
     <string name="program_updates_mihomo_title">Mihomo</string>
     <string name="program_updates_mieru_title">Mieru</string>
@@ -938,9 +934,7 @@ APatch: 10700+</string>
     <string name="apps_conflict_slot_mobile">داده همراه</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
     <string name="apps_conflict_program_byedpi">ByeDPI</string>
-    <string name="apps_conflict_program_zapret">Zapret</string>
     <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">برنامه‌ها از قبل استفاده می‌شوند</string>
     <string name="settings_proxyinfo_conflict_body">این برنامه‌ها از قبل در قوانین ابزار استفاده می‌شوند. از آن ابزارها حذف و به حفاظت اسکن پورت افزوده شوند؟</string>
@@ -2018,73 +2012,6 @@ APatch: 10700+</string>
     <string name="tgws_copy_command">کپی فرمان</string>
     <string name="tgws_command_copied">فرمان کپی شد</string>
 
-    <!-- Hysteria2 profile UI -->
-    <string name="hysteria2_t2s_panel_desc">پنل وضعیت بومی t2s</string>
-    <string name="hysteria2_panel">پنل</string>
-    <string name="hysteria2_fill_t2s_port">پورت T2S را وارد کنید</string>
-    <string name="hysteria2_fill_t2s_web_port">پورت وب T2S را وارد کنید</string>
-    <string name="hysteria2_profile_ports_must_differ">پورت‌های پروفایل باید متفاوت باشند</string>
-    <string name="hysteria2_enter_tun_interface">رابط TUN را وارد کنید</string>
-    <string name="hysteria2_enter_dns">DNS را وارد کنید</string>
-    <string name="hysteria2_vpn_requires_one_enabled_server">حالت VPN در Hysteria2 دقیقاً به یک سرور فعال نیاز دارد</string>
-    <string name="hysteria2_t2s_port_busy_fmt">پورت T2S از قبل استفاده می‌شود: %1$s</string>
-    <string name="hysteria2_t2s_web_port_busy_fmt">پورت وب T2S از قبل استفاده می‌شود: %1$s</string>
-    <string name="hysteria2_autosave_failed">ذخیره خودکار Hysteria2 ناموفق بود</string>
-    <string name="hysteria2_server_created_fmt">سرور Hysteria2 ایجاد شد: %1$s</string>
-    <string name="hysteria2_json_saved_settings_failed">JSON ذخیره شد، اما تنظیمات سرور به‌روزرسانی نشد</string>
-    <string name="hysteria2_json_title_fmt">JSON مربوط به Hysteria2: %1$s</string>
-    <string name="hysteria2_client_config_json">JSON پیکربندی کلاینت</string>
-    <string name="hysteria2_parse_error">خطای تجزیه</string>
-    <string name="hysteria2_invalid_json_fmt">JSON نامعتبر: %1$s</string>
-    <string name="hysteria2_apps_title">برنامه‌های Hysteria2</string>
-    <string name="hysteria2_vpn_only_one_server_allowed">در حالت VPN در Hysteria2 فقط یک سرور فعال مجاز است</string>
-    <string name="hysteria2_t2s_settings_title">تنظیمات T2S در Hysteria2</string>
-    <string name="hysteria2_t2s_settings_desc">پورت‌های محلی t2s/web برای پروفایل Hysteria2</string>
-    <string name="hysteria2_t2s_port_label">پورت T2S</string>
-    <string name="hysteria2_t2s_web_port_label">پورت وب T2S</string>
-    <string name="hysteria2_apply_after_restart">پس از توقف/شروع سرویس اعمال می‌شود</string>
-    <string name="hysteria2_route_mode_title">حالت مسیریابی</string>
-    <string name="hysteria2_route_mode_desc">backend در Hysteria2 همیشه SOCKS5 است؛ حالت t2s را در پایین انتخاب کنید</string>
-    <string name="hysteria2_mode_title">حالت Hysteria2</string>
-    <string name="hysteria2_mode_desc">T2S برای چند سرور یا VPN/tun2proxy برای یک سرور</string>
-    <string name="hysteria2_mode_t2s_desc">چند سرور Hysteria2 از طریق backend نوع SOCKS5</string>
-    <string name="hysteria2_mode_vpn_desc">یک سرور Hysteria2 از طریق tun2socks</string>
-    <string name="hysteria2_vpn_structure_invalid_title">ساختار VPN در Hysteria2 نامعتبر است</string>
-    <string name="hysteria2_vpn_structure_invalid_desc">برای VPN/tun2proxy دقیقاً یک سرور باقی بگذارید یا به T2S تغییر دهید.</string>
-    <string name="hysteria2_switch_to_t2s">تغییر به T2S</string>
-    <string name="hysteria2_vpn_profile_title">Hysteria2 VPN / tun2proxy</string>
-    <string name="hysteria2_vpn_profile_desc">تنظیمات TUN، DNS و سطح گزارش برای tun2socks</string>
-    <string name="hysteria2_tun_example">برای مثال hytun0</string>
-    <string name="hysteria2_dns_supporting">DNS نوع IPv4، هر خط یک مورد</string>
-    <string name="hysteria2_auto_save_restart_hint">به‌صورت خودکار ذخیره می‌شود و پس از توقف/شروع اعمال می‌گردد</string>
-    <string name="hysteria2_servers_title">سرورهای Hysteria2</string>
-    <string name="hysteria2_servers_vpn_desc">VPN: دقیقاً یک سرور باید فعال باشد</string>
-    <string name="hysteria2_servers_t2s_desc">T2S: می‌توانید چند سرور اضافه کنید</string>
-    <string name="hysteria2_add_server">افزودن سرور</string>
-    <string name="hysteria2_no_servers">هنوز هیچ سروری وجود ندارد</string>
-    <string name="hysteria2_socks5_port_busy_fmt">پورت SOCKS5 از قبل استفاده می‌شود: %1$s</string>
-    <string name="hysteria2_delete_server_title">حذف سرور Hysteria2</string>
-    <string name="hysteria2_delete_server_message_fmt">سرور Hysteria2 با مشخصات %1$s / %2$s حذف شود؟</string>
-    <string name="hysteria2_socks5_autosave_hint">پورت SOCKS5 به‌صورت خودکار ذخیره می‌شود</string>
-    <string name="hysteria2_socks5_backend_port">پورت backend نوع SOCKS5</string>
-    <string name="hysteria2_port_busy_fmt">پورت مشغول است: %1$s</string>
-    <string name="hysteria2_new_server_title">سرور جدید Hysteria2</string>
-    <string name="hysteria2_server_name_rules">نام سرور: حروف لاتین، رقم، _ و -</string>
-    <string name="hysteria2_server_name_label">نام سرور</string>
-    <string name="hysteria2_server_exists">سرور Hysteria2 از قبل وجود دارد</string>
-    <string name="hysteria2_server_ui_title">رابط کاربری سرور Hysteria2</string>
-    <string name="hysteria2_enabled">فعال</string>
-    <string name="hysteria2_server_field_label">سرور، برای مثال example.com:443</string>
-    <string name="hysteria2_local_socks5_port">پورت محلی SOCKS5</string>
-    <string name="hysteria2_obfs_type_label">نوع obfs، برای مثال salamander</string>
-    <string name="hysteria2_bandwidth_up_label">پهنای باند آپلود، برای مثال 20 mbps</string>
-    <string name="hysteria2_bandwidth_down_label">پهنای باند دانلود، برای مثال 100 mbps</string>
-    <string name="hysteria2_congestion_type_label">congestion.type: ‏bbr یا reno</string>
-    <string name="hysteria2_socks5_username_optional">نام کاربری SOCKS5 اختیاری</string>
-    <string name="hysteria2_socks5_password_optional">گذرواژه SOCKS5 اختیاری</string>
-    <string name="hysteria2_server_required">سرور الزامی است</string>
-    <string name="hysteria2_invalid_socks5_port">پورت SOCKS5 نامعتبر است</string>
-
 <!-- VPS server manager -->
     <string name="vps_servers_title">سرورهای VPS</string>
     <string name="vps_servers_entry_desc">از طریق SSH متصل شوید، سرورها را پایش کنید، سرویس‌ها را نصب کنید و پیکربندی کلاینت بسازید.</string>
@@ -2122,8 +2049,6 @@ APatch: 10700+</string>
     <string name="vps_service_openvpn_desc">چند پروفایل سرور TCP یا UDP با گواهی‌های جداگانه و قابل لغو برای کلاینت‌ها.</string>
     <string name="vps_service_xray">Xray</string>
     <string name="vps_service_xray_desc">پروفایل‌های VLESS Reality TCP و VLESS WebSocket TLS با UUIDهای جداگانه.</string>
-    <string name="vps_service_hysteria2">Hysteria2</string>
-    <string name="vps_service_hysteria2_desc">پروفایل‌های UDP با TLS خودکار و اطلاعات ورود جداگانه کاربران.</string>
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">پروفایل‌های سرور WireGuard که پیکربندی کلاینت سازگار با WireProxy تولید می‌کنند.</string>
     <string name="vps_install">نصب</string>
@@ -2143,7 +2068,6 @@ APatch: 10700+</string>
     <string name="vps_domain">دامنه</string>
     <string name="vps_letsencrypt_email">ایمیل Let’s Encrypt</string>
     <string name="vps_automatic_tls_hint">دامنه باید به این VPS اشاره کند. ZDT-D گواهی TLS را به‌طور خودکار درخواست و تمدید می‌کند.</string>
-    <string name="vps_shared_port_hint">Xray از TCP %1$d استفاده می‌کند. Hysteria2 می‌تواند هم‌زمان با امنیت از UDP %1$d استفاده کند.</string>
     <string name="vps_no_profiles">هیچ پروفایلی ساخته نشده است</string>
     <string name="vps_no_profiles_hint">یک پروفایل سرور بسازید و سپس پیکربندی‌های جداگانه کلاینت را اضافه کنید.</string>
     <string name="vps_delete_profile_title">پروفایل حذف شود؟</string>

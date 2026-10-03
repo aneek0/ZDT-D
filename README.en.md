@@ -273,7 +273,6 @@ on top of the merge base) are a smaller, focused set:
   strategy), scans it, and on apply writes the winning strategy as a normal
   preset into the module's `strategicvar/nfqws2/` so the daemon can start it —
   the user's hostlist/ipset selection is then injected by the daemon as usual.
-  `nfqws` v1 has no such catalog and keeps scanning preset files.
 - **Blockcheck UI / appearance.** The fork adds the `BlockcheckScreen` Compose
   screen (start/stop, host-file picker, live strategy list with progress bars
   and `Works` / `Partial` / `Failed` chips), matching the app-wide card/button
@@ -290,7 +289,7 @@ on top of the merge base) are a smaller, focused set:
   `--ipset-exclude`); the daemon strips those args from each `--new` block and
   re-injects the selection, and blockcheck reuses the configured profile's
   hostlists.
-- **Custom nfqws Lua primitives.** Added `fakemultisplit.lua`,
+- **Custom nfqws2 Lua primitives.** Added `fakemultisplit.lua`,
   `fakemultidisorder.lua`, `zapret-multishake.lua` and `custom_funcs.lua` under
   `module_template/strategic/lua/` (upstream ships only `zapret-sni.lua` and
   `zapret-wgobfs.lua` there).

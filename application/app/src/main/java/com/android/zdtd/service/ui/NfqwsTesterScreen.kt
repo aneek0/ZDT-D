@@ -68,7 +68,7 @@ fun NfqwsTesterScreen(
   val shortHeight = rememberIsShortHeight()
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
   val testerState by NfqwsTesterStore.state.collectAsStateWithLifecycle()
-  var selectedProgram by remember { mutableStateOf("nfqws") }
+  var selectedProgram by remember { mutableStateOf("nfqws2") }
   var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
   var selectedWorking by remember { mutableStateOf<String?>(null) }
 
@@ -122,7 +122,6 @@ fun NfqwsTesterScreen(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
           Text(stringResource(R.string.nfqws_tester_choose_program), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
           Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(selected = selectedProgram == "nfqws", onClick = { selectedProgram = "nfqws" }, label = { Text("nfqws") })
             FilterChip(selected = selectedProgram == "nfqws2", onClick = { selectedProgram = "nfqws2" }, label = { Text("nfqws2") })
           }
           AnimatedVisibility(

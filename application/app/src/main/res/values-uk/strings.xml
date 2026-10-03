@@ -249,7 +249,7 @@
     <string name="setup_features_body">• Обхід блокувань і обмежень швидкості\n• Зручний графічний інтерфейс для налаштування</string>
     <string name="setup_notes_title">Важливі примітки</string>
     <string name="setup_notes_body">• Конфіденційність і безпека: модуль не збирає персональні дані й не шкодить роботі пристрою.\n• Свобода й відкритість: повністю безкоштовний і залишатиметься таким.</string>
-    <string name="setup_arch_unsupported_fmt">Непідтримувана архітектура. ZDT-D підтримує arm64-v8a та armeabi-v7a. Поточний пристрій: %1$s.</string>
+    <string name="setup_arch_unsupported_fmt">Непідтримувана архітектура. ZDT-D підтримує arm64-v8a. Поточний пристрій: %1$s.</string>
     <string name="setup_root_title">Потрібен root-доступ</string>
     <string name="setup_root_body">ZDT-D — це root-модуль (Magisk / KernelSU / APatch) для обходу DPI-блокувань і обмежень трафіку. Root потрібен, оскільки модуль запускає системні сценарії та мережеві компоненти на рівні ОС — те, чого звичайні програми робити не можуть.\n\nRoot також використовується для встановлення/оновлення модуля, керування демоном і читання файлів модуля (токена та журналів). Запити root завжди підтверджуються через ваш root-менеджер, а дозволи можна відкликати будь-коли.</string>
     <string name="setup_root_waiting">Очікування відповіді root-менеджера…</string>
@@ -505,10 +505,8 @@ APatch: 10700+</string>
     <string name="apps_list_chip_enabled_count">увімкнено %1$d</string>
     <string name="apps_list_desc_dnscrypt">DNSCrypt — зашифрований DNS-резолвер</string>
     <string name="apps_list_desc_operaproxy">Ланцюжок Opera Proxy з ByeDPI і t2s</string>
-    <string name="apps_list_desc_nfqws">Обхід DPI через Zapret NFQUEUE</string>
     <string name="apps_list_desc_nfqws2">Обхід DPI через Zapret 2 NFQUEUE</string>
     <string name="apps_list_desc_byedpi">Локальний TCP-проксі ByeDPI</string>
-    <string name="apps_list_desc_dpitunnel">TCP/UDP-тунель DPITunnel</string>
     <string name="apps_list_desc_singbox">Експериментальний інструмент маршрутизації sing-box</string>
     <string name="apps_list_desc_default">Налаштувати цей інструмент і керувати ним</string>
 
@@ -559,7 +557,6 @@ APatch: 10700+</string>
     <string name="program_updates_service_running_desc">Зупиніть службу перед перевіркою/оновленням. Це потрібно, щоб правила й процеси не використовували файли під час заміни.</string>
     <string name="program_updates_stopping">Зупинення…</string>
     <string name="program_updates_stop_and_check">Зупинити й перевірити</string>
-    <string name="program_updates_pick_zapret_title">Версії Zapret</string>
     <string name="program_updates_pick_zapret2_title">Версії Zapret 2</string>
     <string name="program_updates_pick_mihomo_title">Версії Mihomo</string>
     <string name="program_updates_pick_mieru_title">Версії Mieru</string>
@@ -657,7 +654,6 @@ APatch: 10700+</string>
     <string name="opera_ports_title">Порти</string>
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
-    <string name="program_updates_zapret_title">Zapret (nfqws)</string>
     <string name="program_updates_zapret2_title">Zapret 2 (nfqws2 + lua)</string>
     <string name="program_updates_mihomo_title">Mihomo</string>
     <string name="program_updates_mieru_title">Mieru</string>
@@ -938,9 +934,7 @@ APatch: 10700+</string>
     <string name="apps_conflict_slot_mobile">Мобільні дані</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
     <string name="apps_conflict_program_byedpi">ByeDPI</string>
-    <string name="apps_conflict_program_zapret">Zapret</string>
     <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">Програми вже використовуються</string>
     <string name="settings_proxyinfo_conflict_body">Ці програми вже використовуються в правилах інструментів. Видалити їх із тих інструментів і додати до захисту від сканування портів?</string>
@@ -2020,73 +2014,6 @@ APatch: 10700+</string>
     <string name="tgws_copy_command">Копіювати команду</string>
     <string name="tgws_command_copied">Команду скопійовано</string>
 
-    <!-- Hysteria2 profile UI -->
-    <string name="hysteria2_t2s_panel_desc">Вбудована панель стану t2s</string>
-    <string name="hysteria2_panel">Панель</string>
-    <string name="hysteria2_fill_t2s_port">Введіть порт T2S</string>
-    <string name="hysteria2_fill_t2s_web_port">Введіть вебпорт T2S</string>
-    <string name="hysteria2_profile_ports_must_differ">Порти профілю мають відрізнятися</string>
-    <string name="hysteria2_enter_tun_interface">Введіть інтерфейс TUN</string>
-    <string name="hysteria2_enter_dns">Введіть DNS</string>
-    <string name="hysteria2_vpn_requires_one_enabled_server">Режим VPN Hysteria2 потребує рівно одного ввімкненого сервера</string>
-    <string name="hysteria2_t2s_port_busy_fmt">Порт T2S уже використовується: %1$s</string>
-    <string name="hysteria2_t2s_web_port_busy_fmt">Вебпорт T2S уже використовується: %1$s</string>
-    <string name="hysteria2_autosave_failed">Не вдалося автоматично зберегти Hysteria2</string>
-    <string name="hysteria2_server_created_fmt">Сервер Hysteria2 створено: %1$s</string>
-    <string name="hysteria2_json_saved_settings_failed">JSON збережено, але не вдалося оновити налаштування сервера</string>
-    <string name="hysteria2_json_title_fmt">JSON Hysteria2: %1$s</string>
-    <string name="hysteria2_client_config_json">JSON конфігурації клієнта</string>
-    <string name="hysteria2_parse_error">помилка розбору</string>
-    <string name="hysteria2_invalid_json_fmt">Недійсний JSON: %1$s</string>
-    <string name="hysteria2_apps_title">Застосунки Hysteria2</string>
-    <string name="hysteria2_vpn_only_one_server_allowed">У режимі VPN Hysteria2 дозволено лише один увімкнений сервер</string>
-    <string name="hysteria2_t2s_settings_title">Налаштування T2S Hysteria2</string>
-    <string name="hysteria2_t2s_settings_desc">Локальні порти t2s/web для профілю Hysteria2</string>
-    <string name="hysteria2_t2s_port_label">Порт T2S</string>
-    <string name="hysteria2_t2s_web_port_label">Вебпорт T2S</string>
-    <string name="hysteria2_apply_after_restart">Застосовується після зупинки/запуску служби</string>
-    <string name="hysteria2_route_mode_title">Режим маршрутизації</string>
-    <string name="hysteria2_route_mode_desc">Backend Hysteria2 завжди SOCKS5; виберіть режим t2s нижче</string>
-    <string name="hysteria2_mode_title">Режим Hysteria2</string>
-    <string name="hysteria2_mode_desc">T2S для кількох серверів або VPN/tun2proxy для одного сервера</string>
-    <string name="hysteria2_mode_t2s_desc">Кілька серверів Hysteria2 через backend SOCKS5</string>
-    <string name="hysteria2_mode_vpn_desc">Один сервер Hysteria2 через tun2socks</string>
-    <string name="hysteria2_vpn_structure_invalid_title">Недійсна структура VPN Hysteria2</string>
-    <string name="hysteria2_vpn_structure_invalid_desc">Для VPN/tun2proxy залиште рівно один сервер або перейдіть на T2S.</string>
-    <string name="hysteria2_switch_to_t2s">Перейти на T2S</string>
-    <string name="hysteria2_vpn_profile_title">Hysteria2 VPN / tun2proxy</string>
-    <string name="hysteria2_vpn_profile_desc">Налаштування TUN, DNS і рівня журналу для tun2socks</string>
-    <string name="hysteria2_tun_example">Наприклад, hytun0</string>
-    <string name="hysteria2_dns_supporting">IPv4 DNS, по одному в рядку</string>
-    <string name="hysteria2_auto_save_restart_hint">Зберігається автоматично, застосовується після зупинки/запуску</string>
-    <string name="hysteria2_servers_title">Сервери Hysteria2</string>
-    <string name="hysteria2_servers_vpn_desc">VPN: має бути ввімкнено рівно один сервер</string>
-    <string name="hysteria2_servers_t2s_desc">T2S: можна додати кілька серверів</string>
-    <string name="hysteria2_add_server">Додати сервер</string>
-    <string name="hysteria2_no_servers">Серверів ще немає</string>
-    <string name="hysteria2_socks5_port_busy_fmt">Порт SOCKS5 уже використовується: %1$s</string>
-    <string name="hysteria2_delete_server_title">Видалити сервер Hysteria2</string>
-    <string name="hysteria2_delete_server_message_fmt">Видалити сервер Hysteria2 %1$s / %2$s?</string>
-    <string name="hysteria2_socks5_autosave_hint">Порт SOCKS5 зберігається автоматично</string>
-    <string name="hysteria2_socks5_backend_port">Порт backend SOCKS5</string>
-    <string name="hysteria2_port_busy_fmt">Порт зайнятий: %1$s</string>
-    <string name="hysteria2_new_server_title">Новий сервер Hysteria2</string>
-    <string name="hysteria2_server_name_rules">Назва сервера: латинські літери, цифри, _ та -</string>
-    <string name="hysteria2_server_name_label">Назва сервера</string>
-    <string name="hysteria2_server_exists">Сервер Hysteria2 уже існує</string>
-    <string name="hysteria2_server_ui_title">Інтерфейс сервера Hysteria2</string>
-    <string name="hysteria2_enabled">Увімкнено</string>
-    <string name="hysteria2_server_field_label">сервер, наприклад example.com:443</string>
-    <string name="hysteria2_local_socks5_port">Локальний порт SOCKS5</string>
-    <string name="hysteria2_obfs_type_label">тип obfs, наприклад salamander</string>
-    <string name="hysteria2_bandwidth_up_label">пропускна здатність відвантаження, наприклад 20 mbps</string>
-    <string name="hysteria2_bandwidth_down_label">пропускна здатність завантаження, наприклад 100 mbps</string>
-    <string name="hysteria2_congestion_type_label">congestion.type: bbr або reno</string>
-    <string name="hysteria2_socks5_username_optional">Ім’я користувача SOCKS5 необов’язкове</string>
-    <string name="hysteria2_socks5_password_optional">Пароль SOCKS5 необов’язковий</string>
-    <string name="hysteria2_server_required">Сервер обов’язковий</string>
-    <string name="hysteria2_invalid_socks5_port">Недійсний порт SOCKS5</string>
-
 <!-- VPS server manager -->
     <string name="vps_servers_title">VPS-сервери</string>
     <string name="vps_servers_entry_desc">Підключайтеся через SSH, відстежуйте сервери, установлюйте служби та створюйте клієнтські конфігурації.</string>
@@ -2124,8 +2051,6 @@ APatch: 10700+</string>
     <string name="vps_service_openvpn_desc">Кілька серверних профілів TCP або UDP з окремими клієнтськими сертифікатами, які можна відкликати.</string>
     <string name="vps_service_xray">Xray</string>
     <string name="vps_service_xray_desc">Профілі VLESS Reality TCP і VLESS WebSocket TLS з окремими UUID.</string>
-    <string name="vps_service_hysteria2">Hysteria2</string>
-    <string name="vps_service_hysteria2_desc">Профілі UDP з автоматичним TLS та окремими обліковими даними користувачів.</string>
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">Серверні профілі WireGuard, що створюють клієнтські конфігурації, сумісні з WireProxy.</string>
     <string name="vps_install">Установити</string>
@@ -2145,7 +2070,6 @@ APatch: 10700+</string>
     <string name="vps_domain">Домен</string>
     <string name="vps_letsencrypt_email">Електронна пошта Let’s Encrypt</string>
     <string name="vps_automatic_tls_hint">Домен має вказувати на цей VPS. ZDT-D автоматично отримає та поновлюватиме TLS-сертифікат.</string>
-    <string name="vps_shared_port_hint">Xray уже використовує TCP %1$d. Hysteria2 може одночасно безпечно використовувати UDP %1$d.</string>
     <string name="vps_no_profiles">Профілів ще немає</string>
     <string name="vps_no_profiles_hint">Створіть серверний профіль, а потім додайте окремі клієнтські конфігурації.</string>
     <string name="vps_delete_profile_title">Видалити профіль?</string>

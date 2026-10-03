@@ -161,7 +161,6 @@ The UI has dedicated screens for:
 
 - `nfqws` / `nfqws2` profiles;
 - byedpi;
-- DPITunnel;
 - dnscrypt;
 - opera-proxy;
 - sing-box;

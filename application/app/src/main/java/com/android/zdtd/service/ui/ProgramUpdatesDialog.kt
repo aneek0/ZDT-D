@@ -150,18 +150,6 @@ fun ProgramUpdatesDialog(
                   ) {
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
-                      item = state.zapret,
-                      programId = "nfqws",
-                      enabled = enabledFor(state.zapret),
-                      onCheck = actions::checkZapretNow,
-                      onUpdate = actions::updateZapretNow,
-                      onPickVersion = {
-                        picking = "zapret"
-                        if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-                      },
-                    )
-                    ProgramUpdateCard(
-                      modifier = Modifier.weight(1f),
                       item = state.zapret2,
                       programId = "nfqws2",
                       enabled = enabledFor(state.zapret2),
@@ -226,19 +214,6 @@ fun ProgramUpdatesDialog(
                   }
                 }
               } else {
-                item(key = "zapret") {
-                  ProgramUpdateCard(
-                    item = state.zapret,
-                      programId = "nfqws",
-                    enabled = enabledFor(state.zapret),
-                    onCheck = actions::checkZapretNow,
-                    onUpdate = actions::updateZapretNow,
-                    onPickVersion = {
-                      picking = "zapret"
-                      if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-                    },
-                  )
-                }
                 item(key = "zapret2") {
                   ProgramUpdateCard(
                     item = state.zapret2,
@@ -306,31 +281,27 @@ fun ProgramUpdatesDialog(
   val pick = picking
   if (pick != null) {
     val item = when (pick) {
-      "zapret" -> state.zapret
       "zapret2" -> state.zapret2
       "mihomo" -> state.mihomo
       "mieru" -> state.mieru
       "operaproxy" -> state.operaProxy
-      else -> state.zapret
+      else -> state.zapret2
     }
     ReleasePickerDialog(
       title = when (pick) {
-        "zapret" -> stringResource(R.string.program_updates_pick_zapret_title)
         "zapret2" -> stringResource(R.string.program_updates_pick_zapret2_title)
         "mihomo" -> stringResource(R.string.program_updates_pick_mihomo_title)
         "mieru" -> stringResource(R.string.program_updates_pick_mieru_title)
         "operaproxy" -> stringResource(R.string.program_updates_pick_operaproxy_title)
-        else -> stringResource(R.string.program_updates_pick_zapret_title)
+        else -> stringResource(R.string.program_updates_pick_zapret2_title)
       },
       stateItem = item,
       minVersion = when (pick) {
-        "zapret" -> "v71.4"
         "zapret2" -> "v0.8.6"
         else -> "v0.0.0"
       },
       onRefresh = {
         when (pick) {
-          "zapret" -> actions.loadZapretReleases()
           "zapret2" -> actions.loadZapret2Releases()
           "mihomo" -> actions.loadMihomoReleases()
           "mieru" -> actions.loadMieruReleases()
@@ -339,7 +310,6 @@ fun ProgramUpdatesDialog(
       },
       onSelectLatest = {
         when (pick) {
-          "zapret" -> actions.selectZapretRelease(null, null)
           "zapret2" -> actions.selectZapret2Release(null, null)
           "mihomo" -> actions.selectMihomoRelease(null, null)
           "mieru" -> actions.selectMieruRelease(null, null)
@@ -349,7 +319,6 @@ fun ProgramUpdatesDialog(
       },
       onSelectRelease = { v, url ->
         when (pick) {
-          "zapret" -> actions.selectZapretRelease(v, url)
           "zapret2" -> actions.selectZapret2Release(v, url)
           "mihomo" -> actions.selectMihomoRelease(v, url)
           "mieru" -> actions.selectMieruRelease(v, url)
@@ -405,7 +374,7 @@ private fun ProgramUpdatesBulkActionCard(
   onCheckAll: () -> Unit,
   onUpdateAll: () -> Unit,
 ) {
-  val items = listOf(state.zapret, state.zapret2, state.mihomo, state.mieru, state.operaProxy)
+  val items = listOf(state.zapret2, state.mihomo, state.mieru, state.operaProxy)
   val availableCount = items.count { it.updateAvailable }
   val anyItemBusy = items.any { it.checking || it.updating }
   val allKnownAndCurrent = state.bulkCheckCompleted && !state.bulkCheckHadFailures && availableCount == 0

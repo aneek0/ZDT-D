@@ -16,7 +16,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::{hotspot, iptables_port::{DpiTunnelOptions, ProtoChoice}};
+use crate::iptables::{hotspot, iptables_port::{IptablesDpiOptions, ProtoChoice}};
 use crate::{
     settings,
     shell::{self, Capture},
@@ -430,9 +430,9 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
             plan.setting.proto_choice(),
             plan.setting.proto_choice(),
             None,
-            DpiTunnelOptions {
+            IptablesDpiOptions {
                 port_preference: 1,
-                ..DpiTunnelOptions::default()
+                ..IptablesDpiOptions::default()
             },
         )
         .with_context(|| format!("iptables profile={}", plan.name))?;
@@ -596,9 +596,9 @@ pub fn start_t2s_if_enabled() -> Result<()> {
                 plan.setting.proto_choice(),
                 plan.setting.proto_choice(),
                 None,
-                DpiTunnelOptions {
+                IptablesDpiOptions {
                     port_preference: 1,
-                    ..DpiTunnelOptions::default()
+                    ..IptablesDpiOptions::default()
                 },
             )
             .with_context(|| format!("iptables profile={}", plan.name))?;
@@ -1349,7 +1349,134 @@ fn read_sorted_dirs(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     Ok(entries)
 }
 
+// --- hysteria2 native client config support --------------------------------
+//
+// A server config.json written in the native hysteria2 client format
+// (top-level "server" string, no sing-box "outbounds") is translated in place
+// to a sing-box config with a hysteria2 outbound. One-way: after translation
+// the file is a regular sing-box config and subsequent runs leave it alone.
+
+fn is_native_hysteria2_config(obj: &Map<String, Value>) -> bool {
+    obj.get("server").and_then(Value::as_str).map(str::trim).map(|s| !s.is_empty()).unwrap_or(false)
+        && !obj.contains_key("outbounds")
+}
+
+fn translate_hysteria2_native_config(config_path: &Path) -> Result<()> {
+    let original = fs::read_to_string(config_path)
+        .with_context(|| format!("read {}", config_path.display()))?;
+    let value: Value = serde_json::from_str(&original)
+        .with_context(|| format!("parse json {}", config_path.display()))?;
+    let Some(obj) = value.as_object() else { return Ok(()) };
+    if !is_native_hysteria2_config(obj) { return Ok(()); }
+    let translated = hysteria2_native_to_singbox(obj)
+        .with_context(|| format!("translate native hysteria2 config {}", config_path.display()))?;
+    info!("sing-box: translated native hysteria2 config {}", config_path.display());
+    write_json_value_if_changed(config_path, &original, &translated)
+}
+
+fn hysteria2_native_to_singbox(obj: &Map<String, Value>) -> Result<Value> {
+    let server_raw = obj.get("server").and_then(Value::as_str).map(str::trim).unwrap_or("");
+    if server_raw.is_empty() { bail!("hysteria2 config requires server"); }
+    let (server, server_port) = parse_hysteria2_server_address(server_raw)?;
+
+    let mut outbound = Map::new();
+    outbound.insert("type".into(), Value::String("hysteria2".into()));
+    outbound.insert("tag".into(), Value::String("proxy".into()));
+    outbound.insert("server".into(), Value::String(server.clone()));
+    outbound.insert("server_port".into(), Value::from(server_port));
+
+    // auth: plain password string; object form ({type,password}) also accepted.
+    let password = match obj.get("auth") {
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::Object(o)) => o.get("password").and_then(Value::as_str).map(ToOwned::to_owned),
+        _ => None,
+    };
+    if let Some(p) = password { if !p.is_empty() { outbound.insert("password".into(), Value::String(p)); } }
+
+    // bandwidth: "100 mbps" / number -> up_mbps/down_mbps ints; absent -> BBR.
+    if let Some(bw) = obj.get("bandwidth").and_then(Value::as_object) {
+        for (src, dst) in [("up", "up_mbps"), ("down", "down_mbps")] {
+            match bw.get(src) {
+                Some(Value::Number(n)) => { if let Some(u) = n.as_u64() { if u > 0 { outbound.insert(dst.into(), Value::from(u)); } } }
+                Some(Value::String(s)) => { if let Some(m) = parse_hysteria2_bandwidth_mbps(s) { outbound.insert(dst.into(), Value::from(m)); } }
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(obfs) = obj.get("obfs").and_then(Value::as_object) {
+        let otype = obfs.get("type").and_then(Value::as_str).unwrap_or("");
+        if otype.eq_ignore_ascii_case("salamander") {
+            let pw = obfs.get("salamander").and_then(Value::as_object).and_then(|s| s.get("password")).and_then(Value::as_str).unwrap_or("");
+            if !pw.is_empty() { outbound.insert("obfs".into(), json!({"type": "salamander", "password": pw})); }
+        }
+    }
+
+    // hysteria2 transport always requires TLS.
+    let native_tls = obj.get("tls").and_then(Value::as_object);
+    let mut tls = Map::new();
+    tls.insert("enabled".into(), Value::Bool(true));
+    let mut server_name = native_tls.and_then(|t| t.get("sni")).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    if server_name.is_empty() && server.parse::<std::net::IpAddr>().is_err() { server_name = server.clone(); }
+    if !server_name.is_empty() { tls.insert("server_name".into(), Value::String(server_name)); }
+    if native_tls.and_then(|t| t.get("insecure")).and_then(Value::as_bool).unwrap_or(false) { tls.insert("insecure".into(), Value::Bool(true)); }
+    if let Some(alpn) = native_tls.and_then(|t| t.get("alpn")).and_then(Value::as_array) {
+        let list: Vec<Value> = alpn.iter().filter_map(Value::as_str).map(|s| Value::String(s.to_string())).collect();
+        if !list.is_empty() { tls.insert("alpn".into(), Value::Array(list)); }
+    }
+    outbound.insert("tls".into(), Value::Object(tls));
+
+    if obj.get("fastOpen").and_then(Value::as_bool).unwrap_or(false) { outbound.insert("tcp_fast_open".into(), Value::Bool(true)); }
+    if native_tls.map(|t| t.contains_key("ca") || t.contains_key("pinSHA256")).unwrap_or(false) { warn!("sing-box: hysteria2 tls.ca/pinSHA256 have no sing-box equivalent, ignored"); }
+    if obj.contains_key("masquerade") { warn!("sing-box: hysteria2 masquerade has no sing-box client equivalent, ignored"); }
+
+    Ok(json!({
+        "log": {"level": "info", "timestamp": true},
+        "outbounds": [Value::Object(outbound), {"type": "direct", "tag": "direct"}]
+    }))
+}
+
+fn parse_hysteria2_server_address(raw: &str) -> Result<(String, u16)> {
+    // host:port / [v6]:port; default port 443 (native hysteria2 default).
+    let s = raw.trim();
+    if let Some(rest) = s.strip_prefix('[') {
+        let end = rest.find(']').ok_or_else(|| anyhow::anyhow!("bad server address: {raw}"))?;
+        let host = &rest[..end];
+        let port = rest[end + 1..].strip_prefix(':').and_then(|p| p.parse::<u16>().ok()).unwrap_or(443);
+        if host.is_empty() { bail!("bad server address: {raw}"); }
+        return Ok((host.to_string(), port));
+    }
+    match s.rsplit_once(':') {
+        Some((h, p)) if !h.contains(':') => {
+            if h.is_empty() { bail!("bad server address: {raw}"); }
+            let port = p.parse::<u16>().ok().filter(|p| *p > 0).ok_or_else(|| anyhow::anyhow!("bad server port in {raw}"))?;
+            Ok((h.to_string(), port))
+        }
+        _ => {
+            if s.parse::<std::net::Ipv6Addr>().is_ok() { return Ok((s.to_string(), 443)); }
+            if s.contains(':') { bail!("bad server address: {raw}"); }
+            Ok((s.to_string(), 443))
+        }
+    }
+}
+
+fn parse_hysteria2_bandwidth_mbps(raw: &str) -> Option<u64> {
+    let s = raw.trim().to_ascii_lowercase();
+    let num: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    if num.is_empty() { return None; }
+    let base: f64 = num.parse().ok()?;
+    let rest = s[num.len()..].replace(' ', "");
+    let mbps = if rest.starts_with("gbps") || rest == "g" { base * 1000.0 }
+        else if rest.starts_with("kbps") || rest == "k" { base / 1000.0 }
+        else if rest.starts_with("bps") || rest == "b" { base / 1_000_000.0 }
+        else { base }; // native unit default is mbps
+    // sing-box takes integer mbps; sub-mbps values are omitted (BBR fallback)
+    // rather than inflated to 1 mbps.
+    if mbps >= 1.0 { Some(mbps.round() as u64) } else { None }
+}
+
 fn normalize_singbox_config_for_t2s(config_path: &Path, port: u16, dns_servers: &[String]) -> Result<()> {
+    translate_hysteria2_native_config(config_path)?;
     let original = fs::read_to_string(config_path)
         .with_context(|| format!("read {}", config_path.display()))?;
     let mut value: Value = serde_json::from_str(&original)
@@ -1372,6 +1499,7 @@ fn normalize_singbox_config_for_t2s(config_path: &Path, port: u16, dns_servers: 
 }
 
 fn normalize_singbox_config_for_vpn(config_path: &Path, setting: &ProfileSetting, tun_address: &str) -> Result<String> {
+    translate_hysteria2_native_config(config_path)?;
     let original = fs::read_to_string(config_path)
         .with_context(|| format!("read {}", config_path.display()))?;
     let mut value: Value = serde_json::from_str(&original)
@@ -2356,4 +2484,98 @@ fn ensure_file(p: &str) -> Result<()> {
         bail!("file missing: {}", path.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod hysteria2_translate_tests {
+    use super::*;
+
+    fn native_config(extra: serde_json::Value) -> Map<String, Value> {
+        let mut obj = serde_json::json!({
+            "server": "example.com:8443",
+            "auth": "secret-password",
+            "bandwidth": {"up": "100 mbps", "down": "50 mbps"},
+            "obfs": {"type": "salamander", "salamander": {"password": "obfs-pw"}},
+            "tls": {"sni": "cdn.example.com", "insecure": true, "alpn": ["h3"]},
+            "fastOpen": true,
+            "masquerade": "https://news.ycombinator.com",
+            "socks5": {"listen": "127.0.0.1:11590"}
+        });
+        if let (Some(base), Some(x)) = (obj.as_object_mut(), extra.as_object()) {
+            for (k, v) in x { base.insert(k.clone(), v.clone()); }
+        }
+        obj.as_object().unwrap().clone()
+    }
+
+    fn translated_outbound(cfg: &Map<String, Value>) -> Map<String, Value> {
+        let out = hysteria2_native_to_singbox(cfg).unwrap();
+        out["outbounds"][0].as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn full_native_config_maps_to_hysteria2_outbound() {
+        let ob = translated_outbound(&native_config(serde_json::json!({})));
+        assert_eq!(ob["type"], "hysteria2");
+        assert_eq!(ob["server"], "example.com");
+        assert_eq!(ob["server_port"], 8443);
+        assert_eq!(ob["password"], "secret-password");
+        assert_eq!(ob["up_mbps"], 100);
+        assert_eq!(ob["down_mbps"], 50);
+        assert_eq!(ob["obfs"]["type"], "salamander");
+        assert_eq!(ob["obfs"]["password"], "obfs-pw");
+        assert_eq!(ob["tls"]["enabled"], true);
+        assert_eq!(ob["tls"]["server_name"], "cdn.example.com");
+        assert_eq!(ob["tls"]["insecure"], true);
+        assert_eq!(ob["tls"]["alpn"], serde_json::json!(["h3"]));
+        assert_eq!(ob["tcp_fast_open"], true);
+    }
+
+    #[test]
+    fn minimal_config_defaults_port_and_sni_from_host() {
+        let cfg = serde_json::json!({"server": "vpn.example.org"});
+        let ob = translated_outbound(cfg.as_object().unwrap());
+        assert_eq!(ob["server_port"], 443);
+        assert_eq!(ob["tls"]["server_name"], "vpn.example.org");
+        assert!(ob.get("password").is_none());
+        assert!(ob.get("obfs").is_none());
+        assert!(ob.get("up_mbps").is_none());
+    }
+
+    #[test]
+    fn ip_server_gets_no_server_name() {
+        let cfg = serde_json::json!({"server": "203.0.113.7:1443", "auth": {"type": "password", "password": "p"}});
+        let ob = translated_outbound(cfg.as_object().unwrap());
+        assert_eq!(ob["server"], "203.0.113.7");
+        assert_eq!(ob["server_port"], 1443);
+        assert_eq!(ob["password"], "p");
+        assert!(ob["tls"].as_object().unwrap().get("server_name").is_none());
+    }
+
+    #[test]
+    fn ipv6_bracket_address_parses() {
+        let (host, port) = parse_hysteria2_server_address("[2001:db8::1]:444").unwrap();
+        assert_eq!(host, "2001:db8::1");
+        assert_eq!(port, 444);
+        let (host, port) = parse_hysteria2_server_address("2001:db8::5").unwrap();
+        assert_eq!(host, "2001:db8::5");
+        assert_eq!(port, 443);
+        assert!(parse_hysteria2_server_address("example.com:notaport").is_err());
+    }
+
+    #[test]
+    fn bandwidth_units_parse() {
+        assert_eq!(parse_hysteria2_bandwidth_mbps("100 mbps"), Some(100));
+        assert_eq!(parse_hysteria2_bandwidth_mbps("1 gbps"), Some(1000));
+        assert_eq!(parse_hysteria2_bandwidth_mbps("20"), Some(20));
+        assert_eq!(parse_hysteria2_bandwidth_mbps("500 kbps"), None); // below 1 mbps -> omit
+        assert_eq!(parse_hysteria2_bandwidth_mbps(""), None);
+    }
+
+    #[test]
+    fn singbox_config_is_not_detected_as_native() {
+        let singbox = serde_json::json!({"log": {}, "outbounds": [{"type": "vless", "server": "x"}]});
+        assert!(!is_native_hysteria2_config(singbox.as_object().unwrap()));
+        let native = serde_json::json!({"server": "example.com:443", "auth": "p"});
+        assert!(is_native_hysteria2_config(native.as_object().unwrap()));
+    }
 }

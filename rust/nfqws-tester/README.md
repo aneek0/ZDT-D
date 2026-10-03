@@ -1,22 +1,22 @@
 # nfqws-tester
 
-`nfqws-tester` is a native ZDT-D diagnostic helper for trying `nfqws` and
-`nfqws2` strategy files in an isolated test session.
+`nfqws-tester` is a native ZDT-D diagnostic helper for trying `nfqws2`
+strategy files in an isolated test session.
 
-It is not the main ZDT-D daemon and it is not a replacement for `nfqws`. It is a
-small controller that starts a selected NFQUEUE engine with a selected strategy,
+It is not the main ZDT-D daemon and it is not a replacement for `nfqws2`. It
+is a small controller that starts the NFQUEUE engine with a selected strategy,
 applies temporary NFQUEUE rules, reports session state and cleans up after the
 test.
 
 ## Purpose
 
-The helper is used by the Android diagnostics UI to let the user test zapret
+The helper is used by the Android diagnostics UI to let the user test zapret2
 strategy files without permanently changing normal profile configuration.
 
 It can:
 
 - list available strategy files;
-- start `nfqws` or `nfqws2` with a selected config;
+- start `nfqws2` with a selected config;
 - normalize config arguments before launch;
 - extract TCP/UDP port filters from the strategy text when possible;
 - apply temporary NFQUEUE rules;
@@ -42,16 +42,16 @@ Default NFQUEUE number:
 200
 ```
 
-The helper expects to run as root on Android. It needs access to module binaries,
-strategy files, process control and `iptables`/`ip6tables` commands.
+The helper expects to run as root on Android. It needs access to module
+binaries, strategy files, process control and `iptables`/`ip6tables` commands.
 
 ## Commands
 
 ```bash
 nfqws-tester --version
-nfqws-tester list --program nfqws|nfqws2
-nfqws-tester auto --program nfqws|nfqws2 --hosts <hosts.txt> [--qnum 200] [--timeout 2]
-nfqws-tester start --program nfqws|nfqws2 --config /path/to/file.txt [--qnum 200]
+nfqws-tester list --program nfqws2
+nfqws-tester auto --program nfqws2 --hosts <hosts.txt> [--qnum 200] [--timeout 2]
+nfqws-tester start --program nfqws2 --config /path/to/file.txt [--qnum 200]
 nfqws-tester stop
 nfqws-tester cleanup
 nfqws-tester status
@@ -63,8 +63,9 @@ nfqws-tester usage --pid 1234
 ## auto
 
 Runs a full sweep used by the in-app blockcheck UI. It first probes every host
-in `<hosts.txt>` with **no** strategy (baseline), then loads every strategy file
-for the program and re-tests, emitting streamed JSON events:
+in `<hosts.txt>` with **no** strategy (baseline), then scans the atomic catalog
+(`strategic/scan/*.txt`), re-testing each generated config, and emits streamed
+JSON events:
 
 - `auto_started` — strategy/host totals;
 - `auto_phase` — `baseline` then `strategy`;
@@ -73,22 +74,25 @@ for the program and re-tests, emitting streamed JSON events:
 - `auto_strategy_probe` — per-host result vs baseline;
 - `auto_strategy_result` — gradient verdict:
   - `verdict`: `works` (all baseline-blocked hosts opened), `partial` (some
-    opened), `failed` (none opened), or `no_baseline_block` (nothing was blocked
-    at baseline, so the strategy cannot be judged);
+    opened), `failed` (none opened), or `no_baseline_block` (nothing was
+    blocked at baseline, so the strategy cannot be judged);
   - `opened_pct` / `score`: share (0..100) of baseline-blocked hosts this
     strategy opened; `score` is `null` when there was no baseline block;
   - `hosts_total`, `baseline_blocked`, `hosts_opened`, `hosts_still_blocked`.
 
+`auto catalog` exports a catalog entry as a normal preset into
+`strategic/strategicvar/nfqws2/` so the daemon can start it.
+
 Hosts are DNS-resolved once and reused for both the baseline and every
-per-strategy probe (single resolve + dedupe). `ipset-*` files are not valid host
-lists for this sweep.
+per-strategy probe (single resolve + dedupe). `ipset-*` files are not valid
+host lists for this sweep.
 
 ## list
 
-Lists available `.txt` strategy files for the selected program.
+Lists available `.txt` strategy files.
 
 ```bash
-nfqws-tester list --program nfqws
+nfqws-tester list --program nfqws2
 ```
 
 Output is JSON:
@@ -96,8 +100,8 @@ Output is JSON:
 ```json
 {
   "ok": true,
-  "program": "nfqws",
-  "dir": "/data/adb/modules/ZDT-D/strategic/strategicvar/nfqws",
+  "program": "nfqws2",
+  "dir": "/data/adb/modules/ZDT-D/strategic/strategicvar/nfqws2",
   "strategies": ["example.txt"]
 }
 ```
@@ -108,21 +112,21 @@ Starts a temporary strategy test.
 
 ```bash
 nfqws-tester start \
-  --program nfqws \
-  --config /data/adb/modules/ZDT-D/strategic/strategicvar/nfqws/example.txt \
+  --program nfqws2 \
+  --config /data/adb/modules/ZDT-D/strategic/strategicvar/nfqws2/example.txt \
   --qnum 200
 ```
 
 Flow:
 
-1. Validate program name (`nfqws` or `nfqws2`).
+1. Validate program name (`nfqws2`).
 2. Validate that the engine binary exists.
 3. Validate that the config file exists.
 4. Ensure the tester work directory exists.
 5. Stop any previous tester session.
 6. Read and normalize strategy arguments.
 7. Extract optional TCP/UDP port filters.
-8. Spawn the selected engine.
+8. Spawn the engine.
 9. Apply NFQUEUE rules for the selected queue number.
 10. Write `session.json`.
 11. Print a JSON result.
@@ -132,8 +136,8 @@ Example output:
 ```json
 {
   "ok": true,
-  "program": "nfqws",
-  "config_path": "/data/adb/modules/ZDT-D/strategic/strategicvar/nfqws/example.txt",
+  "program": "nfqws2",
+  "config_path": "/data/adb/modules/ZDT-D/strategic/strategicvar/nfqws2/example.txt",
   "config_name": "example.txt",
   "pid": 12345,
   "qnum": 200,
@@ -144,8 +148,8 @@ Example output:
 }
 ```
 
-If rule application fails after spawning the engine, the helper attempts to kill
-the spawned process and remove program-specific rules before returning an error.
+If rule application fails after spawning the engine, the helper attempts to
+kill the spawned process and remove the test rules before returning an error.
 
 ## status
 
@@ -161,7 +165,7 @@ If active:
 {
   "ok": true,
   "active": true,
-  "program": "nfqws",
+  "program": "nfqws2",
   "config_path": "/path/to/file.txt",
   "config_name": "file.txt",
   "pid": 12345,
@@ -209,16 +213,16 @@ stops testing.
 - It does not manage normal ZDT-D profiles.
 - It does not replace the main `zdtd` daemon.
 - It does not install strategy files.
-- It does not permanently enable `nfqws` or `nfqws2` profiles.
+- It does not permanently enable `nfqws2` profiles.
 - It does not validate whether a strategy is safe or optimal for every network.
-- It does not perform complete DPI diagnostics by itself; use `dpi-detector` for
-  broader network checks.
+- It does not perform complete DPI diagnostics by itself; use `dpi-detector`
+  for broader network checks.
 
 ## Safety notes
 
-`nfqws-tester` temporarily changes NFQUEUE/firewall behavior for testing. It must
-clean up after itself. If the process is killed externally, the Android app or
-user should run:
+`nfqws-tester` temporarily changes NFQUEUE/firewall behavior for testing. It
+must clean up after itself. If the process is killed externally, the Android
+app or user should run:
 
 ```bash
 nfqws-tester cleanup

@@ -14,7 +14,7 @@ use std::os::unix::process::CommandExt;
 
 use crate::android::pkg_uid::{self, Mode, Sha256Tracker};
 use crate::settings;
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::iptables_port::{self, IptablesDpiOptions, ProtoChoice};
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
@@ -111,7 +111,7 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
         port_cfg.port,
         ProtoChoice::TcpUdp,
         None,
-        DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
+        IptablesDpiOptions { port_preference: 1, ..IptablesDpiOptions::default() },
     )?;
 
     info!("byedpi profile started: {} port={}", profile_name, port_cfg.port);
@@ -167,21 +167,11 @@ fn spawn_byedpi(workdir: &Path, bin: &Path, port: u16, extra_args: &[String], lo
 }
 
 fn find_byedpi_bin() -> Result<PathBuf> {
-    // Try common names in order
-    let candidates = [
-        "ciadpi-zdt",
-        "ciadpi",
-        "byedpi",
-        "bye_dpi",
-    ];
-
-    for name in candidates {
-        let p = Path::new(BIN_DIR).join(name);
-        if p.is_file() {
-            return Ok(p);
-        }
+    let p = Path::new(BIN_DIR).join("byedpi");
+    if p.is_file() {
+        return Ok(p);
     }
-    anyhow::bail!("no byedpi binary candidates found in {}", BIN_DIR);
+    anyhow::bail!("byedpi binary not found in {}", BIN_DIR);
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {

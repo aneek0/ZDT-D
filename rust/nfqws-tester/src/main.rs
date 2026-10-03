@@ -101,7 +101,7 @@ fn entry() -> Result<()> {
             let program = normalize_program(&parse_named_value(&args[1..], "--program")?)?;
             let protocol = parse_named_value(&args[1..], "--protocol")?;
             let id = parse_named_value(&args[1..], "--id")?;
-            export_strategy(&program, &protocol, &id)
+            export_strategy(&protocol, &id)
         }
         "start" => {
             let options = parse_start_options(&args[1..])?;
@@ -161,9 +161,9 @@ fn print_help() {
     println!("nfqws-tester {VERSION}");
     println!("Usage:");
     println!("  nfqws-tester --version");
-    println!("  nfqws-tester list --program nfqws|nfqws2");
-    println!("  nfqws-tester start --program nfqws|nfqws2 --config /path/to/file.txt [--qnum 200]");
-    println!("  nfqws-tester auto --program nfqws|nfqws2 [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
+    println!("  nfqws-tester list --program nfqws2");
+    println!("  nfqws-tester start --program nfqws2 --config /path/to/file.txt [--qnum 200]");
+    println!("  nfqws-tester auto --program nfqws2 [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
     println!("  nfqws-tester export --program nfqws2 --protocol tcp_https|stun_voice|udp_games --id <strategy-id>");
     println!("  nfqws-tester catalog --protocol tcp_https|stun_voice|udp_games");
     println!("  nfqws-tester stop");
@@ -200,8 +200,8 @@ fn parse_start_options(args: &[String]) -> Result<StartOptions> {
 fn normalize_program(program: &str) -> Result<String> {
     let p = program.trim().to_lowercase();
     match p.as_str() {
-        "nfqws" | "nfqws2" => Ok(p),
-        _ => bail!("unsupported program: {program}"),
+        "nfqws2" => Ok(p),
+        _ => bail!("unsupported program: {program} (only nfqws2 is supported)"),
     }
 }
 
@@ -236,7 +236,7 @@ fn list_catalog(protocol: &str) -> Result<()> {
     for entry in &catalog {
         // The pass strategy is the pass-control baseline, never a candidate:
         // the scan drops it (`Candidate::is_pass`) and so must the preview.
-        if is_pass_techniques(&technique_set("nfqws2", &entry.lines.join("\n"))) {
+        if is_pass_techniques(&technique_set(&entry.lines.join("\n"))) {
             skipped.push(json!(entry.id));
             continue;
         }
@@ -259,10 +259,7 @@ fn list_catalog(protocol: &str) -> Result<()> {
 
 /// Write one catalog entry as a preset the daemon can apply:
 /// no hostlist (the daemon injects the user's selection), full lua-init block.
-fn export_strategy(program: &str, protocol: &str, id: &str) -> Result<()> {
-    if program != "nfqws2" {
-        bail!("catalog export is only available for nfqws2");
-    }
+fn export_strategy(protocol: &str, id: &str) -> Result<()> {
     let catalog = load_catalog(protocol)?;
     let entry = catalog
         .iter()
@@ -270,14 +267,14 @@ fn export_strategy(program: &str, protocol: &str, id: &str) -> Result<()> {
         .with_context(|| format!("strategy not found in {protocol} catalog: {id}"))?;
     let registry = load_blob_registry();
     let text = catalog_config_text(protocol, entry, None, &registry)?;
-    let dir = strategicvar_dir(program);
+    let dir = strategicvar_dir("nfqws2");
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     let name = export_file_name(protocol, id);
     let path = dir.join(&name);
     fs::write(&path, &text).with_context(|| format!("write {}", path.display()))?;
     println!("{}", json!({
         "ok": true,
-        "program": program,
+        "program": "nfqws2",
         "protocol": protocol,
         "id": entry.id,
         "name": entry.title,
@@ -305,9 +302,9 @@ fn start_strategy(options: StartOptions) -> Result<()> {
     let args = normalize_config_args(&raw);
     let filter = extract_proto_port_filter(&raw);
     let mut child = spawn_program(&options.program, &bin, config_path.parent().unwrap_or(Path::new("/")), options.qnum, &args)?;
-    if let Err(err) = apply_nfqueue_rules(&options.program, options.qnum, &filter) {
+    if let Err(err) = apply_nfqueue_rules(options.qnum, &filter) {
         stop_child(&mut child);
-        let _ = cleanup_rules_for_program(&options.program);
+        let _ = cleanup_test_rules();
         return Err(err);
     }
 
@@ -437,13 +434,12 @@ fn cleanup_all() -> Result<()> {
     // A previously running tester session is stopped too, so a crashed run
     // never leaves a stray engine behind.
     kill_session_process()?;
-    cleanup_rules_for_program("nfqws")?;
-    cleanup_rules_for_program("nfqws2")?;
+    cleanup_test_rules()?;
     Ok(())
 }
 
 /// Terminate a process the tester spawned, by pid. Never matches by name:
-/// the daemon's own nfqws/nfqws2 (queue 200) must survive a blockcheck run.
+/// the daemon's own nfqws2 (queue 200) must survive a blockcheck run.
 fn kill_tester_process(pid: u32) -> Result<()> {
     if pid == 0 {
         return Ok(());
@@ -465,15 +461,10 @@ fn kill_session_process() -> Result<()> {
 }
 
 
-fn chain_name(program: &str) -> &'static str {
-    match program {
-        "nfqws" => "ZDTNFTST1",
-        _ => "ZDTNFTST2",
-    }
-}
+const TEST_CHAIN: &str = "ZDTNFTST2";
 
-fn apply_nfqueue_rules(program: &str, queue: u16, filter: &ProtoPortFilter) -> Result<()> {
-    let chain = chain_name(program);
+fn apply_nfqueue_rules(queue: u16, filter: &ProtoPortFilter) -> Result<()> {
+    let chain = TEST_CHAIN;
     apply_nfqueue_rules_family("iptables", chain, queue, filter)?;
     if command_exists("ip6tables") {
         let _ = apply_nfqueue_rules_family("ip6tables", chain, queue, filter);
@@ -481,8 +472,8 @@ fn apply_nfqueue_rules(program: &str, queue: u16, filter: &ProtoPortFilter) -> R
     Ok(())
 }
 
-fn cleanup_rules_for_program(program: &str) -> Result<()> {
-    let chain = chain_name(program);
+fn cleanup_test_rules() -> Result<()> {
+    let chain = TEST_CHAIN;
     cleanup_family("iptables", chain)?;
     if command_exists("ip6tables") {
         let _ = cleanup_family("ip6tables", chain);
@@ -633,10 +624,7 @@ fn spawn_program(program: &str, bin: &Path, cwd: &Path, qnum: u16, config_args: 
     let devnull = File::options().read(true).write(true).open("/dev/null").context("open /dev/null")?;
     let devnull_err = devnull.try_clone().context("clone /dev/null")?;
     let mut cmd = Command::new(bin);
-    let fwmark = match program {
-        "nfqws" => format!("--dpi-desync-fwmark={DESYNC_MARK}"),
-        _ => format!("--fwmark={DESYNC_MARK}"),
-    };
+    let fwmark = format!("--fwmark={DESYNC_MARK}");
     cmd.current_dir(cwd)
         .arg("--uid=0:0")
         .arg(fwmark)
@@ -1414,32 +1402,18 @@ fn is_pass_techniques(techniques: &std::collections::BTreeSet<String>) -> bool {
 
 
 /// Technique fingerprint of a strategy config: desync function names.
-fn technique_set(program: &str, raw_config: &str) -> std::collections::BTreeSet<String> {
+fn technique_set(raw_config: &str) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
-    if program == "nfqws2" {
-        // One arg per line; the function name ends at the first ':' (args).
-        for line in raw_config.lines() {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix("--lua-desync=") {
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                    .collect();
-                if !name.is_empty() {
-                    out.insert(name.to_lowercase());
-                }
-            }
-        }
-    } else {
-        // nfqws v1: whitespace-separated args, comma-separated techniques.
-        for token in raw_config.split_whitespace() {
-            if let Some(value) = token.strip_prefix("--dpi-desync=") {
-                for part in value.split(',') {
-                    let part = part.trim().to_lowercase();
-                    if !part.is_empty() {
-                        out.insert(part);
-                    }
-                }
+    // One arg per line; the function name ends at the first ':' (args).
+    for line in raw_config.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("--lua-desync=") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                out.insert(name.to_lowercase());
             }
         }
     }
@@ -1561,7 +1535,7 @@ struct CatalogEntry {
     lines: Vec<String>,
 }
 
-/// Scan protocol -> catalog file. nfqws v1 has no catalog.
+/// Scan protocol -> catalog file.
 const CATALOG_FILES: [(&str, &str); 3] =
     [("tcp_https", "tcp.txt"), ("stun_voice", "voice.txt"), ("udp_games", "udp.txt")];
 
@@ -1774,8 +1748,8 @@ fn catalog_file_name(id: &str) -> String {
 /// Candidates to scan plus the generated config files they point at.
 ///
 /// nfqws2 scans the atomic catalog (`strategic/scan/*.txt`) so one candidate =
-/// one strategy line, with its config assembled per protocol. nfqws v1 has no
-/// catalog and keeps scanning the shipped strategicvar presets.
+/// one strategy line, with its config assembled per protocol. Without the
+/// catalog (older install) it falls back to the shipped strategicvar presets.
 fn build_candidates(
     program: &str,
     opts: &AutoOptions,
@@ -1788,7 +1762,7 @@ fn build_candidates(
             .iter()
             .map(|name| {
                 let raw = fs::read_to_string(strategic_dir(program).join(name)).unwrap_or_default();
-                Candidate::preset(name.clone(), technique_set(program, &raw))
+                Candidate::preset(name.clone(), technique_set(&raw))
             })
             .collect();
         return Ok((candidates, Vec::new()));
@@ -1819,7 +1793,7 @@ fn build_candidates(
     let mut generated = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     for entry in catalog {
-        let techniques = technique_set("nfqws2", &entry.lines.join("\n"));
+        let techniques = technique_set(&entry.lines.join("\n"));
         if techniques.is_empty() {
             continue;
         }
@@ -1953,22 +1927,17 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     let now = now_unix_ms() / 1000;
 
     // A module without the scan catalogs (older install, failed copy) must not
-    // abort the run: fall back to scanning the shipped presets, exactly like
-    // nfqws v1 does.
-    let catalog = if program == "nfqws2" {
-        match load_catalog(&opts.protocol) {
-            Ok(catalog) => catalog,
-            Err(err) => {
-                emit_event(&json!({
-                    "type": "auto_catalog_unavailable",
-                    "error": format!("{err:#}"),
-                    "ts": now_unix_ms(),
-                }));
-                Vec::new()
-            }
+    // abort the run: fall back to scanning the shipped presets.
+    let catalog = match load_catalog(&opts.protocol) {
+        Ok(catalog) => catalog,
+        Err(err) => {
+            emit_event(&json!({
+                "type": "auto_catalog_unavailable",
+                "error": format!("{err:#}"),
+                "ts": now_unix_ms(),
+            }));
+            Vec::new()
         }
-    } else {
-        Vec::new()
     };
     let registry = load_blob_registry();
     let (candidates, generated) = build_candidates(program, opts, &catalog, &registry)?;
@@ -2089,12 +2058,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     // If it does, traffic is not really going through the engine.
     if !blocked_keys.is_empty() {
         emit_event(&json!({ "type": "auto_phase", "phase": "pass_control", "ts": now_unix_ms() }));
-        let pass_raw = if program == "nfqws2" {
-            format!("{LUA_INIT_ZAPRET}\n--lua-desync=pass\n")
-        } else {
-            // nfqws v1 has no no-op desync: empty config (no filters matched).
-            String::new()
-        };
+        let pass_raw = format!("{LUA_INIT_ZAPRET}\n--lua-desync=pass\n");
         ensure_work_dir()?;
         let pass_path = Path::new(WORK_DIR).join("pass_probe.txt");
         fs::write(&pass_path, &pass_raw).with_context(|| format!("write {}", pass_path.display()))?;
@@ -2105,11 +2069,11 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             cleanup_all()?;
             spawn_program(program, &bin, pass_path.parent().unwrap_or(Path::new("/")), opts.qnum, &pass_args)
                 .ok()
-                .and_then(|mut child| match apply_nfqueue_rules(program, opts.qnum, &pass_filter) {
+                .and_then(|mut child| match apply_nfqueue_rules(opts.qnum, &pass_filter) {
                     Ok(()) => Some(child),
                     Err(_) => {
                         stop_child(&mut child);
-                        let _ = cleanup_rules_for_program(program);
+                        let _ = cleanup_test_rules();
                         None
                     }
                 })
@@ -2142,7 +2106,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                     }
                 }
                 stop_child(&mut child);
-                let _ = cleanup_rules_for_program(program);
+                let _ = cleanup_test_rules();
                 let _ = fs::remove_file(SESSION_FILE);
                 if pass_opened && !forced {
                     // Targets open even with a do-nothing strategy: the engine
@@ -2246,9 +2210,9 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                 qnum: opts.qnum,
                 started_at_unix_ms: now_unix_ms(),
             })?;
-            if let Err(err) = apply_nfqueue_rules(program, opts.qnum, &filter) {
+            if let Err(err) = apply_nfqueue_rules(opts.qnum, &filter) {
                 stop_child(&mut child);
-                let _ = cleanup_rules_for_program(program);
+                let _ = cleanup_test_rules();
                 emit_event(&json!({
                     "type": "auto_strategy_error",
                     "strategy": strategy,
@@ -2276,7 +2240,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                 // Engine died mid-probe: respawn and redo this strategy.
                 if matches!(child.try_wait(), Ok(Some(_))) {
                     stop_child(&mut child);
-                    let _ = cleanup_rules_for_program(program);
+                    let _ = cleanup_test_rules();
                     if crash_retries >= CRASH_RETRIES {
                         emit_event(&json!({
                             "type": "auto_strategy_error",
@@ -2323,7 +2287,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             }
 
             stop_child(&mut child);
-            let _ = cleanup_rules_for_program(program);
+            let _ = cleanup_test_rules();
             let _ = fs::remove_file(SESSION_FILE);
 
             if crashed_out {
@@ -2519,22 +2483,14 @@ mod tests {
     #[test]
     fn technique_set_nfqws2_desync_names() {
         let raw = "--lua-init=@/x.lua\n--lua-desync=fake:blob=tls:repeats=6\n--lua-desync=send syndata\n--lua-desync=PASS\n";
-        let set = technique_set("nfqws2", raw);
+        let set = technique_set(raw);
         assert!(set.contains("fake"));
         assert!(set.contains("send"));
         assert!(set.contains("pass"));
         assert_eq!(set.len(), 3);
     }
 
-    #[test]
-    fn technique_set_nfqws_tokens() {
-        let raw = "--filter-tcp=443 --dpi-desync=fake,multisplit --dpi-desync-fooling=ts\n--new --dpi-desync=disorder\n";
-        let set = technique_set("nfqws", raw);
-        assert!(set.contains("fake"));
-        assert!(set.contains("multisplit"));
-        assert!(set.contains("disorder"));
-        assert!(!set.contains("ts"));
-    }
+
 
     fn candidate(name: &str, tech: &[&str]) -> Candidate {
         Candidate::preset(name.to_string(), tech.iter().map(|t| t.to_string()).collect())

@@ -11,7 +11,7 @@ enum class NfqwsTesterPhase {
 
 data class NfqwsTesterSessionState(
     val phase: NfqwsTesterPhase = NfqwsTesterPhase.IDLE,
-    val program: String = "nfqws",
+    val program: String = "nfqws2",
     val strategies: List<String> = emptyList(),
     val currentIndex: Int = -1,
     val currentStrategy: String = "",

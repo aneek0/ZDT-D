@@ -249,7 +249,7 @@
     <string name="setup_features_body">• تجاوز الحظر وحدود السرعة\n• واجهة رسومية مريحة للإعداد</string>
     <string name="setup_notes_title">ملاحظات مهمة</string>
     <string name="setup_notes_body">• الخصوصية والأمان: لا تجمع الوحدة البيانات الشخصية ولا تضر بوظائف الجهاز.\n• الحرية والانفتاح: مجانية بالكامل وستظل كذلك.</string>
-    <string name="setup_arch_unsupported_fmt">بنية غير مدعومة. يدعم ZDT-D البنيتين arm64-v8a وarmeabi-v7a. الجهاز الحالي: %1$s.</string>
+    <string name="setup_arch_unsupported_fmt">بنية غير مدعومة. يدعم ZDT-D بنية arm64-v8a. الجهاز الحالي: %1$s.</string>
     <string name="setup_root_title">مطلوب صلاحيات الجذر</string>
     <string name="setup_root_body">ZDT-D هو وحدة root ‏(Magisk / KernelSU / APatch) لتجاوز حظر DPI وقيود حركة المرور. يلزم root لأن الوحدة تشغّل نصوص النظام ومكونات الشبكة على مستوى نظام التشغيل، وهو ما لا تستطيع التطبيقات العادية فعله.\n\nيُستخدم root أيضًا لتثبيت/تحديث الوحدة، والتحكم في الخدمة الخفية، وقراءة ملفات الوحدة (الرمز والسجلات). يتم دائمًا تأكيد طلبات root عبر مدير root لديك، ويمكن سحب الأذونات في أي وقت.</string>
     <string name="setup_root_waiting">في انتظار استجابة مدير root…</string>
@@ -505,10 +505,8 @@ APatch: ‏10700+</string>
     <string name="apps_list_chip_enabled_count">مفعّل %1$d</string>
     <string name="apps_list_desc_dnscrypt">محلّل DNS مشفّر DNSCrypt</string>
     <string name="apps_list_desc_operaproxy">سلسلة Opera Proxy مع ByeDPI وt2s</string>
-    <string name="apps_list_desc_nfqws">تجاوز DPI عبر Zapret NFQUEUE</string>
     <string name="apps_list_desc_nfqws2">تجاوز DPI عبر Zapret 2 NFQUEUE</string>
     <string name="apps_list_desc_byedpi">وكيل TCP محلي ByeDPI</string>
-    <string name="apps_list_desc_dpitunnel">نفق DPITunnel ‏TCP/UDP</string>
     <string name="apps_list_desc_singbox">أداة توجيه تجريبية sing-box</string>
     <string name="apps_list_desc_default">إعداد هذه الأداة وإدارتها</string>
 
@@ -559,7 +557,6 @@ APatch: ‏10700+</string>
     <string name="program_updates_service_running_desc">أوقف الخدمة قبل التحقق/التحديث. هذا مطلوب كي لا تستخدم القواعد والعمليات الملفات أثناء الاستبدال.</string>
     <string name="program_updates_stopping">جارٍ الإيقاف…</string>
     <string name="program_updates_stop_and_check">إيقاف وتحقق</string>
-    <string name="program_updates_pick_zapret_title">إصدارات Zapret</string>
     <string name="program_updates_pick_zapret2_title">إصدارات Zapret 2</string>
     <string name="program_updates_pick_mihomo_title">إصدارات Mihomo</string>
     <string name="program_updates_pick_mieru_title">إصدارات Mieru</string>
@@ -657,7 +654,6 @@ APatch: ‏10700+</string>
     <string name="opera_ports_title">المنافذ</string>
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
-    <string name="program_updates_zapret_title">Zapret ‏(nfqws)</string>
     <string name="program_updates_zapret2_title">Zapret 2 ‏(nfqws2 + lua)</string>
     <string name="program_updates_mihomo_title">Mihomo</string>
     <string name="program_updates_mieru_title">Mieru</string>
@@ -938,9 +934,7 @@ APatch: ‏10700+</string>
     <string name="apps_conflict_slot_mobile">بيانات الهاتف</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
     <string name="apps_conflict_program_byedpi">ByeDPI</string>
-    <string name="apps_conflict_program_zapret">Zapret</string>
     <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">التطبيقات مستخدمة بالفعل</string>
     <string name="settings_proxyinfo_conflict_body">هذه التطبيقات مستخدمة بالفعل في قواعد الأدوات. هل تريد إزالتها من تلك الأدوات وإضافتها إلى حماية فحص المنافذ؟</string>
@@ -2022,73 +2016,6 @@ APatch: ‏10700+</string>
     <string name="tgws_copy_command">نسخ الأمر</string>
     <string name="tgws_command_copied">تم نسخ الأمر</string>
 
-    <!-- Hysteria2 profile UI -->
-    <string name="hysteria2_t2s_panel_desc">لوحة حالة t2s الأصلية</string>
-    <string name="hysteria2_panel">اللوحة</string>
-    <string name="hysteria2_fill_t2s_port">أدخل منفذ T2S</string>
-    <string name="hysteria2_fill_t2s_web_port">أدخل منفذ ويب T2S</string>
-    <string name="hysteria2_profile_ports_must_differ">يجب أن تختلف منافذ الملف الشخصي</string>
-    <string name="hysteria2_enter_tun_interface">أدخل واجهة TUN</string>
-    <string name="hysteria2_enter_dns">أدخل DNS</string>
-    <string name="hysteria2_vpn_requires_one_enabled_server">يتطلب وضع Hysteria2 VPN خادمًا مفعّلًا واحدًا بالضبط</string>
-    <string name="hysteria2_t2s_port_busy_fmt">منفذ T2S مستخدم بالفعل: %1$s</string>
-    <string name="hysteria2_t2s_web_port_busy_fmt">منفذ ويب T2S مستخدم بالفعل: %1$s</string>
-    <string name="hysteria2_autosave_failed">فشل الحفظ التلقائي لـ Hysteria2</string>
-    <string name="hysteria2_server_created_fmt">تم إنشاء خادم Hysteria2: ‏%1$s</string>
-    <string name="hysteria2_json_saved_settings_failed">تم حفظ JSON، لكن تعذر تحديث إعدادات الخادم</string>
-    <string name="hysteria2_json_title_fmt">JSON لـ Hysteria2: ‏%1$s</string>
-    <string name="hysteria2_client_config_json">JSON لإعداد العميل</string>
-    <string name="hysteria2_parse_error">خطأ في التحليل</string>
-    <string name="hysteria2_invalid_json_fmt">JSON غير صالح: %1$s</string>
-    <string name="hysteria2_apps_title">تطبيقات Hysteria2</string>
-    <string name="hysteria2_vpn_only_one_server_allowed">يُسمح بخادم مفعّل واحد فقط في وضع Hysteria2 VPN</string>
-    <string name="hysteria2_t2s_settings_title">إعدادات T2S لـ Hysteria2</string>
-    <string name="hysteria2_t2s_settings_desc">منافذ t2s/web المحلية لملف Hysteria2 الشخصي</string>
-    <string name="hysteria2_t2s_port_label">منفذ T2S</string>
-    <string name="hysteria2_t2s_web_port_label">منفذ ويب T2S</string>
-    <string name="hysteria2_apply_after_restart">يُطبّق بعد إيقاف الخدمة وبدئها</string>
-    <string name="hysteria2_route_mode_title">وضع التوجيه</string>
-    <string name="hysteria2_route_mode_desc">الواجهة الخلفية لـ Hysteria2 هي دائمًا SOCKS5؛ اختر وضع t2s أدناه</string>
-    <string name="hysteria2_mode_title">وضع Hysteria2</string>
-    <string name="hysteria2_mode_desc">T2S لعدة خوادم أو VPN/tun2proxy لخادم واحد</string>
-    <string name="hysteria2_mode_t2s_desc">عدة خوادم Hysteria2 عبر واجهة خلفية SOCKS5</string>
-    <string name="hysteria2_mode_vpn_desc">خادم Hysteria2 واحد عبر tun2socks</string>
-    <string name="hysteria2_vpn_structure_invalid_title">بنية Hysteria2 VPN غير صالحة</string>
-    <string name="hysteria2_vpn_structure_invalid_desc">بالنسبة إلى VPN/tun2proxy، اترك خادمًا واحدًا بالضبط أو انتقل إلى T2S.</string>
-    <string name="hysteria2_switch_to_t2s">الانتقال إلى T2S</string>
-    <string name="hysteria2_vpn_profile_title">Hysteria2 VPN / tun2proxy</string>
-    <string name="hysteria2_vpn_profile_desc">إعدادات TUN وDNS ومستوى السجل لـ tun2socks</string>
-    <string name="hysteria2_tun_example">مثلاً hytun0</string>
-    <string name="hysteria2_dns_supporting">DNS ‏IPv4، عنوان واحد في كل سطر</string>
-    <string name="hysteria2_auto_save_restart_hint">يُحفظ تلقائيًا ويُطبّق بعد الإيقاف/البدء</string>
-    <string name="hysteria2_servers_title">خوادم Hysteria2</string>
-    <string name="hysteria2_servers_vpn_desc">VPN: يجب تفعيل خادم واحد بالضبط</string>
-    <string name="hysteria2_servers_t2s_desc">T2S: يمكنك إضافة عدة خوادم</string>
-    <string name="hysteria2_add_server">إضافة خادم</string>
-    <string name="hysteria2_no_servers">لا توجد خوادم بعد</string>
-    <string name="hysteria2_socks5_port_busy_fmt">منفذ SOCKS5 مستخدم بالفعل: %1$s</string>
-    <string name="hysteria2_delete_server_title">حذف خادم Hysteria2</string>
-    <string name="hysteria2_delete_server_message_fmt">هل تريد حذف خادم Hysteria2 ‏%1$s / %2$s؟</string>
-    <string name="hysteria2_socks5_autosave_hint">يُحفظ منفذ SOCKS5 تلقائيًا</string>
-    <string name="hysteria2_socks5_backend_port">منفذ واجهة SOCKS5 الخلفية</string>
-    <string name="hysteria2_port_busy_fmt">المنفذ مشغول: %1$s</string>
-    <string name="hysteria2_new_server_title">خادم Hysteria2 جديد</string>
-    <string name="hysteria2_server_name_rules">اسم الخادم: أحرف لاتينية وأرقام و_ و-</string>
-    <string name="hysteria2_server_name_label">اسم الخادم</string>
-    <string name="hysteria2_server_exists">خادم Hysteria2 موجود بالفعل</string>
-    <string name="hysteria2_server_ui_title">واجهة خادم Hysteria2</string>
-    <string name="hysteria2_enabled">مفعّل</string>
-    <string name="hysteria2_server_field_label">الخادم، مثلاً example.com:443</string>
-    <string name="hysteria2_local_socks5_port">منفذ SOCKS5 المحلي</string>
-    <string name="hysteria2_obfs_type_label">نوع obfs، مثلاً salamander</string>
-    <string name="hysteria2_bandwidth_up_label">سرعة الرفع، مثلاً 20 mbps</string>
-    <string name="hysteria2_bandwidth_down_label">سرعة التنزيل، مثلاً 100 mbps</string>
-    <string name="hysteria2_congestion_type_label">congestion.type: ‏bbr أو reno</string>
-    <string name="hysteria2_socks5_username_optional">اسم مستخدم SOCKS5 اختياري</string>
-    <string name="hysteria2_socks5_password_optional">كلمة مرور SOCKS5 اختيارية</string>
-    <string name="hysteria2_server_required">الخادم مطلوب</string>
-    <string name="hysteria2_invalid_socks5_port">منفذ SOCKS5 غير صالح</string>
-
 <!-- VPS server manager -->
     <string name="vps_servers_title">خوادم VPS</string>
     <string name="vps_servers_entry_desc">اتصل عبر SSH وراقب الخوادم وثبّت الخدمات وأنشئ إعدادات العملاء.</string>
@@ -2126,8 +2053,6 @@ APatch: ‏10700+</string>
     <string name="vps_service_openvpn_desc">عدة ملفات تعريف لخادم TCP أو UDP مع شهادات عملاء منفصلة قابلة للإلغاء.</string>
     <string name="vps_service_xray">Xray</string>
     <string name="vps_service_xray_desc">ملفات تعريف VLESS Reality TCP وVLESS WebSocket TLS بمعرّفات UUID منفصلة.</string>
-    <string name="vps_service_hysteria2">Hysteria2</string>
-    <string name="vps_service_hysteria2_desc">ملفات تعريف UDP مع TLS تلقائي وبيانات اعتماد منفصلة للمستخدمين.</string>
     <string name="vps_service_wireproxy">WireProxy</string>
     <string name="vps_service_wireproxy_desc">ملفات تعريف لخادم WireGuard تُنشئ إعدادات عميل متوافقة مع WireProxy.</string>
     <string name="vps_install">تثبيت</string>
@@ -2147,7 +2072,6 @@ APatch: ‏10700+</string>
     <string name="vps_domain">النطاق</string>
     <string name="vps_letsencrypt_email">بريد Let’s Encrypt الإلكتروني</string>
     <string name="vps_automatic_tls_hint">يجب أن يشير النطاق إلى خادم VPS هذا. سيطلب ZDT-D شهادة TLS ويجددها تلقائيًا.</string>
-    <string name="vps_shared_port_hint">يستخدم Xray المنفذ TCP %1$d بالفعل. يمكن لـ Hysteria2 استخدام UDP %1$d بأمان في الوقت نفسه.</string>
     <string name="vps_no_profiles">لا توجد ملفات تعريف</string>
     <string name="vps_no_profiles_hint">أنشئ ملف تعريف للخادم ثم أضف إعدادات منفصلة للعملاء.</string>
     <string name="vps_delete_profile_title">حذف ملف التعريف؟</string>

@@ -385,7 +385,6 @@ fun VpsServiceScreen(
   if (showCreate) {
     CreateVpsProfileDialog(
       kind = kind,
-      suggestedHysteriaPort = profilesMap[VpsViewModel.profileKey(serverId, VpsServiceKind.XRAY)]?.firstOrNull()?.port,
       busy = operation.running || !serverOnline,
       onDismiss = { showCreate = false },
       onCreate = { name, port, mode, domain, email, snis ->
@@ -836,7 +835,6 @@ private const val VPS_PRIVATE_KEY_MAX_BYTES = 512 * 1024
 @Composable
 private fun CreateVpsProfileDialog(
   kind: VpsServiceKind,
-  suggestedHysteriaPort: Int?,
   busy: Boolean,
   onDismiss: () -> Unit,
   onCreate: (String, Int, String, String, String, List<String>) -> Unit,
@@ -845,7 +843,6 @@ private fun CreateVpsProfileDialog(
   val defaultPort = when (kind) {
     VpsServiceKind.OPENVPN -> 1194
     VpsServiceKind.XRAY -> 443
-    VpsServiceKind.HYSTERIA2 -> suggestedHysteriaPort ?: 443
     VpsServiceKind.WIREPROXY -> 51820
     else -> 0
   }
@@ -853,16 +850,14 @@ private fun CreateVpsProfileDialog(
   var mode by remember { mutableStateOf(if (kind == VpsServiceKind.XRAY) "reality" else if (kind == VpsServiceKind.OPENVPN) "udp" else "default") }
   var domain by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
-  var hysteriaSni by remember(kind) { mutableStateOf("zdt-hysteria.local") }
   var xraySnis by remember(kind) { mutableStateOf(listOf("www.microsoft.com")) }
   var menu by remember { mutableStateOf(false) }
   val configuration = LocalConfiguration.current
   val requiresPublicTls = kind == VpsServiceKind.XRAY && mode == "ws"
   val normalizedXraySnis = xraySnis.map(String::trim).filter(String::isNotBlank).distinct()
-  val requiresSni = (kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2
+  val requiresSni = kind == VpsServiceKind.XRAY && mode == "reality"
   val hasRequiredSni = when {
     kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis.isNotEmpty()
-    kind == VpsServiceKind.HYSTERIA2 -> hysteriaSni.isNotBlank()
     else -> true
   }
   val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || hasRequiredSni)
@@ -937,16 +932,11 @@ private fun CreateVpsProfileDialog(
             Spacer(Modifier.width(6.dp))
             Text(stringResource(R.string.vps_add_sni))
           }
-        } else if (kind == VpsServiceKind.HYSTERIA2) {
-          OutlinedTextField(hysteriaSni, { hysteriaSni = it.trim() }, label = { Text(stringResource(R.string.vps_sni)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         if (requiresPublicTls) {
           OutlinedTextField(domain, { domain = it.trim() }, label = { Text(stringResource(R.string.vps_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
           OutlinedTextField(email, { email = it.trim() }, label = { Text(stringResource(R.string.vps_letsencrypt_email_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
           Text(stringResource(R.string.vps_automatic_tls_hint), style = MaterialTheme.typography.bodySmall)
-        }
-        if (kind == VpsServiceKind.HYSTERIA2 && suggestedHysteriaPort != null) {
-          Text(stringResource(R.string.vps_shared_port_hint, suggestedHysteriaPort), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
       }
     },
@@ -956,7 +946,6 @@ private fun CreateVpsProfileDialog(
         onClick = {
           val snis = when {
             kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis
-            kind == VpsServiceKind.HYSTERIA2 -> listOf(hysteriaSni.trim())
             else -> emptyList()
           }
           onCreate(name, port.toInt(), mode, domain, email, snis)
@@ -1528,7 +1517,6 @@ private fun ServiceIcon(kind: VpsServiceKind, accent: Color) {
   val drawable = when (kind) {
     VpsServiceKind.OPENVPN -> R.drawable.ic_tool_openvpn
     VpsServiceKind.XRAY -> R.drawable.ic_tool_sing_box
-    VpsServiceKind.HYSTERIA2 -> R.drawable.ic_tool_hysteria2
     VpsServiceKind.WIREPROXY -> R.drawable.ic_tool_wireproxy
     VpsServiceKind.DNSCRYPT -> null
   }
@@ -1545,7 +1533,6 @@ private fun serviceTitle(kind: VpsServiceKind): String = when (kind) {
   VpsServiceKind.DNSCRYPT -> stringResource(R.string.vps_service_dnscrypt)
   VpsServiceKind.OPENVPN -> stringResource(R.string.vps_service_openvpn)
   VpsServiceKind.XRAY -> stringResource(R.string.vps_service_xray)
-  VpsServiceKind.HYSTERIA2 -> stringResource(R.string.vps_service_hysteria2)
   VpsServiceKind.WIREPROXY -> stringResource(R.string.vps_service_wireproxy)
 }
 
@@ -1554,7 +1541,6 @@ private fun serviceDescription(kind: VpsServiceKind): String = when (kind) {
   VpsServiceKind.DNSCRYPT -> stringResource(R.string.vps_service_dnscrypt_desc)
   VpsServiceKind.OPENVPN -> stringResource(R.string.vps_service_openvpn_desc)
   VpsServiceKind.XRAY -> stringResource(R.string.vps_service_xray_desc)
-  VpsServiceKind.HYSTERIA2 -> stringResource(R.string.vps_service_hysteria2_desc)
   VpsServiceKind.WIREPROXY -> stringResource(R.string.vps_service_wireproxy_desc)
 }
 
@@ -1657,16 +1643,6 @@ private fun importConfigIntoZdtd(
               }
             }
           }
-        }
-      }
-    }
-    VpsServiceKind.HYSTERIA2 -> {
-      actions.createNamedProfile("hysteria2", profileName) { created ->
-        if (created == null) return@createNamedProfile onDone(context.getString(R.string.create_failed))
-        actions.createHysteria2Server(created, "server") { serverName ->
-          if (serverName == null) return@createHysteria2Server onDone(context.getString(R.string.vps_import_failed))
-          val path = "/api/programs/hysteria2/profiles/${url(created)}/servers/${url(serverName)}/config"
-          actions.saveText(path, result.content) { ok -> onDone(context.getString(if (ok) R.string.vps_import_success else R.string.vps_import_failed)) }
         }
       }
     }

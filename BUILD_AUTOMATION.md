@@ -53,11 +53,9 @@ prebuilt/bin/arm64-v8a/
 Обязательные имена:
 - byedpi
 - dnscrypt
-- dpitunnel-cli
-- nfqws
 - nfqws2
 - opera-proxy
-- sing-box, hysteria2
+- sing-box
 
 ## Автособираемые бинарники
 
