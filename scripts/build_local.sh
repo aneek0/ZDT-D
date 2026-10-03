@@ -61,7 +61,9 @@ if [[ "$DO_APK" == 1 ]]; then
   [[ -f application/local.properties ]] || echo "sdk.dir=$SDK_DIR" > application/local.properties
 
   echo "== gradle assembleRelease =="
-  (cd application && JAVA_HOME="$JAVA_HOME" NO_DASHBOARD=1 "$GRADLE" --no-daemon -x lintVitalRelease assembleRelease)
+  # Isolated gradle home: ~/.gradle/init.d/maven-mirror.gradle adds aliyun repos
+  # that conflict with FAIL_ON_PROJECT_REPOS in application/settings.gradle.
+  (cd application && JAVA_HOME="$JAVA_HOME" NO_DASHBOARD=1 "$GRADLE" --no-daemon -Dgradle.user.home="$ROOT/out/gradle-home" -x lintVitalRelease assembleRelease)
 
   APK="application/app/build/outputs/apk/release/app-release.apk"
   ls -lh "$APK"
