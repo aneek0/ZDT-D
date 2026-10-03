@@ -1709,6 +1709,8 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="dpi_detector_chip_analysis">Analiz</string>
     <string name="dpi_detector_status_title">Engelleme testlerini çalıştır</string>
     <string name="dpi_detector_status_desc">Uyarı: doğru sonuçlar almak için kontrolden önce ZDT-D hizmetini durdurun.</string>
+    <string name="dpi_detector_custom_domain_label">Özel alan adı (isteğe bağlı)</string>
+    <string name="dpi_detector_custom_domain_hint">Ayarlanırsa «Alan Adları / TLS / HTTP» kontrolü yerleşik liste yerine bu alan adı üzerinde çalışır.</string>
     <string name="dpi_detector_run_soon">Analizi çalıştır</string>
     <string name="dpi_detector_logs_soon">Canlı günlük</string>
     <string name="dpi_detector_run">Çalıştır</string>

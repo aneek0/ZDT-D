@@ -1710,6 +1710,8 @@ APatch: 10700+</string>
     <string name="dpi_detector_chip_analysis">تحلیل</string>
     <string name="dpi_detector_status_title">اجرای آزمون‌های مسدودسازی</string>
     <string name="dpi_detector_status_desc">هشدار: برای دریافت نتایج صحیح، پیش از بررسی سرویس ZDT-D را متوقف کنید.</string>
+    <string name="dpi_detector_custom_domain_label">دامنه سفارشی (اختیاری)</string>
+    <string name="dpi_detector_custom_domain_hint">اگر تنظیم شود، بررسی «دامنه‌ها / TLS / HTTP» روی این دامنه به‌جای فهرست داخلی اجرا می‌شود.</string>
     <string name="dpi_detector_run_soon">اجرای تحلیل</string>
     <string name="dpi_detector_logs_soon">گزارش زنده</string>
     <string name="dpi_detector_run">اجرا</string>

@@ -1710,6 +1710,8 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="dpi_detector_chip_analysis">Analyse</string>
     <string name="dpi_detector_status_title">Blockierungstests ausführen</string>
     <string name="dpi_detector_status_desc">Warnung: Stoppe vor der Prüfung den ZDT-D-Dienst, um korrekte Ergebnisse zu erhalten.</string>
+    <string name="dpi_detector_custom_domain_label">Eigene Domain (optional)</string>
+    <string name="dpi_detector_custom_domain_hint">Falls gesetzt, läuft die Prüfung „Domains / TLS / HTTP“ auf dieser Domain statt auf der integrierten Liste.</string>
     <string name="dpi_detector_run_soon">Analyse ausführen</string>
     <string name="dpi_detector_logs_soon">Live-Protokoll</string>
     <string name="dpi_detector_run">Ausführen</string>

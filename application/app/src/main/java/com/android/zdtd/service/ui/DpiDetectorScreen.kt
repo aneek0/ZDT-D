@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,6 +68,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -75,6 +78,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -162,6 +167,7 @@ fun DpiDetectorScreen(
   var reportBundle by remember { mutableStateOf<DpiDetectorReportBundle?>(null) }
   val rawEventLines = remember { Collections.synchronizedList(mutableListOf<String>()) }
   var selectedTestIds by remember { mutableStateOf(defaultDpiStages().map { it.id }.toSet()) }
+  var customDomain by rememberSaveable { mutableStateOf("") }
 
   LaunchedEffect(running) {
     if (!running) {
@@ -207,6 +213,7 @@ fun DpiDetectorScreen(
         .runNdjsonStream(
           tests = testsToRun,
           quick = false,
+          domains = listOfNotNull(customDomain.trim().takeIf { it.isNotEmpty() }),
           onRawLine = { line -> rawEventLines.add(line) },
         )
         .collect { event ->
@@ -340,6 +347,8 @@ fun DpiDetectorScreen(
         running = running,
         runningTick = runningTick,
         runEnabled = selectedTestIds.isNotEmpty(),
+        customDomain = customDomain,
+        onCustomDomainChange = { customDomain = it },
         onRun = ::startScan,
         onStop = ::stopScan,
       )
@@ -604,6 +613,8 @@ private fun DpiDetectorActionCard(
   running: Boolean,
   runningTick: Int,
   runEnabled: Boolean,
+  customDomain: String,
+  onCustomDomainChange: (String) -> Unit,
   onRun: () -> Unit,
   onStop: () -> Unit,
 ) {
@@ -631,6 +642,20 @@ private fun DpiDetectorActionCard(
         text = stringResource(R.string.dpi_detector_status_desc),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+      )
+      OutlinedTextField(
+        value = customDomain,
+        onValueChange = onCustomDomainChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        enabled = !running,
+        label = { Text(stringResource(R.string.dpi_detector_custom_domain_label)) },
+        supportingText = { Text(stringResource(R.string.dpi_detector_custom_domain_hint)) },
+        keyboardOptions = KeyboardOptions(
+          keyboardType = KeyboardType.Ascii,
+          capitalization = KeyboardCapitalization.None,
+          autoCorrect = false,
+        ),
       )
       Row(
         modifier = Modifier

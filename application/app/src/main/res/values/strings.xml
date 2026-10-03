@@ -1708,6 +1708,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_chip_analysis">Analysis</string>
     <string name="dpi_detector_status_title">Run blocking tests</string>
     <string name="dpi_detector_status_desc">Warning: stop the ZDT-D service before the check to get correct results.</string>
+    <string name="dpi_detector_custom_domain_label">Custom domain (optional)</string>
+    <string name="dpi_detector_custom_domain_hint">When set, the Domains / TLS / HTTP check runs against this domain instead of the built-in list.</string>
     <string name="dpi_detector_run_soon">Run analysis</string>
     <string name="dpi_detector_logs_soon">Live log</string>
     <string name="dpi_detector_run">Run</string>

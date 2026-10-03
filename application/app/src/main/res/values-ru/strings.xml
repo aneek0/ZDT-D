@@ -1708,6 +1708,8 @@ APatch: 10700+</string>
     <string name="dpi_detector_chip_analysis">Анализ</string>
     <string name="dpi_detector_status_title">Произвести тестирование блокировок</string>
     <string name="dpi_detector_status_desc">Предупреждение: перед проверкой остановите службу ZDT-D, чтобы получить корректные результаты.</string>
+    <string name="dpi_detector_custom_domain_label">Свой домен (необязательно)</string>
+    <string name="dpi_detector_custom_domain_hint">Если указан, проверка «Домены / TLS / HTTP» выполняется по этому домену вместо встроенного списка.</string>
     <string name="dpi_detector_run_soon">Запустить анализ</string>
     <string name="dpi_detector_logs_soon">Живой лог</string>
     <string name="dpi_detector_run">Выполнить</string>

@@ -1709,6 +1709,8 @@ APatch：10700+</string>
     <string name="dpi_detector_chip_analysis">分析</string>
     <string name="dpi_detector_status_title">运行阻断测试</string>
     <string name="dpi_detector_status_desc">警告：请在检查前停止 ZDT-D 服务，以获得正确结果。</string>
+    <string name="dpi_detector_custom_domain_label">自定义域名（可选）</string>
+    <string name="dpi_detector_custom_domain_hint">设置后，「域名 / TLS / HTTP」检查将针对该域名运行，而非内置列表。</string>
     <string name="dpi_detector_run_soon">运行分析</string>
     <string name="dpi_detector_logs_soon">实时日志</string>
     <string name="dpi_detector_run">运行</string>

@@ -1710,6 +1710,8 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="dpi_detector_chip_analysis">Análise</string>
     <string name="dpi_detector_status_title">Executar testes de bloqueio</string>
     <string name="dpi_detector_status_desc">Aviso: pare o serviço ZDT-D antes da verificação para obter resultados corretos.</string>
+    <string name="dpi_detector_custom_domain_label">Domínio personalizado (opcional)</string>
+    <string name="dpi_detector_custom_domain_hint">Se definido, a verificação «Domínios / TLS / HTTP» é executada neste domínio em vez da lista integrada.</string>
     <string name="dpi_detector_run_soon">Executar análise</string>
     <string name="dpi_detector_logs_soon">Log ao vivo</string>
     <string name="dpi_detector_run">Executar</string>

@@ -1709,6 +1709,8 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="dpi_detector_chip_analysis">Phân tích</string>
     <string name="dpi_detector_status_title">Chạy kiểm tra chặn</string>
     <string name="dpi_detector_status_desc">Cảnh báo: hãy dừng dịch vụ ZDT-D trước khi kiểm tra để nhận kết quả chính xác.</string>
+    <string name="dpi_detector_custom_domain_label">Tên miền tùy chọn (không bắt buộc)</string>
+    <string name="dpi_detector_custom_domain_hint">Nếu được đặt, kiểm tra «Tên miền / TLS / HTTP» sẽ chạy trên tên miền này thay cho danh sách tích hợp sẵn.</string>
     <string name="dpi_detector_run_soon">Chạy phân tích</string>
     <string name="dpi_detector_logs_soon">Nhật ký trực tiếp</string>
     <string name="dpi_detector_run">Chạy</string>

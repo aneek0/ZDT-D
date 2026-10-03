@@ -36,6 +36,7 @@ class DpiDetectorRunner(
         tests: List<String> = emptyList(),
         quick: Boolean = false,
         timeoutMs: Int = 5000,
+        domains: List<String> = emptyList(),
         onRawLine: ((String) -> Unit)? = null,
     ): Flow<DpiDetectorEvent> = channelFlow {
         val plannedTests = resolveRequestedTests(tests)
@@ -51,6 +52,11 @@ class DpiDetectorRunner(
             if (tests.isNotEmpty()) {
                 add("--tests")
                 add(tests.joinToString(","))
+            }
+            val sanitizedDomains = domains.map { it.trim() }.filter { it.isNotEmpty() }
+            sanitizedDomains.forEach { domain ->
+                add("--domain")
+                add(domain)
             }
         }
         trySend(

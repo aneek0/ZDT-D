@@ -1709,6 +1709,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="dpi_detector_chip_analysis">분석</string>
     <string name="dpi_detector_status_title">차단 테스트 실행</string>
     <string name="dpi_detector_status_desc">경고: 올바른 결과를 얻으려면 검사 전에 ZDT-D 서비스를 중지하세요.</string>
+    <string name="dpi_detector_custom_domain_label">사용자 지정 도메인(선택 사항)</string>
+    <string name="dpi_detector_custom_domain_hint">설정하면 «도메인 / TLS / HTTP» 검사가 내장 목록 대신 이 도메인에 대해 실행됩니다.</string>
     <string name="dpi_detector_run_soon">분석 실행</string>
     <string name="dpi_detector_logs_soon">실시간 로그</string>
     <string name="dpi_detector_run">실행</string>

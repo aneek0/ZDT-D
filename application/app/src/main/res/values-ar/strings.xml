@@ -1714,6 +1714,8 @@ APatch: ‏10700+</string>
     <string name="dpi_detector_chip_analysis">التحليل</string>
     <string name="dpi_detector_status_title">تشغيل اختبارات الحجب</string>
     <string name="dpi_detector_status_desc">تحذير: أوقف خدمة ZDT-D قبل الفحص للحصول على نتائج صحيحة.</string>
+    <string name="dpi_detector_custom_domain_label">نطاق مخصص (اختياري)</string>
+    <string name="dpi_detector_custom_domain_hint">عند تحديده، تعمل فحوصات «النطاقات / TLS / HTTP» على هذا النطاق بدلاً من القائمة المدمجة.</string>
     <string name="dpi_detector_run_soon">تشغيل التحليل</string>
     <string name="dpi_detector_logs_soon">السجل المباشر</string>
     <string name="dpi_detector_run">تشغيل</string>

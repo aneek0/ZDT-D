@@ -1712,6 +1712,8 @@ APatch: 10700+</string>
     <string name="dpi_detector_chip_analysis">Аналіз</string>
     <string name="dpi_detector_status_title">Запустити тести блокування</string>
     <string name="dpi_detector_status_desc">Попередження: зупиніть службу ZDT-D перед перевіркою, щоб отримати правильні результати.</string>
+    <string name="dpi_detector_custom_domain_label">Власний домен (необовʼязково)</string>
+    <string name="dpi_detector_custom_domain_hint">Якщо вказано, перевірка «Домени / TLS / HTTP» виконується для цього домену замість вбудованого списку.</string>
     <string name="dpi_detector_run_soon">Запустити аналіз</string>
     <string name="dpi_detector_logs_soon">Журнал наживо</string>
     <string name="dpi_detector_run">Запустити</string>

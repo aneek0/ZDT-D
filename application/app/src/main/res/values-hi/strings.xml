@@ -1710,6 +1710,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="dpi_detector_chip_analysis">विश्लेषण</string>
     <string name="dpi_detector_status_title">ब्लॉकिंग परीक्षण चलाएँ</string>
     <string name="dpi_detector_status_desc">चेतावनी: सही परिणाम पाने के लिए जाँच से पहले ZDT-D सेवा रोकें।</string>
+    <string name="dpi_detector_custom_domain_label">कस्टम डोमेन (वैकल्पिक)</string>
+    <string name="dpi_detector_custom_domain_hint">सेट करने पर «डोमेन / TLS / HTTP» जाँच इनबिल्ट सूची के बजाय इस डोमेन पर चलती है।</string>
     <string name="dpi_detector_run_soon">विश्लेषण चलाएँ</string>
     <string name="dpi_detector_logs_soon">लाइव लॉग</string>
     <string name="dpi_detector_run">चलाएँ</string>

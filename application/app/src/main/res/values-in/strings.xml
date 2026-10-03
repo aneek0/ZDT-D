@@ -1709,6 +1709,8 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="dpi_detector_chip_analysis">Analisis</string>
     <string name="dpi_detector_status_title">Jalankan tes pemblokiran</string>
     <string name="dpi_detector_status_desc">Peringatan: hentikan layanan ZDT-D sebelum pemeriksaan agar hasilnya benar.</string>
+    <string name="dpi_detector_custom_domain_label">Domain kustom (opsional)</string>
+    <string name="dpi_detector_custom_domain_hint">Jika diisi, pemeriksaan «Domain / TLS / HTTP» dijalankan pada domain ini, bukan daftar bawaan.</string>
     <string name="dpi_detector_run_soon">Jalankan analisis</string>
     <string name="dpi_detector_logs_soon">Log langsung</string>
     <string name="dpi_detector_run">Jalankan</string>
