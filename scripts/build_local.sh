@@ -71,12 +71,20 @@ cargo_build() {
   local crate="$1" src="$2" bin="$3"
   test -x "$NDK_BIN/aarch64-linux-android21-clang" || { echo "ERROR: NDK clang not found at $NDK_BIN" >&2; exit 1; }
   echo "  building $crate (release, $RUST_TARGET)..."
-  (cd rust && \
-    CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android21-clang" \
-    CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android21-clang" \
-    AR_aarch64_linux_android="$NDK_BIN/llvm-ar" \
-    RANLIB_aarch64_linux_android="$NDK_BIN/llvm-ranlib" \
-    rustup run stable cargo build --manifest-path "${src#rust/}/Cargo.toml" --release --target "$RUST_TARGET") || return 1
+  # Parity with CI: the two CLI tools skip thin LTO (minutes of link time for
+  # ~3% runtime), the long-running daemons keep full LTO.
+  (
+    cd rust || exit 1
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android21-clang"
+    export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android21-clang"
+    export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+    export RANLIB_aarch64_linux_android="$NDK_BIN/llvm-ranlib"
+    if [[ "$crate" == "dpi-detector" || "$crate" == "nfqws-tester" ]]; then
+      export CARGO_PROFILE_RELEASE_LTO=off
+      export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+    fi
+    rustup run stable cargo build --manifest-path "${src#rust/}/Cargo.toml" --release --target "$RUST_TARGET"
+  ) || return 1
   cp -f "rust/target/$RUST_TARGET/release/$crate" "$bin"
 }
 
@@ -121,7 +129,7 @@ if [[ "$DO_APK" == 1 ]]; then
   echo "== gradle assembleRelease =="
   # Isolated gradle home: ~/.gradle/init.d/maven-mirror.gradle adds aliyun repos
   # that conflict with FAIL_ON_PROJECT_REPOS in application/settings.gradle.
-  (cd application && JAVA_HOME="$JAVA_HOME" NO_DASHBOARD=1 "$GRADLE" --no-daemon -Dgradle.user.home="$ROOT/out/gradle-home" -x lintVitalRelease assembleRelease)
+  (cd application && JAVA_HOME="$JAVA_HOME" NO_DASHBOARD=1 "$GRADLE" --no-daemon -Dgradle.user.home="$ROOT/out/gradle-home" assembleRelease)
 
   APK="application/app/build/outputs/apk/release/app-release.apk"
   emb=$(unzip -p "$APK" assets/zdt_module.zip > /dev/null 2>&1 && echo ok || echo missing)

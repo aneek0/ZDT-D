@@ -227,6 +227,9 @@ jobs:
       - name: Build dpi-detector
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          # CLI tool, not the daemon: skip thin LTO to save CI minutes.
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: |
           cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "$CARGO_PROFILE" --target aarch64-linux-android
 
@@ -301,6 +304,9 @@ jobs:
       - name: Build nfqws-tester
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          # CLI tool, not the daemon: skip thin LTO to save CI minutes.
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: |
           cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "$CARGO_PROFILE" --target aarch64-linux-android
 
