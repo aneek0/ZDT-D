@@ -1711,7 +1711,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="dpi_detector_status_title">ब्लॉकिंग परीक्षण चलाएँ</string>
     <string name="dpi_detector_status_desc">चेतावनी: सही परिणाम पाने के लिए जाँच से पहले ZDT-D सेवा रोकें।</string>
     <string name="dpi_detector_custom_domain_label">कस्टम डोमेन (वैकल्पिक)</string>
-    <string name="dpi_detector_custom_domain_hint">सेट करने पर «डोमेन / TLS / HTTP» जाँच इनबिल्ट सूची के बजाय इस डोमेन पर चलती है।</string>
+    <string name="dpi_detector_custom_domain_hint">सेट करने पर «डोमेन / TLS / HTTP» और «TCP 12–64 KB» जाँचें इनबिल्ट लक्ष्यों के अतिरिक्त इस डोमेन पर भी चलती हैं।</string>
     <string name="dpi_detector_run_soon">विश्लेषण चलाएँ</string>
     <string name="dpi_detector_logs_soon">लाइव लॉग</string>
     <string name="dpi_detector_run">चलाएँ</string>
@@ -2126,6 +2126,13 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">सक्षम करना अवरुद्ध: ओवरलैपिंग प्रोफ़ाइल अक्षम करें</string>
+    <string name="enable_blocked_profile_overlap_detail">प्रोग्राम “%2$s” की प्रोफ़ाइल “%1$s” सक्षम नहीं की जा सकती — उसका पहले से सक्षम प्रोफ़ाइल “%3$s” (प्रोग्राम “%4$s”) के साथ साझा ऐप्स हैं (%5$s)। पहले विरोधी प्रोफ़ाइल अक्षम करें।</string>
+    <string name="profile_overlap_detail">प्रोग्राम %1$s की प्रोफ़ाइल “%2$s” और “%3$s” में साझा ऐप्स हैं (%4$s)। पहले इनमें से एक को अक्षम करें।</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d ऐप</item>
+        <item quantity="other">%1$d ऐप्स</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

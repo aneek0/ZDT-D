@@ -1710,7 +1710,7 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="dpi_detector_status_title">Jalankan tes pemblokiran</string>
     <string name="dpi_detector_status_desc">Peringatan: hentikan layanan ZDT-D sebelum pemeriksaan agar hasilnya benar.</string>
     <string name="dpi_detector_custom_domain_label">Domain kustom (opsional)</string>
-    <string name="dpi_detector_custom_domain_hint">Jika diisi, pemeriksaan «Domain / TLS / HTTP» dijalankan pada domain ini, bukan daftar bawaan.</string>
+    <string name="dpi_detector_custom_domain_hint">Jika diisi, pemeriksaan «Domain / TLS / HTTP» dan «TCP 12–64 KB» juga dijalankan pada domain ini selain target bawaan.</string>
     <string name="dpi_detector_run_soon">Jalankan analisis</string>
     <string name="dpi_detector_logs_soon">Log langsung</string>
     <string name="dpi_detector_run">Jalankan</string>
@@ -2125,6 +2125,12 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Pengaktifan diblokir: nonaktifkan profil yang tumpang-tindih</string>
+    <string name="enable_blocked_profile_overlap_detail">Profil “%1$s” pada program “%2$s” tidak dapat diaktifkan — profil ini berbagi aplikasi dengan profil “%3$s” yang sudah aktif pada program “%4$s” (%5$s). Nonaktifkan dulu profil yang bertentangan.</string>
+    <string name="profile_overlap_detail">Profil “%2$s” dan “%3$s” pada program %1$s berbagi aplikasi yang sama (%4$s). Nonaktifkan salah satunya terlebih dahulu.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="other">%1$d aplikasi</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

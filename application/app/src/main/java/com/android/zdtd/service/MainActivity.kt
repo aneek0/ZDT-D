@@ -145,6 +145,11 @@ class MainActivity : AppCompatActivity() {
               onDismissRequest = { },
               title = { Text(ctx.getString(R.string.enable_blocked_profile_overlap)) },
               text = {
+                val appsCount = ctx.resources.getQuantityString(
+                  R.plurals.profile_overlap_apps_count,
+                  dialog.commonApps,
+                  dialog.commonApps,
+                )
                 Text(
                   ctx.getString(
                     R.string.enable_blocked_profile_overlap_detail,
@@ -152,13 +157,13 @@ class MainActivity : AppCompatActivity() {
                     dialog.programId.uppercase(),
                     dialog.conflictingProfile,
                     dialog.conflictingProgram.uppercase(),
-                    "${dialog.commonApps} ${if (dialog.commonApps == 1) "app" else "apps"}"
+                    appsCount,
                   )
                 )
               },
               confirmButton = {
                 TextButton(onClick = { conflictDialog = null }) {
-                  Text("OK")
+                  Text(ctx.getString(R.string.common_ok))
                 }
               }
             )

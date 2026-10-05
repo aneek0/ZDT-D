@@ -1715,7 +1715,7 @@ APatch: ‏10700+</string>
     <string name="dpi_detector_status_title">تشغيل اختبارات الحجب</string>
     <string name="dpi_detector_status_desc">تحذير: أوقف خدمة ZDT-D قبل الفحص للحصول على نتائج صحيحة.</string>
     <string name="dpi_detector_custom_domain_label">نطاق مخصص (اختياري)</string>
-    <string name="dpi_detector_custom_domain_hint">عند تحديده، تعمل فحوصات «النطاقات / TLS / HTTP» على هذا النطاق بدلاً من القائمة المدمجة.</string>
+    <string name="dpi_detector_custom_domain_hint">عند تحديده، تعمل فحوصات «النطاقات / TLS / HTTP» و«TCP 12–64 كيلوبايت» على هذا النطاق أيضًا بالإضافة إلى الأهداف المدمجة.</string>
     <string name="dpi_detector_run_soon">تشغيل التحليل</string>
     <string name="dpi_detector_logs_soon">السجل المباشر</string>
     <string name="dpi_detector_run">تشغيل</string>
@@ -2130,6 +2130,17 @@ APatch: ‏10700+</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">تم حظر التمكين: عطّل الملفات المتداخلة</string>
+    <string name="enable_blocked_profile_overlap_detail">لا يمكن تمكين الملف الشخصي «%1$s» في البرنامج «%2$s» — لديه تطبيقات مشتركة مع الملف الشخصي الممكَّن «%3$s» في البرنامج «%4$s» (%5$s). عطّل الملف الشخصي المتعارض أولاً.</string>
+    <string name="profile_overlap_detail">الملفان الشخصيان «%2$s» و«%3$s» في البرنامج %1$s لديهما تطبيقات مشتركة (%4$s). عطّل أحدهما أولاً.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="zero">%1$d تطبيق</item>
+        <item quantity="one">تطبيق واحد</item>
+        <item quantity="two">تطبيقان</item>
+        <item quantity="few">%1$d تطبيقات</item>
+        <item quantity="many">%1$d تطبيقًا</item>
+        <item quantity="other">%1$d تطبيق</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

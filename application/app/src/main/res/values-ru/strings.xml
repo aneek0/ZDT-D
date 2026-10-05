@@ -1709,7 +1709,7 @@ APatch: 10700+</string>
     <string name="dpi_detector_status_title">Произвести тестирование блокировок</string>
     <string name="dpi_detector_status_desc">Предупреждение: перед проверкой остановите службу ZDT-D, чтобы получить корректные результаты.</string>
     <string name="dpi_detector_custom_domain_label">Свой домен (необязательно)</string>
-    <string name="dpi_detector_custom_domain_hint">Если указан, проверка «Домены / TLS / HTTP» выполняется по этому домену вместо встроенного списка.</string>
+    <string name="dpi_detector_custom_domain_hint">Если указан, проверки «Домены / TLS / HTTP» и «TCP 12–64 КБ» также выполняются по этому домену в дополнение к встроенным целям.</string>
     <string name="dpi_detector_run_soon">Запустить анализ</string>
     <string name="dpi_detector_logs_soon">Живой лог</string>
     <string name="dpi_detector_run">Выполнить</string>
@@ -2154,6 +2154,15 @@ APatch: 10700+</string>
     <string name="blockcheck_fatal_address_block">Адреса целей полностью недоступны</string>
     <string name="blockcheck_fatal_network_lost">Соединение потеряно во время проверки</string>
     <string name="blockcheck_udp_targets_fmt">Цели: %1$s</string>
+    <string name="enable_blocked_profile_overlap">Включение заблокировано: отключите пересекающиеся профили</string>
+    <string name="enable_blocked_profile_overlap_detail">Нельзя включить профиль «%1$s» программы «%2$s»: у него есть общие приложения с уже включённым профилем «%3$s» программы «%4$s» (%5$s). Сначала отключите конфликтующий профиль.</string>
+    <string name="profile_overlap_detail">Профили «%2$s» и «%3$s» программы %1$s имеют общие приложения (%4$s). Сначала отключите один из них.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d приложение</item>
+        <item quantity="few">%1$d приложения</item>
+        <item quantity="many">%1$d приложений</item>
+        <item quantity="other">%1$d приложения</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

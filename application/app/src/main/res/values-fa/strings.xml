@@ -1711,7 +1711,7 @@ APatch: 10700+</string>
     <string name="dpi_detector_status_title">اجرای آزمون‌های مسدودسازی</string>
     <string name="dpi_detector_status_desc">هشدار: برای دریافت نتایج صحیح، پیش از بررسی سرویس ZDT-D را متوقف کنید.</string>
     <string name="dpi_detector_custom_domain_label">دامنه سفارشی (اختیاری)</string>
-    <string name="dpi_detector_custom_domain_hint">اگر تنظیم شود، بررسی «دامنه‌ها / TLS / HTTP» روی این دامنه به‌جای فهرست داخلی اجرا می‌شود.</string>
+    <string name="dpi_detector_custom_domain_hint">اگر تنظیم شود، بررسی‌های «دامنه‌ها / TLS / HTTP» و «TCP 12–64 کیلوبایت» علاوه بر اهداف داخلی روی این دامنه هم اجرا می‌شوند.</string>
     <string name="dpi_detector_run_soon">اجرای تحلیل</string>
     <string name="dpi_detector_logs_soon">گزارش زنده</string>
     <string name="dpi_detector_run">اجرا</string>
@@ -2126,6 +2126,13 @@ APatch: 10700+</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">فعال‌سازی مسدود شد: پروفایل‌های هم‌پوشان را غیرفعال کنید</string>
+    <string name="enable_blocked_profile_overlap_detail">پروفایل «%1$s» برنامه «%2$s» را نمی‌توان فعال کرد — اپلیکیشن‌های مشترکی با پروفایل فعال «%3$s» برنامه «%4$s» دارد (%5$s). ابتدا پروفایل متعارض را غیرفعال کنید.</string>
+    <string name="profile_overlap_detail">پروفایل‌های «%2$s» و «%3$s» برنامه %1$s اپلیکیشن‌های مشترک دارند (%4$s). ابتدا یکی از آن‌ها را غیرفعال کنید.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d اپلیکیشن</item>
+        <item quantity="other">%1$d اپلیکیشن</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

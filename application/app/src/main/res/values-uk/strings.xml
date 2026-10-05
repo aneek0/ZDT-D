@@ -1713,7 +1713,7 @@ APatch: 10700+</string>
     <string name="dpi_detector_status_title">Запустити тести блокування</string>
     <string name="dpi_detector_status_desc">Попередження: зупиніть службу ZDT-D перед перевіркою, щоб отримати правильні результати.</string>
     <string name="dpi_detector_custom_domain_label">Власний домен (необовʼязково)</string>
-    <string name="dpi_detector_custom_domain_hint">Якщо вказано, перевірка «Домени / TLS / HTTP» виконується для цього домену замість вбудованого списку.</string>
+    <string name="dpi_detector_custom_domain_hint">Якщо вказано, перевірки «Домени / TLS / HTTP» і «TCP 12–64 КБ» також виконуються для цього домену на додаток до вбудованих цілей.</string>
     <string name="dpi_detector_run_soon">Запустити аналіз</string>
     <string name="dpi_detector_logs_soon">Журнал наживо</string>
     <string name="dpi_detector_run">Запустити</string>
@@ -2128,6 +2128,15 @@ APatch: 10700+</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Увімкнення заблоковано: вимкніть профілі, що перетинаються</string>
+    <string name="enable_blocked_profile_overlap_detail">Не можна ввімкнути профіль «%1$s» програми «%2$s»: у нього є спільні застосунки з уже увімкненим профілем «%3$s» програми «%4$s» (%5$s). Спершу вимкніть конфліктний профіль.</string>
+    <string name="profile_overlap_detail">Профілі «%2$s» і «%3$s» програми %1$s мають спільні застосунки (%4$s). Спершу вимкніть один із них.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d застосунок</item>
+        <item quantity="few">%1$d застосунки</item>
+        <item quantity="many">%1$d застосунків</item>
+        <item quantity="other">%1$d застосунка</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

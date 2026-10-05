@@ -1711,7 +1711,7 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="dpi_detector_status_title">Executar testes de bloqueio</string>
     <string name="dpi_detector_status_desc">Aviso: pare o serviço ZDT-D antes da verificação para obter resultados corretos.</string>
     <string name="dpi_detector_custom_domain_label">Domínio personalizado (opcional)</string>
-    <string name="dpi_detector_custom_domain_hint">Se definido, a verificação «Domínios / TLS / HTTP» é executada neste domínio em vez da lista integrada.</string>
+    <string name="dpi_detector_custom_domain_hint">Se definido, as verificações «Domínios / TLS / HTTP» e «TCP 12–64 KB» também são executadas neste domínio, além dos destinos integrados.</string>
     <string name="dpi_detector_run_soon">Executar análise</string>
     <string name="dpi_detector_logs_soon">Log ao vivo</string>
     <string name="dpi_detector_run">Executar</string>
@@ -2126,6 +2126,14 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Ativação bloqueada: desative os perfis sobrepostos</string>
+    <string name="enable_blocked_profile_overlap_detail">Não é possível ativar o perfil “%1$s” do programa “%2$s” — ele compartilha apps com o perfil já ativado “%3$s” do programa “%4$s” (%5$s). Desative primeiro o perfil conflitante.</string>
+    <string name="profile_overlap_detail">Os perfis “%2$s” e “%3$s” do programa %1$s compartilham apps (%4$s). Desative primeiro um deles.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d app</item>
+        <item quantity="many">%1$d apps</item>
+        <item quantity="other">%1$d apps</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

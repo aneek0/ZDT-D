@@ -1710,7 +1710,7 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="dpi_detector_status_title">차단 테스트 실행</string>
     <string name="dpi_detector_status_desc">경고: 올바른 결과를 얻으려면 검사 전에 ZDT-D 서비스를 중지하세요.</string>
     <string name="dpi_detector_custom_domain_label">사용자 지정 도메인(선택 사항)</string>
-    <string name="dpi_detector_custom_domain_hint">설정하면 «도메인 / TLS / HTTP» 검사가 내장 목록 대신 이 도메인에 대해 실행됩니다.</string>
+    <string name="dpi_detector_custom_domain_hint">설정하면 «도메인 / TLS / HTTP» 및 «TCP 12–64 KB» 검사가 내장 대상 외에 이 도메인에 대해서도 실행됩니다.</string>
     <string name="dpi_detector_run_soon">분석 실행</string>
     <string name="dpi_detector_logs_soon">실시간 로그</string>
     <string name="dpi_detector_run">실행</string>
@@ -2125,6 +2125,12 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">활성화 차단됨: 겹치는 프로필을 비활성화하세요</string>
+    <string name="enable_blocked_profile_overlap_detail">프로그램 “%2$s”의 프로필 “%1$s”을(를) 활성화할 수 없습니다 — 이미 활성화된 프로필 “%3$s”(프로그램 “%4$s”)와 공유 앱이 있습니다(%5$s). 먼저 충돌하는 프로필을 비활성화하세요.</string>
+    <string name="profile_overlap_detail">프로그램 %1$s의 프로필 “%2$s”과(와) “%3$s”에 공유 앱이 있습니다(%4$s). 먼저 둘 중 하나를 비활성화하세요.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="other">앱 %1$d개</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

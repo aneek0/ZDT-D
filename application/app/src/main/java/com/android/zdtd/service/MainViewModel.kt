@@ -5849,7 +5849,7 @@ private fun shQuote(s: String): String {
           if (overlapError != null) {
             log("ERR", "toggle start blocked: $overlapError")
             withContext(Dispatchers.Main.immediate) {
-              toast(str(R.string.start_blocked_profile_overlap) + ": " + overlapError)
+              toast(overlapError)
             }
             return@launchIO
           }
@@ -5915,7 +5915,17 @@ private fun shQuote(s: String): String {
           val b = appsByProfile[profileList[j]] ?: emptySet()
           val common = a.intersect(b)
           if (common.isNotEmpty()) {
-            return "mihomo: ${profileList[i]} и ${profileList[j]} имеют общие приложения (${common.size})"
+            return str(
+              R.string.profile_overlap_detail,
+              str(R.string.apps_conflict_program_mihomo),
+              profileList[i],
+              profileList[j],
+              getApplication<Application>().resources.getQuantityString(
+                R.plurals.profile_overlap_apps_count,
+                common.size,
+                common.size,
+              ),
+            )
           }
         }
       }
@@ -5940,7 +5950,17 @@ private fun shQuote(s: String): String {
         val b = zapretAppsByProfile[zapretProfileList[j]] ?: emptySet()
         val common = a.intersect(b)
         if (common.isNotEmpty()) {
-          return "zapret: ${zapretProfileList[i]} и ${zapretProfileList[j]} имеют общие приложения (${common.size})"
+          return str(
+            R.string.profile_overlap_detail,
+            str(R.string.apps_conflict_program_zapret2),
+            zapretProfileList[i].substringAfter('/'),
+            zapretProfileList[j].substringAfter('/'),
+            getApplication<Application>().resources.getQuantityString(
+              R.plurals.profile_overlap_apps_count,
+              common.size,
+              common.size,
+            ),
+          )
         }
       }
     }

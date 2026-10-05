@@ -1710,7 +1710,7 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="dpi_detector_status_title">Chạy kiểm tra chặn</string>
     <string name="dpi_detector_status_desc">Cảnh báo: hãy dừng dịch vụ ZDT-D trước khi kiểm tra để nhận kết quả chính xác.</string>
     <string name="dpi_detector_custom_domain_label">Tên miền tùy chọn (không bắt buộc)</string>
-    <string name="dpi_detector_custom_domain_hint">Nếu được đặt, kiểm tra «Tên miền / TLS / HTTP» sẽ chạy trên tên miền này thay cho danh sách tích hợp sẵn.</string>
+    <string name="dpi_detector_custom_domain_hint">Nếu được đặt, các kiểm tra «Tên miền / TLS / HTTP» và «TCP 12–64 KB» cũng chạy trên tên miền này ngoài các mục tiêu tích hợp sẵn.</string>
     <string name="dpi_detector_run_soon">Chạy phân tích</string>
     <string name="dpi_detector_logs_soon">Nhật ký trực tiếp</string>
     <string name="dpi_detector_run">Chạy</string>
@@ -2125,6 +2125,12 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Bật bị chặn: hãy tắt các hồ sơ bị chồng lấn</string>
+    <string name="enable_blocked_profile_overlap_detail">Không thể bật hồ sơ “%1$s” của chương trình “%2$s” — nó dùng chung ứng dụng với hồ sơ đã bật “%3$s” của chương trình “%4$s” (%5$s). Hãy tắt hồ sơ xung đột trước.</string>
+    <string name="profile_overlap_detail">Hồ sơ “%2$s” và “%3$s” của chương trình %1$s dùng chung ứng dụng (%4$s). Hãy tắt một trong hai trước.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="other">%1$d ứng dụng</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

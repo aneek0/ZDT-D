@@ -1710,7 +1710,7 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="dpi_detector_status_title">Engelleme testlerini çalıştır</string>
     <string name="dpi_detector_status_desc">Uyarı: doğru sonuçlar almak için kontrolden önce ZDT-D hizmetini durdurun.</string>
     <string name="dpi_detector_custom_domain_label">Özel alan adı (isteğe bağlı)</string>
-    <string name="dpi_detector_custom_domain_hint">Ayarlanırsa «Alan Adları / TLS / HTTP» kontrolü yerleşik liste yerine bu alan adı üzerinde çalışır.</string>
+    <string name="dpi_detector_custom_domain_hint">Ayarlanırsa «Alan Adları / TLS / HTTP» ve «TCP 12–64 KB» kontrolleri yerleşik hedeflere ek olarak bu alan adı üzerinde de çalışır.</string>
     <string name="dpi_detector_run_soon">Analizi çalıştır</string>
     <string name="dpi_detector_logs_soon">Canlı günlük</string>
     <string name="dpi_detector_run">Çalıştır</string>
@@ -2125,6 +2125,13 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Etkinleştirme engellendi: çakışan profilleri devre dışı bırakın</string>
+    <string name="enable_blocked_profile_overlap_detail">“%2$s” programındaki “%1$s” profili etkinleştirilemiyor — zaten etkin olan “%3$s” profili (“%4$s” programı) ile ortak uygulamalar paylaşıyor (%5$s). Önce çakışan profili devre dışı bırakın.</string>
+    <string name="profile_overlap_detail">%1$s programındaki “%2$s” ve “%3$s” profilleri ortak uygulamalar paylaşıyor (%4$s). Önce bunlardan birini devre dışı bırakın.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d uygulama</item>
+        <item quantity="other">%1$d uygulama</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

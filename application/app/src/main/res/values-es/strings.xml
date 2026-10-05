@@ -1711,7 +1711,7 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="dpi_detector_status_title">Ejecutar pruebas de bloqueo</string>
     <string name="dpi_detector_status_desc">Advertencia: detén el servicio ZDT-D antes de la comprobación para obtener resultados correctos.</string>
     <string name="dpi_detector_custom_domain_label">Dominio personalizado (opcional)</string>
-    <string name="dpi_detector_custom_domain_hint">Si se establece, la comprobación «Dominios / TLS / HTTP» se ejecuta sobre este dominio en lugar de la lista integrada.</string>
+    <string name="dpi_detector_custom_domain_hint">Si se establece, las comprobaciones «Dominios / TLS / HTTP» y «TCP 12–64 KB» se ejecutan también sobre este dominio, además de los destinos integrados.</string>
     <string name="dpi_detector_run_soon">Ejecutar análisis</string>
     <string name="dpi_detector_logs_soon">Registro en directo</string>
     <string name="dpi_detector_run">Ejecutar</string>
@@ -2126,6 +2126,14 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
 
+    <string name="enable_blocked_profile_overlap">Activación bloqueada: desactiva los perfiles que se solapan</string>
+    <string name="enable_blocked_profile_overlap_detail">No se puede activar el perfil «%1$s» del programa «%2$s»: comparte aplicaciones con el perfil ya activado «%3$s» del programa «%4$s» (%5$s). Desactiva primero el perfil en conflicto.</string>
+    <string name="profile_overlap_detail">Los perfiles «%2$s» y «%3$s» del programa %1$s comparten aplicaciones (%4$s). Desactiva primero uno de ellos.</string>
+    <plurals name="profile_overlap_apps_count">
+        <item quantity="one">%1$d aplicación</item>
+        <item quantity="many">%1$d aplicaciones</item>
+        <item quantity="other">%1$d aplicaciones</item>
+    </plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
