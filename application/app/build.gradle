@@ -172,6 +172,11 @@ android {
       assets.srcDirs += generatedAssetsDir
     }
   }
+  lint {
+    // lintVitalAnalyze runs on every assembleRelease and burns ~2 minutes of CI
+    // time in parallel with R8 without catching anything actionable.
+    checkReleaseBuilds false
+  }
 }
 
 // Prepare generated assets used by the APK installer.

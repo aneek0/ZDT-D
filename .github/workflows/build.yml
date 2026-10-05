@@ -350,7 +350,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -495,7 +495,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -640,7 +640,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -802,7 +802,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -1061,13 +1061,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-amneziawg-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-amneziawg-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -1292,13 +1303,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-wireproxy-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-wireproxy-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -1409,13 +1431,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-tun2socks-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-tun2socks-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -1539,13 +1572,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-mihomo-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-mihomo-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -1672,13 +1716,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-singbox-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-singbox-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -1823,7 +1878,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -1963,13 +2018,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-dnscrypt-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-dnscrypt-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -2112,13 +2178,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-mieru-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-mieru-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -2256,13 +2333,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-operaproxy-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-operaproxy-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -2386,7 +2474,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -2661,7 +2749,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -2904,13 +2992,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: '${{ env.GO_VERSION }}'
           cache: false
+
+      - name: Cache Go build and module directories
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-lyrebird-${{ env.GO_VERSION }}-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            go-build-lyrebird-${{ env.GO_VERSION }}-
+            go-build-${{ env.GO_VERSION }}-
 
       - name: Set up Android SDK for Go cgo
         uses: android-actions/setup-android@v4
@@ -3076,7 +3175,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -3157,7 +3256,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Apply bumped version
         run: |
@@ -3475,7 +3574,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -3620,7 +3719,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -3765,7 +3864,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -3896,7 +3995,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Apply bumped version
         run: |
@@ -3970,17 +4069,8 @@ jobs:
             exit 1
           }
           install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
-            install_sdk_package "ndk;$NATIVE_NDK_VERSION"
-          fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          # NDK is not needed: the APK build has no externalNativeBuild/native
+          # code and NDK download used to add minutes to this job.
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
         uses: gradle/actions/setup-gradle@v6
@@ -4115,6 +4205,8 @@ jobs:
         run: |
           gradle \
             --no-daemon \
+            --build-cache \
+            --configuration-cache \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
             "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
@@ -4189,7 +4281,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Download all arm64 artifacts
         uses: actions/download-artifact@v7
