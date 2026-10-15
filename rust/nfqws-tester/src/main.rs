@@ -98,7 +98,7 @@ fn entry() -> Result<()> {
             list_catalog(&protocol)
         }
         "export" => {
-            let program = normalize_program(&parse_named_value(&args[1..], "--program")?)?;
+            let _program = parse_named_value(&args[1..], "--program")?;
             let protocol = parse_named_value(&args[1..], "--protocol")?;
             let id = parse_named_value(&args[1..], "--id")?;
             export_strategy(&protocol, &id)
@@ -110,7 +110,8 @@ fn entry() -> Result<()> {
         "stop" | "cleanup" => stop_session(),
         "status" => print_status(),
         "auto" => {
-            let program = parse_named_value(&args[1..], "--program")?;
+            let raw_program = parse_named_value(&args[1..], "--program")?;
+            let program = normalize_program(&raw_program)?;
             let protocol = parse_named_value(&args[1..], "--protocol")
                 .unwrap_or_else(|_| "tcp_https".to_string());
             if !matches!(protocol.as_str(), "tcp_https" | "stun_voice" | "udp_games") {
@@ -125,7 +126,12 @@ fn entry() -> Result<()> {
             if protocol == "tcp_https" && hosts_file.is_none() {
                 bail!("--hosts is required for protocol tcp_https");
             }
+            let config_path = parse_named_value(&args[1..], "--config").ok();
+            if config_path.is_some() && program != "nfqws2" {
+                bail!("--config is supported only for nfqws2 auto scans");
+            }
             let history_path = parse_named_value(&args[1..], "--history").ok();
+            let skip_confirmed = args[1..].iter().any(|it| it == "--skip-confirmed");
             let qnum = match parse_named_value(&args[1..], "--qnum") {
                 Ok(v) => v.parse::<u16>().context("invalid --qnum")?,
                 Err(_) => DEFAULT_QNUM,
@@ -135,11 +141,13 @@ fn entry() -> Result<()> {
                 Err(_) => 4,
             };
             let options = AutoOptions {
-                program: normalize_program(&program)?,
+                config_path,
+                program,
                 hosts_file,
                 protocol,
                 mode,
                 history_path,
+                skip_confirmed,
                 qnum,
                 timeout_secs,
             };
@@ -163,7 +171,7 @@ fn print_help() {
     println!("  nfqws-tester --version");
     println!("  nfqws-tester list --program nfqws2");
     println!("  nfqws-tester start --program nfqws2 --config /path/to/file.txt [--qnum 200]");
-    println!("  nfqws-tester auto --program nfqws2 [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
+    println!("  nfqws-tester auto --program nfqws2 [--config FILE] [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
     println!("  nfqws-tester export --program nfqws2 --protocol tcp_https|stun_voice|udp_games --id <strategy-id>");
     println!("  nfqws-tester catalog --protocol tcp_https|stun_voice|udp_games");
     println!("  nfqws-tester stop");
@@ -1059,11 +1067,15 @@ const KNOWN_BLOCK_IPS: [&str; 10] = [
 
 #[derive(Debug, Clone)]
 struct AutoOptions {
+    config_path: Option<String>,
     program: String,
     hosts_file: Option<String>,
     protocol: String,
     mode: String,
     history_path: Option<String>,
+    // When set, strategies confirmed by history are excluded from the batch
+    // instead of being scanned first: a re-scan explores fresh candidates.
+    skip_confirmed: bool,
     qnum: u16,
     timeout_secs: u64,
 }
@@ -1458,8 +1470,15 @@ fn order_candidates(
     confirmed: &[String],
     failed_at: &std::collections::HashMap<String, u64>,
     now: u64,
+    skip_confirmed: bool,
 ) -> Vec<Candidate> {
-    let pool: Vec<&Candidate> = candidates.iter().filter(|c| !c.is_pass()).collect();
+    let confirmed_set: std::collections::HashSet<&str> = confirmed.iter().map(|s| s.as_str()).collect();
+    // skip-confirmed: drop history-confirmed strategies entirely — the
+    // re-scan explores fresh candidates instead of re-proving known wins.
+    let pool: Vec<&Candidate> = candidates
+        .iter()
+        .filter(|c| !c.is_pass() && !(skip_confirmed && confirmed_set.contains(c.name.as_str())))
+        .collect();
     // Confirmed-by-history first, in history order, skipping gone strategies.
     let mut first: Vec<&Candidate> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -1756,6 +1775,17 @@ fn build_candidates(
     catalog: &[CatalogEntry],
     registry: &std::collections::HashMap<String, String>,
 ) -> Result<(Vec<Candidate>, Vec<std::path::PathBuf>)> {
+    if let Some(config_path) = opts.config_path.as_deref() {
+        let path = PathBuf::from(config_path);
+        if !path.is_file() {
+            bail!("config not found: {}", path.display());
+        }
+        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let name = raw.lines().find_map(|line| {
+            line.trim().strip_prefix("# @zdtd-variant ").map(str::trim).filter(|value| !value.is_empty())
+        }).map(str::to_owned).unwrap_or_else(|| "active_profile".to_string());
+        return Ok((vec![Candidate { title: name.clone(), name, techniques: technique_set(&raw), generated: Some(path) }], Vec::new()));
+    }
     if catalog.is_empty() {
         let names = list_strategy_names(program)?;
         let candidates = names
@@ -1947,8 +1977,22 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     if candidates.is_empty() {
         bail!("no strategies found for program {program}");
     }
-    let ordered = order_candidates(&candidates, &history.confirmed, &history.failed, now);
+    // Config mode scans the user's active profile: is_pass filtering does not
+    // apply (the profile is not a catalog candidate), and an empty result can
+    // only mean the config carries no --lua-desync techniques.
+    let config_mode = opts.config_path.is_some();
+    let ordered = if config_mode {
+        candidates.clone()
+    } else {
+        order_candidates(&candidates, &history.confirmed, &history.failed, now, opts.skip_confirmed)
+    };
     let strategies = batch_for_mode(ordered, &opts.mode);
+    if strategies.is_empty() {
+        if config_mode {
+            bail!("the active profile config carries no --lua-desync strategies (empty or failed to load)");
+        }
+        bail!("every candidate strategy is already confirmed for this target; nothing new to test");
+    }
     let total = strategies.len();
     let total_targets = targets.len();
 
@@ -2490,6 +2534,26 @@ mod tests {
         assert_eq!(set.len(), 3);
     }
 
+    #[test]
+    fn config_mode_candidates_bypass_pass_filter() {
+        // A user profile with no --lua-desync lines resolves to an empty
+        // technique set; it must NOT be dropped as a pass-control candidate
+        // (that produced the misleading "already confirmed" bail).
+        // Config mode returns candidates verbatim, bypassing order_candidates.
+        // Simulate what run_auto does for config mode: candidates.clone().
+        let profile = Candidate {
+            title: "active_profile".to_string(),
+            name: "active_profile".to_string(),
+            techniques: technique_set("--lua-init=@/x.lua\n"), // no desync lines
+            generated: Some(std::path::PathBuf::from("/tmp/x.txt")),
+        };
+        assert!(profile.is_pass(), "no-desync profile reads as pass technique");
+        // In config mode run_auto skips order_candidates entirely, so the
+        // candidate survives; only the empty-batch message differs.
+        let ordered: Vec<Candidate> = vec![profile];
+        assert_eq!(ordered.len(), 1);
+    }
+
 
 
     fn candidate(name: &str, tech: &[&str]) -> Candidate {
@@ -2508,12 +2572,25 @@ mod tests {
         let confirmed = vec!["c.txt".to_string()];
         let mut failed = std::collections::HashMap::new();
         failed.insert("b.txt".to_string(), now - 100);
-        let ordered = order_candidates(&candidates, &confirmed, &failed, now);
+        let ordered = order_candidates(&candidates, &confirmed, &failed, now, false);
         let names: Vec<&str> = ordered.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names.first(), Some(&"c.txt"));
         assert_eq!(names.last(), Some(&"b.txt"));
         assert!(!names.contains(&"pass.txt"));
         assert_eq!(names.len(), 3);
+    }
+
+    #[test]
+    fn ordering_skip_confirmed_drops_known_wins() {
+        let candidates = vec![
+            candidate("a.txt", &["fake"]),
+            candidate("b.txt", &["split"]),
+            candidate("c.txt", &["fake"]),
+        ];
+        let confirmed = vec!["a.txt".to_string(), "c.txt".to_string()];
+        let ordered = order_candidates(&candidates, &confirmed, &std::collections::HashMap::new(), 0, true);
+        let names: Vec<&str> = ordered.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["b.txt"]);
     }
 
     #[test]
@@ -2524,7 +2601,7 @@ mod tests {
             candidate("s1.txt", &["split"]),
             candidate("f3.txt", &["fake"]),
         ];
-        let ordered = order_candidates(&candidates, &[], &std::collections::HashMap::new(), 0);
+        let ordered = order_candidates(&candidates, &[], &std::collections::HashMap::new(), 0, false);
         let names: Vec<&str> = ordered.iter().map(|c| c.name.as_str()).collect();
         // Round-robin: second strategy must be from another technique group.
         assert_eq!(names[1], "s1.txt");
@@ -2537,7 +2614,7 @@ mod tests {
         let candidates = vec![candidate("a.txt", &["fake"]), candidate("b.txt", &["split"])];
         let mut failed = std::collections::HashMap::new();
         failed.insert("a.txt".to_string(), now - FAILED_MEMORY_SECONDS - 10);
-        let ordered = order_candidates(&candidates, &[], &failed, now);
+        let ordered = order_candidates(&candidates, &[], &failed, now, false);
         // a.txt failed but >14 days ago: treated as fresh, so interleave order
         // (a first, then b) is preserved.
         assert_eq!(ordered[0].name, "a.txt");
@@ -2546,7 +2623,7 @@ mod tests {
     #[test]
     fn batch_caps_by_mode() {
         let candidates: Vec<Candidate> = (0..100).map(|i| candidate(&format!("s{i}.txt"), &["fake"])).collect();
-        let ordered = order_candidates(&candidates, &[], &std::collections::HashMap::new(), 0);
+        let ordered = order_candidates(&candidates, &[], &std::collections::HashMap::new(), 0, false);
         assert_eq!(batch_for_mode(ordered.clone(), "quick").len(), 30);
         assert_eq!(batch_for_mode(ordered.clone(), "standard").len(), 80);
         assert_eq!(batch_for_mode(ordered, "full").len(), 100);

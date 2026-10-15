@@ -20,6 +20,10 @@ data class BlockcheckRequest(
     val targetKey: String,
     val allStrategies: List<String>,
     val strategyTitles: Map<String, String>,
+    /** Captured profile config; only used by nfqws2's exact-preset scan mode. */
+    val configSnapshot: String? = null,
+    /** Drop history-confirmed strategies from the batch (re-scan explores fresh). */
+    val skipConfirmed: Boolean = false,
 )
 
 /**
@@ -105,6 +109,8 @@ object BlockcheckController {
                     hostsFile = request.hostsFile,
                     protocol = request.protocol,
                     mode = request.mode,
+                    configSnapshot = request.configSnapshot,
+                    skipConfirmed = request.skipConfirmed,
                     historyPath = BlockcheckHistory(appContext).path(),
                 ).collect { event -> apply(appContext, request, event) }
             } finally {
@@ -197,8 +203,25 @@ object BlockcheckController {
                     )
                 }
             }
-            is BlockcheckEvent.Error -> store.update {
-                it.copy(isError = true, errorMessage = event.message, isRunning = false)
+            is BlockcheckEvent.Error -> {
+                // The tester bails with plain-text stderr (no event JSON);
+                // map the known bail messages to localized strings and fall
+                // back to the raw text for anything else.
+                val resId = when {
+                    event.message.startsWith("every candidate strategy is already confirmed") ->
+                        R.string.blockcheck_error_all_confirmed
+                    event.message.startsWith("the active profile config carries no --lua-desync") ->
+                        R.string.blockcheck_error_config_no_desync
+                    event.message.startsWith("no strategies found") ->
+                        R.string.blockcheck_error_no_strategies
+                    event.message.startsWith("config not found") ->
+                        R.string.blockcheck_error_config_not_found
+                    event.message.startsWith("--hosts is required") ->
+                        R.string.blockcheck_error_hosts_required
+                    else -> null
+                }
+                val msg = resId?.let { context.getString(it) } ?: event.message
+                store.update { it.copy(isError = true, errorMessage = msg, isRunning = false) }
             }
             else -> {}
         }

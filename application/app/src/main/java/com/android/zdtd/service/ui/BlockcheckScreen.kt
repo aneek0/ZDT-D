@@ -22,6 +22,7 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.diagnostics.blockcheck.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import java.io.File
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -61,6 +62,8 @@ fun BlockcheckScreen(
     var selectedHostFile by remember { mutableStateOf(hostsFile) }
     var customDomain by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
+    // Re-scan mode: drop history-confirmed strategies from the batch.
+    var skipTested by remember { mutableStateOf(false) }
 
     val targetChanged = selectedProgram != entryProgram || selectedProtocol != entryProtocol
 
@@ -108,32 +111,49 @@ fun BlockcheckScreen(
         var hostInput: String? = null
         if (isTcp) {
             hostInput = if (showCustom && customDomain.isNotBlank()) {
-                // Temp file name doubles as the history target key on both
-                // sides (app + tester derive basename from the --hosts path).
                 val safe = customDomain.trim().replace(Regex("[^A-Za-z0-9._-]"), "_")
                 val tmp = File(context.cacheDir, "custom_$safe")
                 tmp.writeText(customDomain.trim())
                 tmp.absolutePath
             } else selectedHostFile
         }
-        val targetKey = if (isTcp) {
-            hostInput?.let { File(it).name } ?: ""
-        } else {
-            selectedProtocol
+        val targetKey = if (isTcp) hostInput?.let { File(it).name } ?: "" else selectedProtocol
+        coroutineScope.launch {
+            val snapshot = if (selectedProgram == "nfqws2") {
+                val a = actions
+                if (a == null) null else suspendCancellableCoroutine<String?> { cont ->
+                    val path = "/api/programs/${selectedProgram}/profiles/${selectedProfile}/config"
+                    a.loadText(path) { value ->
+                        // A blank body means the daemon answered with an
+                        // error payload (HTTP 200 + ok:false) or the profile
+                        // has no config file: either way there is nothing to
+                        // scan, and an empty --config would make the tester
+                        // bail with a misleading all-confirmed message.
+                        val safe = value?.takeIf { it.isNotBlank() }
+                        if (cont.isActive) cont.resume(safe, onCancellation = {})
+                    }
+                }
+            } else null
+            if (selectedProgram == "nfqws2" && snapshot == null) {
+                snackHost?.showSnackbar(context.getString(R.string.blockcheck_error_snapshot_load))
+                return@launch
+            }
+            BlockcheckController.start(
+                context,
+                BlockcheckRequest(
+                    program = selectedProgram,
+                    profile = selectedProfile,
+                    protocol = selectedProtocol,
+                    mode = selectedMode,
+                    hostsFile = hostInput,
+                    targetKey = targetKey,
+                    allStrategies = allStrategies,
+                    strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
+                    configSnapshot = snapshot,
+                    skipConfirmed = skipTested,
+                ),
+            )
         }
-        BlockcheckController.start(
-            context,
-            BlockcheckRequest(
-                program = selectedProgram,
-                profile = selectedProfile,
-                protocol = selectedProtocol,
-                mode = selectedMode,
-                hostsFile = hostInput,
-                targetKey = targetKey,
-                allStrategies = allStrategies,
-                strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
-            ),
-        )
     }
 
     fun stopRun() {
@@ -226,6 +246,7 @@ fun BlockcheckScreen(
                         FilterChip(selected = selectedMode == "quick", onClick = { selectedMode = "quick" }, label = { Text(context.getString(R.string.blockcheck_mode_quick)) })
                         FilterChip(selected = selectedMode == "standard", onClick = { selectedMode = "standard" }, label = { Text(context.getString(R.string.blockcheck_mode_standard)) })
                         FilterChip(selected = selectedMode == "full", onClick = { selectedMode = "full" }, label = { Text(context.getString(R.string.blockcheck_mode_full)) })
+                        FilterChip(selected = skipTested, onClick = { skipTested = !skipTested }, label = { Text(context.getString(R.string.blockcheck_skip_tested)) })
                     }
                     Text(
                         context.getString(R.string.blockcheck_target_profile, selectedProgram, selectedProfile),
