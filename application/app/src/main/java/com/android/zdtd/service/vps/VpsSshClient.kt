@@ -1,6 +1,7 @@
 package com.android.zdtd.service.vps
 
 import com.jcraft.jsch.ChannelExec
+import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
@@ -10,10 +11,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.Properties
+import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class VpsSshClient {
   private val connectTimeoutMs = 12_000
@@ -69,6 +77,49 @@ class VpsSshClient {
       executeOnSession(session, command, timeoutMs, onLine)
     } finally {
       session.disconnect()
+    }
+  }
+
+  suspend fun openInteractiveTerminal(
+    server: VpsServer,
+    initialColumns: Int = 80,
+    initialRows: Int = 24,
+    initialWidthPixels: Int = 0,
+    initialHeightPixels: Int = 0,
+    onData: (ByteArray) -> Unit,
+    onClosed: (Throwable?) -> Unit,
+  ): VpsInteractiveTerminalConnection = withContext(Dispatchers.IO) {
+    val session = openSession(server.host, server.port, server.username, server.sshAuth(), server.pinnedHostKey)
+    try {
+      val channel = session.openChannel("shell") as ChannelShell
+      channel.setPty(true)
+      channel.setPtyType(
+        "xterm-256color",
+        initialColumns.coerceAtLeast(4),
+        initialRows.coerceAtLeast(4),
+        initialWidthPixels.coerceAtLeast(0),
+        initialHeightPixels.coerceAtLeast(0),
+      )
+      channel.setEnv("TERM", "xterm-256color")
+      channel.setEnv("COLORTERM", "truecolor")
+      val input = channel.inputStream
+      val output = channel.outputStream
+      channel.connect(connectTimeoutMs)
+      // The connect timeout must not become an idle read timeout for an
+      // interactive shell; tmux sessions are expected to stay open while idle.
+      session.timeout = 0
+
+      VpsInteractiveTerminalConnection(
+        session = session,
+        channel = channel,
+        input = input,
+        output = output,
+        onData = onData,
+        onClosed = onClosed,
+      )
+    } catch (error: Throwable) {
+      session.disconnect()
+      throw error
     }
   }
 
@@ -177,6 +228,35 @@ class VpsSshClient {
     val output = ByteArrayOutputStream()
     val lineBuffer = StringBuilder()
     val buffer = ByteArray(8 * 1024)
+    var pendingProgressLine: String? = null
+    var lastProgressEmitAtMs = 0L
+
+    fun emitStreamLine(raw: String, carriageReturn: Boolean) {
+      val callback = onLine ?: return
+      val line = raw.trimEnd('\r', '\n')
+      if (!carriageReturn) {
+        val pending = pendingProgressLine
+        pendingProgressLine = null
+        if (line.isBlank()) {
+          pending?.let(callback)
+          return
+        }
+        pending?.takeIf { it != line }?.let(callback)
+        callback(line)
+        return
+      }
+      if (line.isBlank()) return
+
+      // Programs such as curl and apt update one terminal row with carriage returns.
+      // Keep those updates live without flooding the Compose typing queue.
+      pendingProgressLine = line
+      val now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
+      if (now - lastProgressEmitAtMs >= 140L) {
+        callback(line)
+        pendingProgressLine = null
+        lastProgressEmitAtMs = now
+      }
+    }
 
     fun drainAvailable() {
       while (input.available() > 0) {
@@ -187,9 +267,16 @@ class VpsSshClient {
           lineBuffer.append(buffer.copyOfRange(0, count).toString(Charsets.UTF_8))
           while (true) {
             val newline = lineBuffer.indexOf("\n")
-            if (newline < 0) break
-            onLine(lineBuffer.substring(0, newline).trimEnd('\r'))
-            lineBuffer.delete(0, newline + 1)
+            val carriage = lineBuffer.indexOf("\r")
+            val delimiter = when {
+              newline < 0 -> carriage
+              carriage < 0 -> newline
+              else -> minOf(newline, carriage)
+            }
+            if (delimiter < 0) break
+            val isCarriageReturn = lineBuffer[delimiter] == '\r'
+            emitStreamLine(lineBuffer.substring(0, delimiter), isCarriageReturn)
+            lineBuffer.delete(0, delimiter + 1)
           }
         }
       }
@@ -205,7 +292,10 @@ class VpsSshClient {
       Thread.sleep(20)
     }
     drainAvailable()
-    if (onLine != null && lineBuffer.isNotEmpty()) onLine(lineBuffer.toString().trimEnd('\r'))
+    if (onLine != null) {
+      if (lineBuffer.isNotEmpty()) emitStreamLine(lineBuffer.toString(), carriageReturn = false)
+      pendingProgressLine?.let(onLine)
+    }
     val code = channel.exitStatus
     channel.disconnect()
     return VpsCommandResult(code, output.toByteArray().toString(Charsets.UTF_8).trim())
@@ -320,5 +410,195 @@ class VpsSshClient {
         emptyArray()
       }
     }
+  }
+}
+
+class VpsInteractiveTerminalConnection internal constructor(
+  private val session: Session,
+  private val channel: ChannelShell,
+  private val input: InputStream,
+  private val output: OutputStream,
+  private val onData: (ByteArray) -> Unit,
+  private val onClosed: (Throwable?) -> Unit,
+) {
+  private val closed = AtomicBoolean(false)
+  private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "zdt-vps-terminal-writer").apply { isDaemon = true }
+  }
+  private val displayQueue = LinkedBlockingQueue<ByteArray>()
+  private val pendingDisplayBytes = AtomicInteger(0)
+  private var readerThread: Thread? = null
+  private var displayThread: Thread? = null
+
+  fun start() {
+    if (closed.get()) return
+    if (readerThread != null) return
+
+    startDisplayPump()
+    readerThread = Thread({
+      var failure: Throwable? = null
+      try {
+        val buffer = ByteArray(16 * 1024)
+        while (!closed.get() && channel.isConnected) {
+          val count = input.read(buffer)
+          if (count < 0) break
+          if (count == 0) continue
+          enqueueDisplay(buffer.copyOf(count))
+        }
+      } catch (error: Throwable) {
+        if (!closed.get()) failure = error
+      } finally {
+        if (!closed.get()) {
+          closeFromRemote(failure)
+        }
+      }
+    }, "zdt-vps-terminal-reader").apply {
+      isDaemon = true
+      start()
+    }
+
+    // Never write to the SSH socket from the Compose/UI thread. The same
+    // serialized writer is used for the initial tmux attach and all later input.
+    write("printf '\\033[1 q'; exec tmux new-session -A -s $SESSION_NAME\r".toByteArray(Charsets.UTF_8))
+  }
+
+  fun write(data: ByteArray) {
+    if (closed.get() || data.isEmpty()) return
+    val payload = data.copyOf()
+    submitIo {
+      if (closed.get()) return@submitIo
+      try {
+        output.write(payload)
+        output.flush()
+      } catch (error: Throwable) {
+        closeFromIo(error)
+      }
+    }
+  }
+
+  fun resize(columns: Int, rows: Int, widthPixels: Int = 0, heightPixels: Int = 0) {
+    if (closed.get()) return
+    val safeColumns = columns.coerceAtLeast(4)
+    val safeRows = rows.coerceAtLeast(4)
+    val safeWidth = widthPixels.coerceAtLeast(0)
+    val safeHeight = heightPixels.coerceAtLeast(0)
+    submitIo {
+      if (closed.get() || !channel.isConnected) return@submitIo
+      try {
+        channel.setPtySize(safeColumns, safeRows, safeWidth, safeHeight)
+      } catch (error: Throwable) {
+        closeFromIo(error)
+      }
+    }
+  }
+
+  fun disconnect() {
+    if (!closed.compareAndSet(false, true)) return
+    submitClose(notify = false, error = null)
+  }
+
+  private fun enqueueDisplay(data: ByteArray) {
+    if (closed.get() || data.isEmpty()) return
+    pendingDisplayBytes.addAndGet(data.size)
+    displayQueue.offer(data)
+  }
+
+  private fun startDisplayPump() {
+    if (displayThread != null) return
+    displayThread = Thread({
+      try {
+        while (!closed.get() || pendingDisplayBytes.get() > 0) {
+          val packet = displayQueue.poll(100L, TimeUnit.MILLISECONDS) ?: continue
+          var offset = 0
+          while (offset < packet.size && !Thread.currentThread().isInterrupted) {
+            val backlog = pendingDisplayBytes.get().coerceAtLeast(packet.size - offset)
+            val chunkSize = when {
+              backlog > 64 * 1024 -> 4096
+              backlog > 16 * 1024 -> 1024
+              backlog > 4 * 1024 -> 256
+              else -> 48
+            }
+            val end = (offset + chunkSize).coerceAtMost(packet.size)
+            val chunk = packet.copyOfRange(offset, end)
+            onData(chunk)
+            pendingDisplayBytes.addAndGet(-(end - offset))
+            offset = end
+
+            // Small terminal bursts are intentionally paced so command output
+            // appears progressively instead of flashing in as one large frame.
+            // Large bursts automatically catch up to keep TUIs responsive.
+            val delayMs = when {
+              backlog > 64 * 1024 -> 0L
+              backlog > 16 * 1024 -> 1L
+              backlog > 4 * 1024 -> 3L
+              else -> 6L
+            }
+            if (delayMs > 0L && offset < packet.size) Thread.sleep(delayMs)
+          }
+        }
+      } catch (_: InterruptedException) {
+        // Normal shutdown path.
+      } catch (error: Throwable) {
+        if (!closed.get()) closeFromRemote(error)
+      }
+    }, "zdt-vps-terminal-display").apply {
+      isDaemon = true
+      start()
+    }
+  }
+
+  private fun closeFromRemote(error: Throwable?) {
+    if (!closed.compareAndSet(false, true)) return
+    submitClose(notify = true, error = error)
+  }
+
+  private fun closeFromIo(error: Throwable) {
+    if (!closed.compareAndSet(false, true)) return
+    closeResources()
+    ioExecutor.shutdownNow()
+    onClosed(error)
+  }
+
+  private fun submitClose(notify: Boolean, error: Throwable?) {
+    try {
+      ioExecutor.execute {
+        closeResources()
+        ioExecutor.shutdown()
+        if (notify) onClosed(error)
+      }
+    } catch (_: RejectedExecutionException) {
+      // Keep socket teardown off the caller as well; disconnect() is commonly
+      // triggered by Compose disposal on the main thread.
+      Thread({
+        closeResources()
+        if (notify) onClosed(error)
+      }, "zdt-vps-terminal-closer").apply {
+        isDaemon = true
+        start()
+      }
+    }
+  }
+
+  private inline fun submitIo(crossinline block: () -> Unit) {
+    try {
+      ioExecutor.execute { block() }
+    } catch (_: RejectedExecutionException) {
+      // Closing won the race; there is no work left to send to the terminal.
+    }
+  }
+
+  private fun closeResources() {
+    displayThread?.interrupt()
+    readerThread?.interrupt()
+    displayQueue.clear()
+    pendingDisplayBytes.set(0)
+    runCatching { input.close() }
+    runCatching { output.close() }
+    runCatching { channel.disconnect() }
+    runCatching { session.disconnect() }
+  }
+
+  companion object {
+    const val SESSION_NAME = "zdt-d_console"
   }
 }

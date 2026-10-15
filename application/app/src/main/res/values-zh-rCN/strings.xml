@@ -2400,4 +2400,44 @@ APatch：10700+</string>
     <string name="subscription_manual_target">目标：%1$s</string>
     <string name="subscription_copy_config">复制配置</string>
     <string name="subscription_copy_failed">无法准备要复制的配置。</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">打开终端</string>
+    <string name="vps_terminal_title">终端</string>
+    <string name="vps_terminal_paste">粘贴</string>
+    <string name="vps_terminal_preparing">正在准备终端</string>
+    <string name="vps_terminal_retry">重试</string>
+    <string name="vps_terminal_check_tmux">正在检查 tmux</string>
+    <string name="vps_terminal_install_tmux">正在安装 tmux</string>
+    <string name="vps_terminal_check_session">正在检查 zdt-d_console</string>
+    <string name="vps_terminal_create_session">正在创建 zdt-d_console</string>
+    <string name="vps_terminal_connect">正在连接终端</string>
+    <string name="vps_terminal_error_tmux">无法安装 tmux</string>
+    <string name="vps_terminal_error_session">无法准备 zdt-d_console</string>
+    <string name="vps_terminal_error_connect">无法连接到终端</string>
+    <string name="vps_terminal_error_disconnected">终端连接已关闭</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">上游代理</string>
+    <string name="operaproxy_upstream_desc">选择 Opera Proxy 连接网络的方式。默认选择 ByeDPI。</string>
+    <string name="operaproxy_upstream_direct">不使用代理</string>
+    <string name="operaproxy_upstream_custom">自定义代理</string>
+    <string name="operaproxy_custom_proxy_title">自定义上游代理</string>
+    <string name="operaproxy_custom_proxy_desc">请输入完整的代理 URL。支持互联网远程服务器。格式：http://、https://、socks5://、socks5h://。用户名和密码也可以直接写在 URL 中。</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">请输入包含主机和端口的有效 HTTP、HTTPS、SOCKS5 或 SOCKS5H 代理 URL。</string>
 </resources>

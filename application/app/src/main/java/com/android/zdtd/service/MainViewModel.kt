@@ -56,8 +56,10 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
+import java.util.zip.ZipFile
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.Properties
 import java.net.URLEncoder
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -538,13 +540,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  fun onAppStart(fromLauncher: Boolean) {
+  fun openRootSetup() {
+    startupJob?.cancel()
+    startupCompleted = false
+    _rootState.value = RootState.DENIED
+    _setup.update { state ->
+      state.copy(
+        step = SetupStep.ROOT,
+        installing = false,
+        installLog = "",
+        installProgressPercent = 0,
+        installProgressLabel = "",
+      )
+    }
+  }
+
+  fun onAppStart(fromLauncher: Boolean, forceRootSetup: Boolean = false) {
     if (didInit) return
     didInit = true
     startedFromLauncher = fromLauncher
 
     // Restore cached app-update banner state (persists across restarts).
     restoreCachedAppUpdateState()
+
+    if (forceRootSetup) {
+      openRootSetup()
+      return
+    }
 
     // If the user has already accepted the welcome screen (or completed setup earlier),
     // kick off a root check automatically on app start.
@@ -597,6 +619,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val buildType: String?,
     val buildNumber: Long?,
   )
+
 
   private fun parseModuleBuildInfo(modulePropText: String): ModuleBuildInfo = ModuleBuildInfo(
     versionName = parseVersion(modulePropText),
@@ -672,6 +695,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // Asset name is stable by design.
     return "https" + "://github.com/aneek0/ZDT-D/releases/download/${tag}/app-release.apk"
   }
+
+  private fun releaseApkAssetName(): String = "app-release.apk"
+
+  private fun isExpectedReleaseApkUrl(url: String): Boolean = runCatching {
+    val uri = Uri.parse(url)
+    uri.scheme.equals("https", ignoreCase = true) &&
+      uri.host.equals("github.com", ignoreCase = true) &&
+      uri.lastPathSegment == releaseApkAssetName()
+  }.getOrDefault(false)
 
   private suspend fun httpGetMaybeCached(
     url: String,
@@ -750,7 +782,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val assets = js?.optJSONArray("assets") ?: return true
     for (i in 0 until assets.length()) {
       val asset = assets.optJSONObject(i) ?: continue
-      if (asset.optString("name") == "app-release.apk") return true
+      if (asset.optString("name") == releaseApkAssetName()) return true
     }
     return false
   }
@@ -1286,7 +1318,19 @@ private fun restoreCachedAppUpdateState() {
   val remoteVer = root.getCachedAppUpdateRemoteVersion()
   val tag = root.getCachedAppUpdateReleaseTag()
   val htmlUrl = root.getCachedAppUpdateReleaseHtmlUrl()
-  val downloadUrl = root.getCachedAppUpdateDownloadUrl()
+  val cachedDownloadUrl = root.getCachedAppUpdateDownloadUrl()
+  // Full-root and online builds share the same package/preferences. Rebuild a
+  // persisted URL from the release tag so installing one flavor over the other
+  // can never reuse the previous flavor's APK URL.
+  val downloadUrl = when {
+    cachedDownloadUrl.isNullOrBlank() -> null
+    !tag.isNullOrBlank() -> releaseApkUrl(tag)
+    isExpectedReleaseApkUrl(cachedDownloadUrl) -> cachedDownloadUrl
+    else -> null
+  }
+  if (downloadUrl != cachedDownloadUrl) {
+    root.setCachedAppUpdateDownloadUrl(downloadUrl)
+  }
   val urgent = root.getCachedAppUpdateUrgent()
 
   // Local comparison is based on bundled module.prop in the APK.
@@ -1356,10 +1400,26 @@ fun onAppResumed() {
   }
 }
 
+fun onApkInstallerReturned(filePath: String?) {
+  if (filePath.isNullOrBlank()) return
+  AppStorageMaintenance.deleteCacheArtifact(ctx, filePath)
+  if (_appUpdate.value.downloadedPath == filePath) {
+    _appUpdate.update {
+      it.copy(
+        downloadedPath = null,
+        needsUnknownSourcesPermission = false,
+        downloading = false,
+        downloadPercent = 0,
+        downloadSpeedBytesPerSec = 0,
+      )
+    }
+  }
+}
+
 private fun clearDownloadedUpdateApk() {
     val p = _appUpdate.value.downloadedPath
     if (!p.isNullOrBlank()) {
-      runCatching { File(p).delete() }
+      AppStorageMaintenance.deleteCacheArtifact(ctx, p)
     }
     _appUpdate.update { it.copy(downloadedPath = null, needsUnknownSourcesPermission = false) }
   }
@@ -1397,6 +1457,9 @@ private fun clearDownloadedUpdateApk() {
   }
 
   private suspend fun downloadLatestApk(url: String): String? {
+    check(isExpectedReleaseApkUrl(url)) {
+      "Unexpected update APK URL: $url"
+    }
     val dest = File(ctx.cacheDir, "zdt_app_update.apk")
     runCatching { dest.delete() }
 
@@ -1447,7 +1510,18 @@ private fun clearDownloadedUpdateApk() {
         }
       }
     }
+    validateDownloadedAppUpdateApk(dest)
     return dest.absolutePath
+  }
+
+  @Suppress("DEPRECATION")
+  private fun validateDownloadedAppUpdateApk(apk: File) {
+    check(apk.isFile && apk.length() > 0L) { "Downloaded update APK is empty" }
+    val info = ctx.packageManager.getPackageArchiveInfo(
+      apk.absolutePath,
+      PackageManager.GET_META_DATA,
+    ) ?: error("Unable to inspect downloaded update APK")
+    check(info.packageName == BuildConfig.APPLICATION_ID) { "Update APK package mismatch" }
   }
 
   private suspend fun readBootIdRoot(): String {
@@ -2067,7 +2141,7 @@ private fun clearDownloadedUpdateApk() {
       val showZygiskWarning = installer == RootConfigManager.ModuleInstaller.KSU || installer == RootConfigManager.ModuleInstaller.APATCH
       val zygiskRequestedAtStart = readZygiskInstallMarker()
 
-      // If we can't detect an installer, ask the user and export the zip to /sdcard.
+      // The bundled build can export its embedded module when no root-manager installer is detected.
       if (installer == RootConfigManager.ModuleInstaller.UNKNOWN) {
         _setup.update {
           it.copy(
@@ -2120,6 +2194,7 @@ private fun clearDownloadedUpdateApk() {
       }
 
       if (ok) {
+        cleanupTemporaryModuleArtifacts()
         // Mark setup as completed so we don't show the installer again after reboot.
         root.setSetupDone(true)
         rememberPendingModuleAction(pendingAction)
@@ -2134,8 +2209,10 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
+        cleanupTemporaryModuleArtifacts()
         val metamoduleInstallBlocked = hasMetamoduleInstallBlockedMarker(out)
         val zygiskInstallError = !metamoduleInstallBlocked && zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
+        val manualExportAllowed = !metamoduleInstallBlocked && !zygiskInstallError
         _setup.update {
           it.copy(
             installing = false,
@@ -2143,14 +2220,16 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = !metamoduleInstallBlocked && !zygiskInstallError,
+            showManualDialog = manualExportAllowed,
             showZygiskInstallRecoveryDialog = zygiskInstallError,
             showMetamoduleInstallBlockedDialog = metamoduleInstallBlocked,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = if (metamoduleInstallBlocked || zygiskInstallError) "" else str(R.string.mv_auto_018) +
-              str(R.string.mv_auto_019) +
-              str(R.string.mv_auto_020),
+            manualDialogText = if (manualExportAllowed) {
+              str(R.string.mv_auto_018) + str(R.string.mv_auto_019) + str(R.string.mv_auto_020)
+            } else {
+              ""
+            },
           )
         }
       }
@@ -2968,9 +3047,11 @@ fi""".trimIndent()
         toast(str(R.string.mv_auto_051))
         return@launchIO
       }
+      AppStorageMaintenance.deleteBackupShareCopies(ctx)
       val outFile = File(ctx.cacheDir, "zdtb_share_${System.currentTimeMillis()}.zdtb")
       val r = root.execRootSh("cp -f ${shQuote(src)} ${shQuote(outFile.absolutePath)} 2>/dev/null || cat ${shQuote(src)} > ${shQuote(outFile.absolutePath)}; chmod 0644 ${shQuote(outFile.absolutePath)} 2>/dev/null || true")
       if (!r.isSuccess) {
+        runCatching { outFile.delete() }
         toast(str(R.string.mv_auto_052))
         return@launchIO
       }
@@ -3488,6 +3569,7 @@ fi""".trimIndent()
 
     val zipFile = File(ctx.cacheDir, "zapret2_target.zip")
     val extractDir = File(ctx.cacheDir, "zapret2_extract_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "zapret2_extract_")
     runCatching { zipFile.delete() }
     runCatching { extractDir.deleteRecursively() }
     extractDir.mkdirs()
@@ -3500,6 +3582,8 @@ fi""".trimIndent()
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { zipFile.delete() }
+      runCatching { extractDir.deleteRecursively() }
       return
     }
 
@@ -3528,8 +3612,8 @@ fi""".trimIndent()
         str(R.string.prog_update_error_install_failed) + "\n" + detail
       }
       _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = message, statusText = "")) }
-      // Keep the downloaded archive/extracted payload after a failed install for diagnostics.
-      // They are removed automatically at the start of the next nfqws2 update attempt.
+      runCatching { zipFile.delete() }
+      runCatching { extractDir.deleteRecursively() }
       return
     }
     runCatching { zipFile.delete() }
@@ -3575,6 +3659,7 @@ fi""".trimIndent()
 
     val gzFile = File(ctx.cacheDir, "mihomo_target.gz")
     val extracted = File(ctx.cacheDir, "mihomo_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "mihomo_")
     runCatching { gzFile.delete() }
     runCatching { extracted.delete() }
 
@@ -3586,6 +3671,8 @@ fi""".trimIndent()
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { gzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -3594,6 +3681,7 @@ fi""".trimIndent()
     if (!okExtract) {
       _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { gzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -3647,6 +3735,7 @@ fi""".trimIndent()
 
     val tarGzFile = File(ctx.cacheDir, "mieru_target.tar.gz")
     val extracted = File(ctx.cacheDir, "mieru_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "mieru_")
     runCatching { tarGzFile.delete() }
     runCatching { extracted.delete() }
 
@@ -3658,6 +3747,8 @@ fi""".trimIndent()
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { tarGzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -3666,6 +3757,7 @@ fi""".trimIndent()
     if (!okExtract) {
       _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { tarGzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -3718,6 +3810,7 @@ fi""".trimIndent()
     }
 
     val binFile = File(ctx.cacheDir, "opera_proxy_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "opera_proxy_")
     runCatching { binFile.delete() }
 
     val okDl = downloadToFileWithProgress(url, binFile) { pct ->
@@ -4720,11 +4813,11 @@ fi""".trimIndent()
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    val (cacheZip, copyError) = acquireModuleZipToCache()
     if (copyError != null || cacheZip == null) {
-      return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
+      return Triple(false, copyError ?: "module archive acquisition failed without details", "")
     }
-    val verify = verifyBundledModuleZip(cacheZip)
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return Triple(false, verify.message, "")
 
     val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
@@ -4751,10 +4844,10 @@ fi""".trimIndent()
     // Copy assets/zdt_module.zip to cache, verify the protected archive,
     // optionally normalize the same temporary copy for strict ZIP parsers,
     // then stage it for the selected root manager.
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
-    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    val (cacheZip, copyError) = acquireModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "module archive acquisition failed without details")
 
-    val verify = verifyBundledModuleZip(cacheZip)
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
 
     val normalizeLog = if (normalizeForStrictZipInstaller) {
@@ -4765,14 +4858,11 @@ fi""".trimIndent()
       str(R.string.module_zip_patch_protection_kept_magisk)
     }
 
-    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
-    if (!busyBoxOk) return false to busyBoxLog
-
     val src = cacheZip.absolutePath
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
     val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    val log = listOf(verify.message, normalizeLog, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    val log = listOf(verify.message, normalizeLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
     return copyRes.isSuccess to log
   }
 
@@ -4781,9 +4871,9 @@ fi""".trimIndent()
     runCatching { unpackDir.deleteRecursively() }
     unpackDir.mkdirs()
 
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
-    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
-    val verify = verifyBundledModuleZip(cacheZip)
+    val (cacheZip, copyError) = acquireModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "module archive acquisition failed without details")
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
 
     val extractLog = StringBuilder()
@@ -5247,21 +5337,62 @@ private fun shQuote(s: String): String {
 
   private data class ModuleZipVerification(val ok: Boolean, val message: String)
 
-  private fun copyBundledModuleZipToCache(): Pair<File?, String?> {
+  private suspend fun acquireModuleZipToCache(): Pair<File?, String?> {
     val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
+    runCatching { cacheZip.delete() }
+    val input = runCatching { ctx.assets.open("zdt_module.zip") }.getOrElse { error ->
+      return null to buildString {
+        append("bundled module asset zdt_module.zip is unavailable: ")
+        append(error.message ?: error.toString())
       }
-    }.getOrElse {
-      return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+    }
+    val copyError = runCatching {
+      input.use { source ->
+        cacheZip.outputStream().buffered().use { output -> source.copyTo(output) }
+      }
+      check(cacheZip.isFile && cacheZip.length() > 0L) { "cached bundled module archive is empty" }
+    }.exceptionOrNull()
+    if (copyError != null) {
+      runCatching { cacheZip.delete() }
+      return null to buildString {
+        append("unable to copy bundled module archive to app cache: ")
+        append(copyError.message ?: copyError.toString())
+      }
     }
     return cacheZip to null
   }
 
-  private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
-    val expected = readSha256Asset("busybox/zdt_module.sha256")
-      ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
+
+  private fun cleanupTemporaryModuleArtifacts() {
+    listOf(
+      File(ctx.cacheDir, "zdt_module.zip"),
+      File(ctx.cacheDir, "zdt_module.zip.part"),
+      File(ctx.cacheDir, "zdt_module_version_check.zip"),
+      File(ctx.cacheDir, "module_unpack"),
+    ).forEach { file ->
+      val deleted = if (file.isDirectory) {
+        runCatching { file.deleteRecursively() }.getOrDefault(false)
+      } else {
+        runCatching { file.delete() }.getOrDefault(false)
+      }
+      if (file.exists() && !deleted) {
+        log("WARN", "Unable to delete temporary module artifact: ${file.absolutePath}")
+      }
+    }
+
+    val cleanup = runCatching {
+      root.execRootSh(
+        "rm -f /data/local/tmp/zdt_module.zip /data/local/tmp/zdt_module_version_check.zip /data/local/tmp/zdt_busybox 2>/dev/null || true"
+      )
+    }
+    if (cleanup.isFailure || cleanup.getOrNull()?.isSuccess != true) {
+      log("WARN", "Unable to delete staged module archive after module installation attempt")
+    }
+  }
+
+  private fun verifyModuleZip(zipFile: File): ModuleZipVerification {
+    val expected = readSha256Asset("metadata/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset metadata/zdt_module.sha256 missing or invalid")
     val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
       return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
     }
@@ -5455,32 +5586,6 @@ private fun shQuote(s: String): String {
     require(offset >= 0 && offset + 2 <= data.size) { "ZIP write out of bounds at offset $offset" }
     data[offset] = (value and 0xff).toByte()
     data[offset + 1] = ((value shr 8) and 0xff).toByte()
-  }
-
-  private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    // The APK bundles only the arm64 busybox asset; the module is arm64-only.
-    val busyBoxAssetName = "busybox-arm64"
-    val expected = readSha256Asset("busybox/${busyBoxAssetName}.sha256")
-      ?: return@withContext (false to "asset busybox/${busyBoxAssetName}.sha256 missing or invalid")
-    val cacheBusyBox = File(ctx.cacheDir, busyBoxAssetName)
-    runCatching {
-      ctx.assets.open("busybox/${busyBoxAssetName}").use { input ->
-        cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return@withContext (false to "asset busybox/${busyBoxAssetName} missing: ${it.message ?: it}")
-    }
-    val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
-      return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")
-    }
-    if (!actual.equals(expected, ignoreCase = true)) {
-      return@withContext (false to "busybox SHA-256 mismatch: expected=$expected actual=$actual")
-    }
-    val src = cacheBusyBox.absolutePath
-    val r = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_busybox && chmod 755 /data/local/tmp/zdt_busybox'")
-    val out = (r.out + r.err).joinToString("\n").trim()
-    if (!r.isSuccess) return@withContext (false to out)
-    true to listOf("busybox SHA-256 verified: $actual", out).filter { it.isNotBlank() }.joinToString("\n")
   }
 
   private fun readSha256Asset(assetName: String): String? = runCatching {
@@ -8098,6 +8203,7 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
         val path = downloadLatestApk(url)
         if (!currentCoroutineContext().isActive) return@launch
         if (path.isNullOrBlank()) {
+          runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
           updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_auto_075))
           return@launch
         }
@@ -8109,9 +8215,10 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
           _appUpdate.update { it.copy(needsUnknownSourcesPermission = true) }
         }
       } catch (_: CancellationException) {
-        // cancelled
+        runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
         updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = null)
       } catch (e: Throwable) {
+        runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
         updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_error_with_detail, (e.message ?: e.toString())))
       }
     }

@@ -2400,4 +2400,44 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="subscription_manual_target">대상: %1$s</string>
     <string name="subscription_copy_config">구성 복사</string>
     <string name="subscription_copy_failed">복사할 구성을 준비하지 못했습니다.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">터미널 열기</string>
+    <string name="vps_terminal_title">터미널</string>
+    <string name="vps_terminal_paste">붙여넣기</string>
+    <string name="vps_terminal_preparing">터미널 준비 중</string>
+    <string name="vps_terminal_retry">다시 시도</string>
+    <string name="vps_terminal_check_tmux">tmux 확인 중</string>
+    <string name="vps_terminal_install_tmux">tmux 설치 중</string>
+    <string name="vps_terminal_check_session">zdt-d_console 확인 중</string>
+    <string name="vps_terminal_create_session">zdt-d_console 생성 중</string>
+    <string name="vps_terminal_connect">터미널 연결 중</string>
+    <string name="vps_terminal_error_tmux">tmux를 설치할 수 없습니다</string>
+    <string name="vps_terminal_error_session">zdt-d_console을 준비할 수 없습니다</string>
+    <string name="vps_terminal_error_connect">터미널에 연결할 수 없습니다</string>
+    <string name="vps_terminal_error_disconnected">터미널 연결이 종료되었습니다</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">업스트림 프록시</string>
+    <string name="operaproxy_upstream_desc">Opera Proxy가 네트워크에 연결하는 방식을 선택합니다. 기본값은 ByeDPI입니다.</string>
+    <string name="operaproxy_upstream_direct">프록시 없음</string>
+    <string name="operaproxy_upstream_custom">사용자 프록시</string>
+    <string name="operaproxy_custom_proxy_title">사용자 업스트림 프록시</string>
+    <string name="operaproxy_custom_proxy_desc">전체 프록시 URL을 입력하세요. 인터넷의 원격 서버도 사용할 수 있습니다. 형식: http://, https://, socks5://, socks5h://. URL에 사용자 이름과 비밀번호를 포함할 수 있습니다.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">호스트와 포트가 포함된 올바른 HTTP, HTTPS, SOCKS5 또는 SOCKS5H 프록시 URL을 입력하세요.</string>
 </resources>

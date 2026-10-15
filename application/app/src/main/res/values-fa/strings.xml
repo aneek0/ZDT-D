@@ -2402,4 +2402,44 @@ APatch: 10700+</string>
     <string name="subscription_manual_target">مقصد: %1$s</string>
     <string name="subscription_copy_config">کپی پیکربندی</string>
     <string name="subscription_copy_failed">آماده‌سازی پیکربندی برای کپی ممکن نشد.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">باز کردن ترمینال</string>
+    <string name="vps_terminal_title">ترمینال</string>
+    <string name="vps_terminal_paste">چسباندن</string>
+    <string name="vps_terminal_preparing">در حال آماده‌سازی ترمینال</string>
+    <string name="vps_terminal_retry">تلاش دوباره</string>
+    <string name="vps_terminal_check_tmux">در حال بررسی tmux</string>
+    <string name="vps_terminal_install_tmux">در حال نصب tmux</string>
+    <string name="vps_terminal_check_session">در حال بررسی zdt-d_console</string>
+    <string name="vps_terminal_create_session">در حال ایجاد zdt-d_console</string>
+    <string name="vps_terminal_connect">در حال اتصال ترمینال</string>
+    <string name="vps_terminal_error_tmux">نصب tmux ممکن نشد</string>
+    <string name="vps_terminal_error_session">آماده‌سازی zdt-d_console ممکن نشد</string>
+    <string name="vps_terminal_error_connect">اتصال به ترمینال ممکن نشد</string>
+    <string name="vps_terminal_error_disconnected">اتصال ترمینال بسته شد</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">پراکسی بالادستی</string>
+    <string name="operaproxy_upstream_desc">روش اتصال Opera Proxy به شبکه را انتخاب کنید. به‌صورت پیش‌فرض ByeDPI انتخاب است.</string>
+    <string name="operaproxy_upstream_direct">بدون پراکسی</string>
+    <string name="operaproxy_upstream_custom">پراکسی دلخواه</string>
+    <string name="operaproxy_custom_proxy_title">پراکسی بالادستی دلخواه</string>
+    <string name="operaproxy_custom_proxy_desc">نشانی کامل پراکسی را وارد کنید. سرورهای راه‌دور اینترنتی پشتیبانی می‌شوند. قالب‌ها: http://، https://، socks5:// و socks5h://. نام کاربری و رمز عبور می‌توانند در URL باشند.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">یک URL معتبر HTTP، HTTPS، SOCKS5 یا SOCKS5H همراه میزبان و پورت وارد کنید.</string>
 </resources>

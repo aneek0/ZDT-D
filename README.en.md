@@ -23,7 +23,7 @@
 # ZDT-D Root Module (Magisk / KernelSU / APatch)
 
 <div align="center">
-  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" />
+  <img src="images/zero-dpi-tunnel-banner.png" alt="ZDT-D Zero DPI Tunnel Banner" width="100%" />
 </div>
 
 <p align="center">
@@ -250,11 +250,13 @@ ZDT-D is intended for advanced users, network compatibility research, routing co
 
 ## Differences from upstream (GAME-OVER-op/ZDT-D)
 
-This is an independent personal fork. It merges from upstream `main` regularly
-(branches like `merge-upstream-390`, `upstream/ai-polish`), so most programs,
-the routing model, the UI shell, the world map / web panel / captive-portal /
-app-hiding / backup / tablet-TV features, arm32 support and the `nfqws2`
-strategy set are inherited from the original project — not added here.
+This is an independent personal fork. It merges from upstream `main`
+regularly, so most programs, the routing model, the UI shell, the world map /
+web panel / captive-portal / app-hiding / backup / tablet-TV features, the
+VPS terminal, Opera upstream proxy modes and the `nfqws2` strategy set are
+inherited from the original project — not added here. The fork drops the
+non-root / online-module build flavors, the Hysteria2 VPS kind, the Termux
+plugin infrastructure and the legacy `nfqws` v1 / `dpitunnel` programs.
 
 The changes that are **actually introduced in this fork** (199 fork-only commits
 on top of the merge base) are a smaller, focused set:

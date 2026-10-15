@@ -538,28 +538,28 @@ jobs:
       - name: Prepare APK helper assets (arm64-v8a)
         run: |
           # dpi-detector APK asset: fresh > prebuilt > hard error (never ship a broken stub)
-          mkdir -p application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a
+          mkdir -p application/app/build/generated/zdt-root-assets/main/dpi-detector/arm64-v8a
           if [ -f out/artifacts/dpi-detector/arm64/dpi-detector ]; then
-            cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+            cp out/artifacts/dpi-detector/arm64/dpi-detector application/app/build/generated/zdt-root-assets/main/dpi-detector/arm64-v8a/dpi-detector
           elif [ -f prebuilt/bin/arm64-v8a/dpi-detector ]; then
-            cp prebuilt/bin/arm64-v8a/dpi-detector application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+            cp prebuilt/bin/arm64-v8a/dpi-detector application/app/build/generated/zdt-root-assets/main/dpi-detector/arm64-v8a/dpi-detector
           else
             echo "::error::dpi-detector binary missing (no fresh artifact, no prebuilt). Run full build or workflow_dispatch." >&2
             exit 1
           fi
-          chmod 755 application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector
+          chmod 755 application/app/build/generated/zdt-root-assets/main/dpi-detector/arm64-v8a/dpi-detector
 
           # nfqws-tester APK asset: fresh > prebuilt > hard error (never ship a broken stub)
-          mkdir -p application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a
+          mkdir -p application/app/build/generated/zdt-root-assets/main/nfqws-tester/arm64-v8a
           if [ -f out/artifacts/nfqws-tester/arm64/nfqws-tester ]; then
-            cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+            cp out/artifacts/nfqws-tester/arm64/nfqws-tester application/app/build/generated/zdt-root-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           elif [ -f prebuilt/bin/arm64-v8a/nfqws-tester ]; then
-            cp prebuilt/bin/arm64-v8a/nfqws-tester application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+            cp prebuilt/bin/arm64-v8a/nfqws-tester application/app/build/generated/zdt-root-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
           else
             echo "::error::nfqws-tester binary missing (no fresh artifact, no prebuilt). Run full build or workflow_dispatch." >&2
             exit 1
           fi
-          chmod 755 application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
+          chmod 755 application/app/build/generated/zdt-root-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
 
       - name: Build APK
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}

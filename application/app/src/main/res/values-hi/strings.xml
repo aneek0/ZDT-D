@@ -2402,4 +2402,44 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="subscription_manual_target">गंतव्य: %1$s</string>
     <string name="subscription_copy_config">कॉन्फ़िगरेशन कॉपी करें</string>
     <string name="subscription_copy_failed">कॉपी करने के लिए कॉन्फ़िगरेशन तैयार नहीं हो सका।</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">टर्मिनल खोलें</string>
+    <string name="vps_terminal_title">टर्मिनल</string>
+    <string name="vps_terminal_paste">पेस्ट करें</string>
+    <string name="vps_terminal_preparing">टर्मिनल तैयार किया जा रहा है</string>
+    <string name="vps_terminal_retry">फिर कोशिश करें</string>
+    <string name="vps_terminal_check_tmux">tmux की जाँच हो रही है</string>
+    <string name="vps_terminal_install_tmux">tmux इंस्टॉल हो रहा है</string>
+    <string name="vps_terminal_check_session">zdt-d_console की जाँच हो रही है</string>
+    <string name="vps_terminal_create_session">zdt-d_console बनाया जा रहा है</string>
+    <string name="vps_terminal_connect">टर्मिनल से कनेक्ट हो रहा है</string>
+    <string name="vps_terminal_error_tmux">tmux इंस्टॉल नहीं किया जा सका</string>
+    <string name="vps_terminal_error_session">zdt-d_console तैयार नहीं किया जा सका</string>
+    <string name="vps_terminal_error_connect">टर्मिनल से कनेक्ट नहीं हो सका</string>
+    <string name="vps_terminal_error_disconnected">टर्मिनल कनेक्शन बंद हो गया</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">अपस्ट्रीम प्रॉक्सी</string>
+    <string name="operaproxy_upstream_desc">चुनें कि Opera Proxy नेटवर्क से कैसे जुड़े। डिफ़ॉल्ट रूप से ByeDPI चुना गया है।</string>
+    <string name="operaproxy_upstream_direct">बिना प्रॉक्सी</string>
+    <string name="operaproxy_upstream_custom">अपना प्रॉक्सी</string>
+    <string name="operaproxy_custom_proxy_title">अपना अपस्ट्रीम प्रॉक्सी</string>
+    <string name="operaproxy_custom_proxy_desc">पूरा प्रॉक्सी URL दर्ज करें। इंटरनेट पर दूरस्थ सर्वर समर्थित हैं। प्रारूप: http://, https://, socks5:// और socks5h://। URL में यूज़रनेम और पासवर्ड भी दिए जा सकते हैं।</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">होस्ट और पोर्ट के साथ मान्य HTTP, HTTPS, SOCKS5 या SOCKS5H प्रॉक्सी URL दर्ज करें।</string>
 </resources>

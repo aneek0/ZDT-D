@@ -147,6 +147,7 @@ private fun SetupAlertDialog(
   bodyText: String,
   confirmButtonText: String,
   onConfirm: () -> Unit,
+  confirmEnabled: Boolean = true,
   dismissButtonText: String? = null,
   onDismiss: (() -> Unit)? = null,
 ) {
@@ -155,7 +156,7 @@ private fun SetupAlertDialog(
     title = { Text(titleText) },
     text = { Text(bodyText) },
     confirmButton = {
-      TextButton(onClick = onConfirm) { Text(confirmButtonText) }
+      TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmButtonText) }
     },
     dismissButton = {
       if (dismissButtonText != null && onDismiss != null) {
@@ -166,8 +167,14 @@ private fun SetupAlertDialog(
 }
 
 @Composable
-fun WelcomeScreen(onAccept: () -> Unit) {
-  val arm64Ok = remember { isArm64OnlySupported() }
+fun WelcomeScreen(
+  onAccept: () -> Unit,
+  welcomeBodyRes: Int = R.string.setup_welcome_body,
+  featuresBodyRes: Int = R.string.setup_features_body,
+  notesBodyRes: Int = R.string.setup_notes_body,
+  requireArm64: Boolean = true,
+) {
+  val architectureOk = remember(requireArm64) { !requireArm64 || isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val tablet = rememberIsTabletLayout()
   val shortSetupHeight = rememberIsShortHeight()
@@ -209,7 +216,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
         ) {
           ModernSetupHeroCard(
             title = stringResource(R.string.setup_welcome_title),
-            body = stringResource(R.string.setup_welcome_body),
+            body = stringResource(welcomeBodyRes),
             accent = MaterialTheme.colorScheme.primary,
             pose = SetupMascotPose.WELCOME,
             compact = false,
@@ -231,17 +238,17 @@ fun WelcomeScreen(onAccept: () -> Unit) {
             ) {
               ModernSetupInfoCard(
                 title = stringResource(R.string.app_name),
-                body = stringResource(R.string.setup_features_body),
+                body = stringResource(featuresBodyRes),
                 accent = MaterialTheme.colorScheme.primary,
                 dense = true,
               )
               ModernSetupInfoCard(
                 title = stringResource(R.string.setup_notes_title),
-                body = stringResource(R.string.setup_notes_body),
+                body = stringResource(notesBodyRes),
                 accent = MaterialTheme.colorScheme.secondary,
                 dense = true,
               )
-              if (!arm64Ok) {
+              if (!architectureOk) {
                 InstallerNoticeCard(
                   text = stringResource(
                     R.string.setup_arch_unsupported_fmt,
@@ -254,7 +261,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
             }
             SetupPrimaryButton(
               onClick = onAccept,
-              enabled = arm64Ok,
+              enabled = architectureOk,
               modifier = Modifier.fillMaxWidth(),
               text = stringResource(R.string.common_continue),
             )
@@ -272,7 +279,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
         ) {
           ModernSetupHeroCard(
             title = stringResource(R.string.setup_welcome_title),
-            body = stringResource(R.string.setup_welcome_body),
+            body = stringResource(welcomeBodyRes),
             accent = MaterialTheme.colorScheme.primary,
             pose = SetupMascotPose.WELCOME,
             compact = compact,
@@ -286,16 +293,16 @@ fun WelcomeScreen(onAccept: () -> Unit) {
           )
           ModernSetupInfoCard(
             title = stringResource(R.string.app_name),
-            body = stringResource(R.string.setup_features_body),
+            body = stringResource(featuresBodyRes),
             accent = MaterialTheme.colorScheme.primary,
           )
           ModernSetupInfoCard(
             title = stringResource(R.string.setup_notes_title),
-            body = stringResource(R.string.setup_notes_body),
+            body = stringResource(notesBodyRes),
             accent = MaterialTheme.colorScheme.secondary,
           )
 
-          if (!arm64Ok) {
+          if (!architectureOk) {
             InstallerNoticeCard(
               text = stringResource(
                 R.string.setup_arch_unsupported_fmt,
@@ -307,7 +314,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 
           SetupPrimaryButton(
             onClick = onAccept,
-            enabled = arm64Ok,
+            enabled = architectureOk,
             modifier = Modifier.fillMaxWidth(),
             text = stringResource(R.string.common_continue),
           )
@@ -2489,4 +2496,3 @@ private fun InstallConflictCard(
     }
   }
 }
-

@@ -60,6 +60,7 @@ env:
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
 
+
 permissions:
   contents: write
   models: read
@@ -111,7 +112,7 @@ jobs:
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
               reason="Tracked build paths changed"
             fi
@@ -125,6 +126,7 @@ jobs:
             echo
             echo "Tracked paths:"
             echo "- application/**"
+            echo "- plugin/**"
             echo "- zygisk/**"
             echo "- rust/**"
             echo "- module_template/**"
@@ -1501,6 +1503,16 @@ jobs:
           TUN2SOCKS_COMMIT_SHORT="$(git -C "$SRC/tun2socks" rev-parse --short HEAD)"
           printf '%s\n' "$TUN2SOCKS_COMMIT" | tee "$ARTIFACT_DIR/tun2socks.commit"
 
+          echo "=== Verify tun2socks CLI contract ==="
+          TUN2SOCKS_MAIN="$SRC/tun2socks/main.go"
+          test -s "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks main.go missing"; exit 1; }
+          grep -Fq '"device", "d"' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --device/-d flag contract changed"; exit 1; }
+          grep -Fq '"proxy", "p"' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --proxy/-p flag contract changed"; exit 1; }
+          for flag in loglevel udp-timeout fwmark restapi mtu; do
+            grep -Fq "\"$flag\"" "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --$flag flag missing"; exit 1; }
+          done
+          grep -Fq 'Log level [debug|info|warn|error|silent]' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks loglevel contract changed"; exit 1; }
+
           echo "=== Build tun2socks (${TUN2SOCKS_REF}) ==="
           pushd "$SRC/tun2socks" > /dev/null
           GOOS=android \
@@ -1529,7 +1541,7 @@ jobs:
           file "$ARTIFACT_DIR/tun2socks"
           readelf -h "$ARTIFACT_DIR/tun2socks" | grep -E 'Class:|Machine:'
           readelf -d "$ARTIFACT_DIR/tun2socks" | tee "$ARTIFACT_DIR/tun2socks.dynamic.txt" || true
-          "$ARTIFACT_DIR/tun2socks" -version || true
+          "$ARTIFACT_DIR/tun2socks" --version || true
           "$ARTIFACT_DIR/tun2socks" --help | head -60 || true
           ls -lh "$ARTIFACT_DIR"
           cat "$ARTIFACT_DIR/tun2socks.version"
@@ -3842,151 +3854,22 @@ jobs:
           path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
 
-  build_busybox:
-    name: build BusyBox ${{ matrix.abi }}
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            module_arch: arm64-v8a
-            artifact_suffix: arm64
-            rust_target: aarch64-linux-android
-            clang_prefix: aarch64-linux-android
-            clang_target_api21: aarch64-linux-android21
-            goarch: arm64
-            goarm: "7"
-            cgo_enabled: "0"
-            android_abi: arm64-v8a
-            openssl_target: android-arm64
-            tor_host: aarch64-linux-android
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Cache Android NDK
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
-          key: ndk-${{ env.NDK_VERSION }}
-      - name: Install Android NDK
-        run: |
-          set -euo pipefail
-          NDK_VERSION="27.2.12479018"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager "ndk;$NDK_VERSION"
-          fi
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Download BusyBox source with fallback mirrors
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          VERSION="1.37.0"
-          TARBALL="busybox-${VERSION}.tar.bz2"
-          EXPECTED_SHA256="3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
-          DOWNLOAD_DIR=".tools/busybox/downloads"
-          DEST="$DOWNLOAD_DIR/$TARBALL"
-          TMP="$DEST.tmp"
-          mkdir -p "$DOWNLOAD_DIR"
-
-          sha256_file() {
-            sha256sum "$1" | awk '{print $1}'
-          }
-
-          if [[ -s "$DEST" ]] && [[ "$(sha256_file "$DEST")" == "$EXPECTED_SHA256" ]]; then
-            echo "[ZDT-D][BusyBox] cached source sha256 OK"
-            exit 0
-          fi
-          rm -f "$DEST" "$TMP"
-
-          URLS=(
-            "https://busybox.net/downloads/$TARBALL"
-            "https://mirror.slackbuilds.org/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
-            "https://plug-mirror.rcac.purdue.edu/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
-          )
-
-          for url in "${URLS[@]}"; do
-            echo "[ZDT-D][BusyBox] trying source: $url"
-            rm -f "$TMP"
-            if curl -fL --http1.1 \
-              --connect-timeout 10 \
-              --max-time 75 \
-              --speed-limit 1024 \
-              --speed-time 20 \
-              --retry 2 \
-              --retry-delay 2 \
-              --retry-all-errors \
-              -o "$TMP" "$url"; then
-              actual="$(sha256_file "$TMP")"
-              if [[ "$actual" == "$EXPECTED_SHA256" ]]; then
-                mv -f "$TMP" "$DEST"
-                echo "ZDT_BUSYBOX_SOURCE_URL=$url" >> "$GITHUB_ENV"
-                echo "[ZDT-D][BusyBox] source downloaded and verified: $actual"
-                exit 0
-              fi
-              echo "::warning::BusyBox SHA-256 mismatch from $url: expected=$EXPECTED_SHA256 actual=$actual"
-            else
-              echo "::warning::BusyBox download failed or timed out: $url"
-            fi
-          done
-
-          rm -f "$TMP"
-          echo "::error::Unable to download verified BusyBox $VERSION source from all configured mirrors"
-          exit 1
-
-      - name: Build BusyBox ${{ matrix.abi }} from source
-        run: |
-          set -euo pipefail
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/${{ matrix.module_arch }}/busybox
-          ls -lh prebuilt/bin/${{ matrix.module_arch }}/busybox
-          test -s prebuilt/bin/${{ matrix.module_arch }}/busybox
-
-      - name: Upload BusyBox binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: busybox-${{ matrix.artifact_suffix }}
-          path: |
-            prebuilt/bin/${{ matrix.module_arch }}/busybox
-            prebuilt/bin/${{ matrix.module_arch }}/busybox.source
-          retention-days: 1
-
   apk_tools_ready:
-    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
+    name: APK support components ready
     runs-on: ubuntu-latest
     needs:
       - build_dpi_detector
       - build_nfqws_tester
-      - build_busybox
     if: >-
       needs.build_dpi_detector.result == 'success' &&
-      needs.build_nfqws_tester.result == 'success' &&
-      needs.build_busybox.result == 'success'
+      needs.build_nfqws_tester.result == 'success'
 
     steps:
       - name: Mark APK tools ready
-        run: echo "APK tool artifacts are ready for APK packaging"
+        run: echo "APK helper artifacts are ready for APK packaging"
 
   build_apk:
-    name: build APK with module ZIP
+    name: build bundled, online and non-root APKs
     runs-on: ubuntu-latest
     needs:
       - pack_module
@@ -4102,23 +3985,6 @@ jobs:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
 
-
-      - name: Download BusyBox arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: busybox-arm64
-          path: prebuilt/bin/arm64-v8a
-
-
-      - name: Verify BusyBox artifacts
-        run: |
-          set -euo pipefail
-          for path in prebuilt/bin/arm64-v8a/busybox; do
-            test -s "$path"
-            chmod 755 "$path"
-            ls -lh "$path"
-          done
-
       - name: Locate Android project root
         run: |
           SETTINGS=$(find . -maxdepth 4 \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
@@ -4178,7 +4044,7 @@ jobs:
           )
           for abi in arm64-v8a; do
             SRC="${SRC_BY_ABI[$abi]}"
-            DST="application/app/build/generated/zdt-assets/main/dpi-detector/$abi/dpi-detector"
+            DST="application/app/build/generated/zdt-root-assets/main/dpi-detector/$abi/dpi-detector"
             test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
             mkdir -p "$(dirname "$DST")"
             cp -f "$SRC" "$DST"
@@ -4194,7 +4060,7 @@ jobs:
           )
           for abi in arm64-v8a; do
             SRC="${SRC_BY_ABI[$abi]}"
-            DST="application/app/build/generated/zdt-assets/main/nfqws-tester/$abi/nfqws_tester"
+            DST="application/app/build/generated/zdt-root-assets/main/nfqws-tester/$abi/nfqws_tester"
             test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
             mkdir -p "$(dirname "$DST")"
             cp -f "$SRC" "$DST"
@@ -4234,14 +4100,17 @@ jobs:
           for entry in \
             assets/dpi-detector/arm64-v8a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
-            assets/busybox/busybox-arm64 \
-            assets/busybox/busybox-arm64.sha256 \
-            assets/busybox/busybox-arm64.source; do
+            assets/metadata/zdt_module.sha256 \
+            assets/metadata/zdt_module.cache \
+            assets/module.prop \
+            assets/zdt_module.zip \
+            assets/xposed_init; do
             printf '%s\n' "$APK_ENTRIES" | grep -Fx "$entry" >/dev/null || { echo "::error::APK asset missing: $entry"; exit 1; }
           done
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/module.prop' >/dev/null || { echo "::error::module.prop APK asset missing"; exit 1; }
+          if printf '%s\n' "$APK_ENTRIES" | grep -F 'assets/busybox/' >/dev/null; then
+            echo "::error::BusyBox assets leaked into APK"
+            exit 1
+          fi
           APK_MODULE_PROP="$(unzip -p "$APK" assets/module.prop)"
           printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildType=(release|service)$' || { echo "::error::buildType missing from APK module.prop"; exit 1; }
           printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from APK module.prop"; exit 1; }
@@ -4254,6 +4123,7 @@ jobs:
           cp -f out/module/zdt_module.zip out/dist/zdt_module.zip
 
           ls -lh out/dist/
+
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
@@ -4297,7 +4167,7 @@ jobs:
       - name: Copy prebuilt binaries (skip our own code)
         run: |
           set -euo pipefail
-          OUR_CODE="zdtd dpi-detector nfqws-tester busybox zygisk"
+          OUR_CODE="zdtd dpi-detector nfqws-tester zygisk"
           mkdir -p prebuilt/bin/arm64-v8a
 
           for arch_dir in out/sync/*/; do
@@ -4898,6 +4768,7 @@ jobs:
       - pack_module
       - apk_tools_ready
       - build_apk
+      - build_tgws_plugin_apk
       - publish_service
     if: >-
       always() &&
@@ -4909,6 +4780,7 @@ jobs:
        needs.pack_module.result != 'success' ||
        needs.apk_tools_ready.result != 'success' ||
        needs.build_apk.result != 'success' ||
+       needs.build_tgws_plugin_apk.result != 'success' ||
        needs.publish_service.result != 'success')
 
     steps:
@@ -4924,6 +4796,7 @@ jobs:
           PACK_RESULT: ${{ needs.pack_module.result }}
           APK_TOOLS_RESULT: ${{ needs.apk_tools_ready.result }}
           APK_RESULT: ${{ needs.build_apk.result }}
+          TGWS_PLUGIN_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
           RELEASE_RESULT: ${{ needs.publish_service.result }}
         run: |
           set -euo pipefail
@@ -4936,6 +4809,9 @@ jobs:
             elif [[ "$APK_RESULT" != "success" ]]; then
               stage="apk"
               message="Android application build failed"
+            elif [[ "$TGWS_PLUGIN_RESULT" != "success" ]]; then
+              stage="apk"
+              message="TGWS plugin APK build failed"
             elif [[ "$RELEASE_RESULT" != "success" ]]; then
               stage="release"
               message="GitHub release publishing failed"

@@ -2403,4 +2403,44 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="subscription_manual_target">Destino: %1$s</string>
     <string name="subscription_copy_config">Copiar configuração</string>
     <string name="subscription_copy_failed">Não foi possível preparar a configuração para cópia.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">Abrir terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Colar</string>
+    <string name="vps_terminal_preparing">Preparando terminal</string>
+    <string name="vps_terminal_retry">Tentar novamente</string>
+    <string name="vps_terminal_check_tmux">Verificando tmux</string>
+    <string name="vps_terminal_install_tmux">Instalando tmux</string>
+    <string name="vps_terminal_check_session">Verificando zdt-d_console</string>
+    <string name="vps_terminal_create_session">Criando zdt-d_console</string>
+    <string name="vps_terminal_connect">Conectando ao terminal</string>
+    <string name="vps_terminal_error_tmux">Não foi possível instalar o tmux</string>
+    <string name="vps_terminal_error_session">Não foi possível preparar zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Não foi possível conectar ao terminal</string>
+    <string name="vps_terminal_error_disconnected">A conexão do terminal foi encerrada</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Proxy de saída</string>
+    <string name="operaproxy_upstream_desc">Escolha como o Opera Proxy se conecta à rede. ByeDPI é selecionado por padrão.</string>
+    <string name="operaproxy_upstream_direct">Sem proxy</string>
+    <string name="operaproxy_upstream_custom">Proxy próprio</string>
+    <string name="operaproxy_custom_proxy_title">Proxy de saída personalizado</string>
+    <string name="operaproxy_custom_proxy_desc">Informe a URL completa do proxy. Servidores remotos na Internet são aceitos. Formatos: http://, https://, socks5:// e socks5h://. Usuário e senha podem ser incluídos na URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Informe uma URL de proxy HTTP, HTTPS, SOCKS5 ou SOCKS5H válida com host e porta.</string>
 </resources>

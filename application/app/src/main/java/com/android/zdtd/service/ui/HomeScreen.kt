@@ -27,6 +27,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -442,7 +443,7 @@ private fun ServiceStatusPill(
 }
 
 @Composable
-private fun ServiceActionButton(
+internal fun ServiceActionButton(
   text: String,
   accent: Color,
   busy: Boolean,
@@ -606,7 +607,7 @@ private fun TransitionDash(
 }
 
 @Composable
-private fun AnimatedPowerDial(
+internal fun AnimatedPowerDial(
   visualState: HomeServiceVisualState,
   busy: Boolean,
   accent: Color,
@@ -619,9 +620,11 @@ private fun AnimatedPowerDial(
   val light = isLightColorScheme()
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
+  val focused by interaction.collectIsFocusedAsState()
   val pressScale by animateFloatAsState(
     targetValue = when {
       pressed -> 0.945f
+      focused && enabled -> 1.025f
       busy -> 0.982f
       else -> 1f
     },
@@ -724,6 +727,19 @@ private fun AnimatedPowerDial(
     val ticksR = dim * 0.355f
     val centerR = dim * 0.255f
     val px = density
+
+    if (focused && enabled) {
+      drawCircle(
+        color = Color.White.copy(alpha = 0.98f),
+        radius = outerR + 3.dp.toPx(),
+        style = Stroke(width = 3.dp.toPx()),
+      )
+      drawCircle(
+        color = scheme.primary.copy(alpha = 0.96f),
+        radius = outerR + 1.dp.toPx(),
+        style = Stroke(width = 2.dp.toPx()),
+      )
+    }
 
     // Soft ambient halo. On light theme this becomes a very restrained tint so
     // the control remains readable on white surfaces instead of looking muddy.
@@ -996,13 +1012,15 @@ private fun TechGridBackground(
 }
 
 @Composable
-private fun HomeLogsCard(
+internal fun HomeLogsCard(
   logTail: String,
   detailedLogTail: String,
   compact: Boolean,
   shortHeight: Boolean,
   fillHeight: Boolean,
   modifier: Modifier = Modifier,
+  titleText: String? = null,
+  showSourceSelector: Boolean = true,
 ) {
   val noLogDataText = stringResource(R.string.home_no_log_data)
   val mainLogsText = stringResource(R.string.home_logs_main)
@@ -1231,66 +1249,68 @@ private fun HomeLogsCard(
             }
           }
           Text(
-            text = stringResource(R.string.home_daemon_logs_title),
+            text = titleText ?: stringResource(R.string.home_daemon_logs_title),
             style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
           )
         }
 
-        Box {
-          Surface(
-            modifier = Modifier.clickable { logSourceMenuExpanded = true },
-            shape = RoundedCornerShape(if (compact) 11.dp else 12.dp),
-            color = scheme.surfaceContainer.copy(alpha = if (light) 0.86f else 0.56f),
-            border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.28f)),
-          ) {
-            Row(
-              modifier = Modifier.padding(
-                horizontal = if (compact) 9.dp else 11.dp,
-                vertical = if (compact) 6.dp else 7.dp,
-              ),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(5.dp),
+        if (showSourceSelector) {
+          Box {
+            Surface(
+              modifier = Modifier.clickable { logSourceMenuExpanded = true },
+              shape = RoundedCornerShape(if (compact) 11.dp else 12.dp),
+              color = scheme.surfaceContainer.copy(alpha = if (light) 0.86f else 0.56f),
+              border = BorderStroke(1.dp, scheme.outline.copy(alpha = 0.28f)),
             ) {
-              Icon(
-                imageVector = Icons.Filled.Menu,
-                contentDescription = stringResource(R.string.home_logs_source_menu),
-                modifier = Modifier.size(if (compact) 15.dp else 17.dp),
-                tint = scheme.onSurface.copy(alpha = 0.75f),
-              )
-              AnimatedContent(
-                targetState = selectedLogSource,
-                transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(120)) },
-                label = "logSourceLabel",
-              ) { source ->
-                Text(
-                  text = if (source == HomeLogSource.MAIN) mainLogsText else detailedLogsText,
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = FontWeight.SemiBold,
-                  maxLines = 1,
+              Row(
+                modifier = Modifier.padding(
+                  horizontal = if (compact) 9.dp else 11.dp,
+                  vertical = if (compact) 6.dp else 7.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.Menu,
+                  contentDescription = stringResource(R.string.home_logs_source_menu),
+                  modifier = Modifier.size(if (compact) 15.dp else 17.dp),
+                  tint = scheme.onSurface.copy(alpha = 0.75f),
+                )
+                AnimatedContent(
+                  targetState = selectedLogSource,
+                  transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(120)) },
+                  label = "logSourceLabel",
+                ) { source ->
+                  Text(
+                    text = if (source == HomeLogSource.MAIN) mainLogsText else detailedLogsText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                  )
+                }
+                Icon(
+                  imageVector = Icons.Filled.KeyboardArrowDown,
+                  contentDescription = null,
+                  modifier = Modifier.size(if (compact) 15.dp else 17.dp),
+                  tint = scheme.onSurface.copy(alpha = 0.62f),
                 )
               }
-              Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = null,
-                modifier = Modifier.size(if (compact) 15.dp else 17.dp),
-                tint = scheme.onSurface.copy(alpha = 0.62f),
+            }
+            DropdownMenu(
+              expanded = logSourceMenuExpanded,
+              onDismissRequest = { logSourceMenuExpanded = false },
+            ) {
+              DropdownMenuItem(
+                text = { Text(mainLogsText) },
+                onClick = { selectLogSource(HomeLogSource.MAIN) },
+              )
+              DropdownMenuItem(
+                text = { Text(detailedLogsText) },
+                onClick = { selectLogSource(HomeLogSource.DETAILED) },
               )
             }
-          }
-          DropdownMenu(
-            expanded = logSourceMenuExpanded,
-            onDismissRequest = { logSourceMenuExpanded = false },
-          ) {
-            DropdownMenuItem(
-              text = { Text(mainLogsText) },
-              onClick = { selectLogSource(HomeLogSource.MAIN) },
-            )
-            DropdownMenuItem(
-              text = { Text(detailedLogsText) },
-              onClick = { selectLogSource(HomeLogSource.DETAILED) },
-            )
           }
         }
       }
@@ -1552,7 +1572,7 @@ private data class HomeLayoutMetrics(
   val dialSize: Dp,
 )
 
-private enum class HomeServiceVisualState {
+internal enum class HomeServiceVisualState {
   RUNNING,
   STARTING,
   STOPPING,

@@ -92,6 +92,7 @@ class RootConfigManager(private val context: Context) {
         prefs.edit().putString("app_theme_mode", safe).apply()
     }
 
+
     fun getAppUpdateLastCheckTs(): Long = prefs.getLong("app_update_last_check_ts", 0L)
 
     fun setAppUpdateLastCheckTs(ts: Long) {

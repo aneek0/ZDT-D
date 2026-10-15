@@ -511,15 +511,15 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
 
     if let Some(v) = &plan.setting.udp_timeout {
         if !v.trim().is_empty() {
-            cmd.arg("-udp-timeout").arg(v);
+            cmd.arg("--udp-timeout").arg(v);
         }
     }
     if let Some(v) = plan.setting.fwmark {
-        cmd.arg("-fwmark").arg(v.to_string());
+        cmd.arg("--fwmark").arg(v.to_string());
     }
     if let Some(v) = &plan.setting.restapi {
         if !v.trim().is_empty() {
-            cmd.arg("-restapi").arg(v);
+            cmd.arg("--restapi").arg(v);
         }
     }
 
@@ -656,7 +656,7 @@ pub fn main_pids_exact() -> Vec<i32> {
         pids.extend(parse_pid_lines(&out));
     }
     if pids.is_empty() {
-        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/tun2socks' | grep -F -- '-device tun://' | grep -F ' -proxy ' | grep -v grep || true""#;
+        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/tun2socks' | grep -F -- '--device tun://' | grep -F ' --proxy ' | grep -v grep || true""#;
         if let Ok(out) = shell::capture_quiet(ps_cmd) {
             for line in out.lines() {
                 let cols: Vec<&str> = line.split_whitespace().collect();

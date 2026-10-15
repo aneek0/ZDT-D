@@ -2402,4 +2402,44 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="subscription_manual_target">Ziel: %1$s</string>
     <string name="subscription_copy_config">Konfiguration kopieren</string>
     <string name="subscription_copy_failed">Die Konfiguration konnte nicht zum Kopieren vorbereitet werden.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">Terminal öffnen</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Einfügen</string>
+    <string name="vps_terminal_preparing">Terminal wird vorbereitet</string>
+    <string name="vps_terminal_retry">Erneut versuchen</string>
+    <string name="vps_terminal_check_tmux">tmux wird geprüft</string>
+    <string name="vps_terminal_install_tmux">tmux wird installiert</string>
+    <string name="vps_terminal_check_session">zdt-d_console wird geprüft</string>
+    <string name="vps_terminal_create_session">zdt-d_console wird erstellt</string>
+    <string name="vps_terminal_connect">Terminal wird verbunden</string>
+    <string name="vps_terminal_error_tmux">tmux konnte nicht installiert werden</string>
+    <string name="vps_terminal_error_session">zdt-d_console konnte nicht vorbereitet werden</string>
+    <string name="vps_terminal_error_connect">Verbindung zum Terminal fehlgeschlagen</string>
+    <string name="vps_terminal_error_disconnected">Terminalverbindung wurde geschlossen</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Upstream-Proxy</string>
+    <string name="operaproxy_upstream_desc">Wähle, wie Opera Proxy die Netzwerkverbindung aufbaut. ByeDPI ist standardmäßig ausgewählt.</string>
+    <string name="operaproxy_upstream_direct">Kein Proxy</string>
+    <string name="operaproxy_upstream_custom">Eigener Proxy</string>
+    <string name="operaproxy_custom_proxy_title">Eigener Upstream-Proxy</string>
+    <string name="operaproxy_custom_proxy_desc">Gib die vollständige Proxy-URL ein. Entfernte Server im Internet werden unterstützt. Formate: http://, https://, socks5:// und socks5h://. Zugangsdaten können in der URL stehen.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Gib eine gültige HTTP-, HTTPS-, SOCKS5- oder SOCKS5H-Proxy-URL mit Host und Port ein.</string>
 </resources>

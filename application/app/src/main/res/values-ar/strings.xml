@@ -2410,4 +2410,44 @@ APatch: ‏10700+</string>
     <string name="subscription_manual_target">الوجهة: %1$s</string>
     <string name="subscription_copy_config">نسخ الإعداد</string>
     <string name="subscription_copy_failed">تعذر تجهيز الإعداد للنسخ.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">فتح الطرفية</string>
+    <string name="vps_terminal_title">الطرفية</string>
+    <string name="vps_terminal_paste">لصق</string>
+    <string name="vps_terminal_preparing">جارٍ إعداد الطرفية</string>
+    <string name="vps_terminal_retry">إعادة المحاولة</string>
+    <string name="vps_terminal_check_tmux">جارٍ التحقق من tmux</string>
+    <string name="vps_terminal_install_tmux">جارٍ تثبيت tmux</string>
+    <string name="vps_terminal_check_session">جارٍ التحقق من zdt-d_console</string>
+    <string name="vps_terminal_create_session">جارٍ إنشاء zdt-d_console</string>
+    <string name="vps_terminal_connect">جارٍ الاتصال بالطرفية</string>
+    <string name="vps_terminal_error_tmux">تعذر تثبيت tmux</string>
+    <string name="vps_terminal_error_session">تعذر إعداد zdt-d_console</string>
+    <string name="vps_terminal_error_connect">تعذر الاتصال بالطرفية</string>
+    <string name="vps_terminal_error_disconnected">تم إغلاق اتصال الطرفية</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">الوكيل الخارجي</string>
+    <string name="operaproxy_upstream_desc">اختر طريقة اتصال Opera Proxy بالشبكة. يتم اختيار ByeDPI افتراضيًا.</string>
+    <string name="operaproxy_upstream_direct">بدون وكيل</string>
+    <string name="operaproxy_upstream_custom">وكيل مخصص</string>
+    <string name="operaproxy_custom_proxy_title">وكيل خارجي مخصص</string>
+    <string name="operaproxy_custom_proxy_desc">أدخل عنوان URL الكامل للوكيل. يمكن استخدام خوادم بعيدة عبر الإنترنت. الصيغ: http:// وhttps:// وsocks5:// وsocks5h://. يمكن تضمين اسم المستخدم وكلمة المرور في URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">أدخل عنوان وكيل HTTP أو HTTPS أو SOCKS5 أو SOCKS5H صالحًا مع المضيف والمنفذ.</string>
 </resources>

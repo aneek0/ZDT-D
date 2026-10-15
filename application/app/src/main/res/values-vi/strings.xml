@@ -2400,4 +2400,44 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="subscription_manual_target">Đích: %1$s</string>
     <string name="subscription_copy_config">Sao chép cấu hình</string>
     <string name="subscription_copy_failed">Không thể chuẩn bị cấu hình để sao chép.</string>
+
+    <!-- Non-root runtime -->
+
+
+
+    <!-- Non-root T2S runtime settings -->
+
+
+    <!-- Non-root VPN lifecycle progress -->
+
+
+
+
+
+
+
+    <string name="vps_open_terminal">Mở terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Dán</string>
+    <string name="vps_terminal_preparing">Đang chuẩn bị terminal</string>
+    <string name="vps_terminal_retry">Thử lại</string>
+    <string name="vps_terminal_check_tmux">Đang kiểm tra tmux</string>
+    <string name="vps_terminal_install_tmux">Đang cài tmux</string>
+    <string name="vps_terminal_check_session">Đang kiểm tra zdt-d_console</string>
+    <string name="vps_terminal_create_session">Đang tạo zdt-d_console</string>
+    <string name="vps_terminal_connect">Đang kết nối terminal</string>
+    <string name="vps_terminal_error_tmux">Không thể cài đặt tmux</string>
+    <string name="vps_terminal_error_session">Không thể chuẩn bị zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Không thể kết nối terminal</string>
+    <string name="vps_terminal_error_disconnected">Kết nối terminal đã đóng</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Proxy đầu ra</string>
+    <string name="operaproxy_upstream_desc">Chọn cách Opera Proxy kết nối ra mạng. ByeDPI được chọn mặc định.</string>
+    <string name="operaproxy_upstream_direct">Không dùng proxy</string>
+    <string name="operaproxy_upstream_custom">Proxy tùy chọn</string>
+    <string name="operaproxy_custom_proxy_title">Proxy đầu ra tùy chọn</string>
+    <string name="operaproxy_custom_proxy_desc">Nhập URL proxy đầy đủ. Hỗ trợ máy chủ từ xa trên Internet. Định dạng: http://, https://, socks5:// và socks5h://. Có thể ghi tên đăng nhập và mật khẩu trong URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Nhập URL proxy HTTP, HTTPS, SOCKS5 hoặc SOCKS5H hợp lệ kèm máy chủ và cổng.</string>
 </resources>
