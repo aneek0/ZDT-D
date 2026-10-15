@@ -6723,6 +6723,365 @@ fun listStrategicVariants(programId: String, onDone: (List<ApiModels.StrategyVar
   }
 }
 
+data class ZapretPreset(val name: String, val content: String = "", val sha256: String? = null)
+
+fun listZapretPresets(onDone: (List<ZapretPreset>?) -> Unit) {
+  launchIO {
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2") }.getOrNull()
+    val files = obj?.optJSONArray("files")
+    val meta = obj?.optJSONArray("meta")
+    val hashes = buildMap {
+      if (meta != null) for (i in 0 until meta.length()) {
+        val item = meta.optJSONObject(i) ?: continue
+        put(item.optString("name"), item.optString("sha256").takeIf(String::isNotBlank))
+      }
+    }
+    val result = files?.let { array -> (0 until array.length()).map { index ->
+      val name = array.optString(index)
+      ZapretPreset(name, sha256 = hashes[name])
+    }.sortedBy { it.name } }
+    withContext(Dispatchers.Main.immediate) { onDone(result) }
+  }
+}
+
+fun loadZapretPreset(name: String, onDone: (ZapretPreset?) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(name, "UTF-8")
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2/$encoded") }.getOrNull()
+    val preset = obj?.optString("content")?.let { ZapretPreset(name, it) }
+    withContext(Dispatchers.Main.immediate) { onDone(preset) }
+  }
+}
+
+fun saveZapretPreset(name: String, content: String, onDone: (Boolean) -> Unit = {}) {
+  launchIO {
+    val ok = runCatching { api.postJsonData("/api/presets/nfqws2", JSONObject().put("name", name).put("content", content)) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun updateZapretPreset(name: String, content: String, onDone: (Boolean) -> Unit = {}) {
+  launchIO {
+    val encoded = URLEncoder.encode(name, "UTF-8")
+    val ok = runCatching { api.putJsonData("/api/presets/nfqws2/$encoded", JSONObject().put("content", content)) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun duplicateZapretPreset(name: String, newName: String, onDone: (Boolean) -> Unit = {}) = mutateZapretPreset(name, "duplicate", newName, onDone)
+fun renameZapretPreset(name: String, newName: String, onDone: (Boolean) -> Unit = {}) = mutateZapretPreset(name, "rename", newName, onDone)
+
+private fun mutateZapretPreset(name: String, action: String, newName: String, onDone: (Boolean) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(name, "UTF-8")
+    val ok = runCatching { api.postJsonData("/api/presets/nfqws2/$encoded/$action", JSONObject().put("name", newName)) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun deleteZapretPreset(name: String, onDone: (Boolean) -> Unit = {}) {
+  launchIO {
+    val encoded = URLEncoder.encode(name, "UTF-8")
+    val ok = runCatching { api.deletePath("/api/presets/nfqws2/$encoded") }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun exportZapretPreset(name: String, onDone: (ZapretPreset?) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(name, "UTF-8")
+    val obj = runCatching { api.postJsonResponse("/api/presets/nfqws2/export/$encoded", JSONObject()) }.getOrNull()
+    val result = obj?.takeIf { it.optBoolean("ok", false) }?.optString("content")?.let { ZapretPreset(name, it) }
+    withContext(Dispatchers.Main.immediate) { onDone(result) }
+  }
+}
+
+fun importZapretPreset(name: String, content: String, onDone: (Result<Boolean>) -> Unit = {}) {
+  launchIO {
+    val result = runCatching { api.postJsonData("/api/presets/nfqws2/import", JSONObject().put("name", name).put("content", content)) }
+    withContext(Dispatchers.Main.immediate) { onDone(result) }
+  }
+}
+
+fun applyZapretPreset(profile: String, name: String, content: String, onDone: (Boolean) -> Unit = {}) {
+  launchIO {
+    val payload = JSONObject().put("profile", profile).put("name", name).put("content", content)
+    val ok = runCatching { api.postJsonData("/api/presets/nfqws2/apply", payload) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+// --- NFQWS2 per-item editor API (config.txt items + layered lists) --------
+
+data class Nfqws2Item(
+  val index: Int,
+  val name: String?,
+  val displayName: String,
+  val enabled: Boolean,
+  val filters: List<Pair<String, String>>,
+  val lists: List<Nfqws2ListRef>,
+  val strategy: List<String>,
+  val raw: String,
+  val catalog: String,
+  val protocol: String,
+  val ports: String,
+)
+
+data class Nfqws2ListRef(
+  val kind: String,
+  val option: String,
+  val value: String,
+  val name: String,
+  val fileRef: Boolean,
+)
+
+data class Nfqws2StrategyOption(
+  val name: String,
+  val preset: String,
+  val lines: List<String>,
+  val builtin: Boolean,
+)
+
+data class Nfqws2ListSummary(
+  val name: String,
+  val kind: String,
+  val managed: Boolean,
+  val userEntries: Int,
+  val finalEntries: Int,
+)
+
+private fun itemFromJson(obj: JSONObject): Nfqws2Item {
+  val filtersJson = obj.optJSONArray("filters") ?: JSONArray()
+  val listsJson = obj.optJSONArray("lists") ?: JSONArray()
+  return Nfqws2Item(
+    index = obj.optInt("index"),
+    name = obj.optString("name").takeIf(String::isNotBlank),
+    displayName = obj.optString("display_name").ifBlank { obj.optString("name").ifBlank { "item ${obj.optInt("index")}" } },
+    enabled = obj.optBoolean("enabled", true),
+    filters = (0 until filtersJson.length()).mapNotNull { i ->
+      val f = filtersJson.optJSONObject(i) ?: return@mapNotNull null
+      f.optString("option") to f.optString("value")
+    },
+    lists = (0 until listsJson.length()).mapNotNull { i ->
+      val l = listsJson.optJSONObject(i) ?: return@mapNotNull null
+      Nfqws2ListRef(
+        kind = l.optString("kind"),
+        option = l.optString("option"),
+        value = l.optString("value"),
+        name = l.optString("name"),
+        fileRef = l.optBoolean("file_ref", false),
+      )
+    },
+    strategy = (0 until (obj.optJSONArray("strategy") ?: JSONArray()).length()).map { i ->
+      (obj.optJSONArray("strategy") ?: JSONArray()).optString(i)
+    },
+    raw = obj.optString("raw"),
+    catalog = obj.optString("catalog", "tcp"),
+    protocol = obj.optString("protocol", "TCP"),
+    ports = obj.optString("ports"),
+  )
+}
+
+fun listNfqws2Items(profile: String, onDone: (List<Nfqws2Item>?) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(profile, "UTF-8")
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2/profile/$encoded/items") }.getOrNull()
+    val items = obj?.optJSONArray("items")?.let { arr ->
+      (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(::itemFromJson) }
+    }
+    withContext(Dispatchers.Main.immediate) { onDone(items) }
+  }
+}
+
+private fun postNfqws2ItemAction(profile: String, index: Int, action: String, body: JSONObject? = null, onDone: (Boolean) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(profile, "UTF-8")
+    val ok = runCatching {
+      api.postJsonData("/api/presets/nfqws2/profile/$encoded/items/$index/$action", body ?: JSONObject())
+    }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun setNfqws2ItemEnabled(profile: String, index: Int, enabled: Boolean, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "enabled", JSONObject().put("enabled", enabled), onDone)
+
+fun setNfqws2ItemStrategy(profile: String, index: Int, lines: List<String>, whole: Boolean = false, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "strategy", JSONObject().put("lines", JSONArray(lines)).put("whole", whole), onDone)
+
+fun setNfqws2ItemMatch(profile: String, index: Int, name: String?, filter: String?, hostlist: String?, ipset: String?, onDone: (Boolean) -> Unit = {}) {
+  val body = JSONObject()
+  name?.let { body.put("name", it) }
+  filter?.let { body.put("filter", it) }
+  hostlist?.let { body.put("hostlist", it) }
+  ipset?.let { body.put("ipset", it) }
+  postNfqws2ItemAction(profile, index, "match", body, onDone)
+}
+
+fun setNfqws2ItemRaw(profile: String, index: Int, raw: String, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "raw", JSONObject().put("raw", raw), onDone)
+
+fun appendNfqws2Item(profile: String, template: List<String>, at: Int? = null, onDone: (Boolean) -> Unit = {}) {
+  val body = JSONObject().put("template", JSONArray(template))
+  at?.let { body.put("at", it) }
+  launchIO {
+    val encoded = URLEncoder.encode(profile, "UTF-8")
+    val ok = runCatching { api.postJsonData("/api/presets/nfqws2/profile/$encoded/items/append", body) }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok) }
+  }
+}
+
+fun deleteNfqws2Item(profile: String, index: Int, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "delete", null, onDone)
+
+fun duplicateNfqws2Item(profile: String, index: Int, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "duplicate", null, onDone)
+
+fun moveNfqws2Item(profile: String, index: Int, delta: Int, onDone: (Boolean) -> Unit = {}) =
+  postNfqws2ItemAction(profile, index, "move", JSONObject().put("delta", delta), onDone)
+
+fun listNfqws2Strategies(onDone: (Map<String, List<Nfqws2StrategyOption>>) -> Unit) {
+  launchIO {
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2/profile/default/strategies") }.getOrNull()
+    val families = obj?.optJSONObject("families")?.let { fam ->
+      fam.keys().asSequence().associateWith { key ->
+        val arr = fam.optJSONArray(key) ?: JSONArray()
+        (0 until arr.length()).mapNotNull { i ->
+          val o = arr.optJSONObject(i) ?: return@mapNotNull null
+          val lines = (0 until (o.optJSONArray("lines") ?: JSONArray()).length()).map { j -> (o.optJSONArray("lines") ?: JSONArray()).optString(j) }
+          Nfqws2StrategyOption(
+            name = o.optString("name"),
+            preset = o.optString("preset"),
+            lines = lines,
+            builtin = o.optBoolean("builtin", false),
+          )
+        }
+      }
+    } ?: emptyMap()
+    withContext(Dispatchers.Main.immediate) { onDone(families) }
+  }
+}
+
+fun listNfqws2Lists(profile: String, onDone: (List<Nfqws2ListSummary>?) -> Unit) {
+  launchIO {
+    val encoded = URLEncoder.encode(profile, "UTF-8")
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2/profile/$encoded/lists") }.getOrNull()
+    val lists = obj?.optJSONArray("lists")?.let { arr ->
+      (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        Nfqws2ListSummary(
+          name = o.optString("name"),
+          kind = o.optString("kind"),
+          managed = o.optBoolean("managed", false),
+          userEntries = o.optInt("user_entries"),
+          finalEntries = o.optInt("final_entries"),
+        )
+      }
+    }
+    withContext(Dispatchers.Main.immediate) { onDone(lists) }
+  }
+}
+
+fun readNfqws2List(profile: String, name: String, onDone: (Triple<List<String>, List<String>, List<String>>?) -> Unit) {
+  launchIO {
+    val p = URLEncoder.encode(profile, "UTF-8")
+    val n = URLEncoder.encode(name, "UTF-8")
+    val obj = runCatching { api.getJsonData("/api/presets/nfqws2/profile/$p/lists/$n") }.getOrNull()
+    val result = obj?.takeIf { it.optBoolean("ok", false) }?.let { o ->
+      Triple(
+        o.optJSONArray("base").orEmptyStrings(),
+        o.optJSONArray("user").orEmptyStrings(),
+        o.optJSONArray("final").orEmptyStrings(),
+      )
+    }
+    withContext(Dispatchers.Main.immediate) { onDone(result) }
+  }
+}
+
+private fun JSONArray?.orEmptyStrings(): List<String> =
+  this?.let { (0 until it.length()).map { i -> it.optString(i) } } ?: emptyList()
+
+fun saveNfqws2List(profile: String, name: String, entries: List<String>, kind: String, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+  launchIO {
+    val p = URLEncoder.encode(profile, "UTF-8")
+    val n = URLEncoder.encode(name, "UTF-8")
+    val err = mutableListOf<String?>()
+    val ok = runCatching {
+      api.putJsonData("/api/presets/nfqws2/profile/$p/lists/$n", JSONObject().put("entries", JSONArray(entries)).put("kind", kind))
+    }.onFailure { e ->
+      android.util.Log.e("ZDTD-Lists", "saveNfqws2List $name failed: ${e.message}")
+      err.add(e.message)
+    }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok, err.firstOrNull()) }
+  }
+}
+
+fun createNfqws2List(profile: String, name: String, kind: String, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+  launchIO {
+    val p = URLEncoder.encode(profile, "UTF-8")
+    val err = mutableListOf<String?>()
+    val ok = runCatching {
+      api.postJsonData("/api/presets/nfqws2/profile/$p/lists", JSONObject().put("name", name).put("kind", kind))
+    }.onFailure { e ->
+      android.util.Log.e("ZDTD-Lists", "createNfqws2List $name failed: ${e.message}")
+      err.add(e.message)
+    }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok, err.firstOrNull()) }
+  }
+}
+
+fun deleteNfqws2List(profile: String, name: String, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+  launchIO {
+    val p = URLEncoder.encode(profile, "UTF-8")
+    val n = URLEncoder.encode(name, "UTF-8")
+    val err = mutableListOf<String?>()
+    val ok = runCatching { api.postJsonData("/api/presets/nfqws2/profile/$p/lists/$n/delete", JSONObject()) }.onFailure { e ->
+      android.util.Log.e("ZDTD-Lists", "deleteNfqws2List $name failed: ${e.message}")
+      err.add(e.message)
+    }.getOrDefault(false)
+    withContext(Dispatchers.Main.immediate) { onDone(ok, err.firstOrNull()) }
+  }
+}
+
+// ---- NFQWS2 per-item cutover (legacy global-selection -> per-item lists) ----
+
+data class Nfqws2CutoverStatus(
+  val state: String,
+  val version: Int,
+  val pendingProfiles: List<String>,
+)
+
+fun getNfqws2CutoverStatus(onDone: (Nfqws2CutoverStatus?) -> Unit) {
+  launchIO {
+    val obj = runCatching { api.getJsonData("/api/cutover/nfqws2-items") }.getOrNull()
+    val status = obj?.let { o ->
+      Nfqws2CutoverStatus(
+        state = o.optString("state", "not_needed"),
+        version = o.optInt("version", 0),
+        pendingProfiles = o.optJSONArray("pending_profiles")?.let { arr ->
+          (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf(String::isNotBlank) }
+        } ?: emptyList(),
+      )
+    }
+    withContext(Dispatchers.Main.immediate) { onDone(status) }
+  }
+}
+
+fun runNfqws2ItemsCutover(onDone: (Boolean, String?) -> Unit) {
+  launchIO {
+    val result = runCatching { api.postJsonResult("/api/cutover/nfqws2-items/run", JSONObject()) }
+    val ok = result.isSuccess
+    val backupDir = result.getOrNull()?.optString("backup_dir")?.takeIf(String::isNotBlank)
+    if (!ok) {
+      val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+      log("ERR", if (detail.isBlank()) "cutover failed" else "cutover failed — $detail")
+    } else {
+      log("OK", "nfqws2 per-item cutover complete")
+    }
+    withContext(Dispatchers.Main.immediate) { onDone(ok, backupDir) }
+  }
+}
+
 fun applyStrategicVariant(programId: String, profile: String, file: String, hostlists: List<String> = emptyList(), excludeHostlists: List<String> = emptyList(), ipsets: List<String> = emptyList(), excludeIpsets: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()

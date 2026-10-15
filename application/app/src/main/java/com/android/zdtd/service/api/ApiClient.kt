@@ -383,6 +383,8 @@ fun getRuntimeApplyStatus(): ApiModels.RuntimeApplyStatus {
     return obj.optJSONObject("data") ?: obj
   }
 
+  fun postJsonResponse(path: String, data: JSONObject): JSONObject? = requestJson("POST", path, data)
+
   fun putJsonData(path: String, data: JSONObject): Boolean {
     // Preserve the server-side validation error instead of collapsing every
     // rejected save into a generic false result. MainViewModel logs it.

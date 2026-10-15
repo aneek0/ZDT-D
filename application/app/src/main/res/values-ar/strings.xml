@@ -2129,6 +2129,12 @@ APatch: ‏10700+</string>
     <string name="dpi_detector_share_failed">تعذرت مشاركة أرشيف التقرير.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">جميع الاستراتيجيات المرشحة مؤكدة بالفعل لهذا الهدف. لا شيء لاختباره</string>
+    <string name="blockcheck_error_config_no_desync">الملف النشط لا يحتوي على استراتيجيات (فارغ أو فشل التحميل)</string>
+    <string name="blockcheck_error_no_strategies">لم يتم العثور على استراتيجيات لهذا البرنامج</string>
+    <string name="blockcheck_error_config_not_found">ملف تكوين الاستراتيجية غير موجود</string>
+    <string name="blockcheck_error_hosts_required">قائمة المضيفين مطلوبة لهذا البروتوكول</string>
+    <string name="blockcheck_error_snapshot_load">تعذر تحميل تكوين الملف النشط</string>
 
     <string name="enable_blocked_profile_overlap">تم حظر التمكين: عطّل الملفات المتداخلة</string>
     <string name="enable_blocked_profile_overlap_detail">لا يمكن تمكين الملف الشخصي «%1$s» في البرنامج «%2$s» — لديه تطبيقات مشتركة مع الملف الشخصي الممكَّن «%3$s» في البرنامج «%4$s» (%5$s). عطّل الملف الشخصي المتعارض أولاً.</string>
@@ -2141,6 +2147,56 @@ APatch: ‏10700+</string>
         <item quantity="many">%1$d تطبيقًا</item>
         <item quantity="other">%1$d تطبيق</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">العناصر</string>
+    <string name="nfqws2_items_empty">لا توجد عناصر في هذا التكوين. طبّق ملفًا مسبقًا من المكتبة أولاً.</string>
+    <string name="nfqws2_item_strategy">الاستراتيجية</string>
+    <string name="nfqws2_item_strategy_pick">اختر استراتيجية</string>
+    <string name="nfqws2_items_strategies_none">لا توجد استراتيجيات متاحة.</string>
+    <string name="nfqws2_item_move_up">تحريك لأعلى</string>
+    <string name="nfqws2_item_move_down">تحريك لأسفل</string>
+    <string name="nfqws2_item_duplicate">تكرار العنصر</string>
+    <string name="nfqws2_item_delete">حذف العنصر</string>
+    <string name="nfqws2_item_enabled">تشغيل</string>
+    <string name="nfqws2_item_disabled">إيقاف</string>
+    <string name="nfqws2_item_ports_fmt">المنافذ: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">أسطر الاستراتيجية (تقنية desync لهذا العنصر)</string>
+    <string name="nfqws2_item_raw_lines">نص العنصر الخام</string>
+    <string name="nfqws2_item_sections_hint">كل بطاقة هي عنصر واحد: ما الذي يعترضه (البروتوكول والمنافذ والقوائم) وأي استراتيجية تتجاوزه. «الاستراتيجية» تختار تقنية التجاوز، و«Match» تعدّل الاسم/المنافذ، و«Raw lines» تعدّل النص الكامل.</string>
+
+    <string name="nfqws2_cutover_title">التبديل إلى القوائم لكل عنصر</string>
+    <string name="nfqws2_cutover_hint">لا يزال هذا الملف يستخدم التحديد العام القديم للقوائم. تبديل لمرة واحدة يعيد كتابة الملف من الإعداد الافتراضي مع الاحتفاظ بالتطبيقات والمنافذ. يتم حفظ نسخة احتياطية مع بيان وصف أولاً.</string>
+    <string name="nfqws2_cutover_run">تبديل مع نسخة احتياطية</string>
+    <string name="nfqws2_cutover_done">تم التبديل إلى القوائم لكل عنصر. النسخة الاحتياطية: %1$s</string>
+    <string name="nfqws2_cutover_failed">فشل التبديل — راجع السجلات. لم يتم تغيير أي شيء.</string>
+    <string name="nfqws2_cutover_profiles_pending">الملفات المتأثرة: %1$s</string>
+    <string name="nfqws2_item_match_title">مطابقة</string>
+    <string name="nfqws2_item_match_edit">تعديل المطابقة</string>
+    <string name="nfqws2_item_match_name">اسم العنصر</string>
+    <string name="nfqws2_item_match_name_hint">يظهر في قائمة العناصر فقط</string>
+    <string name="nfqws2_item_match_filter">منافذ التصفية (مثل 80,443 أو 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">القوائم</string>
+    <string name="nfqws2_item_lists_none">لا توجد قوائم مرتبطة بهذا العنصر.</string>
+    <string name="nfqws2_item_list_attach">ربط قائمة</string>
+    <string name="nfqws2_item_list_detach">فصل</string>
+    <string name="nfqws2_item_raw_title">أسطر خام</string>
+    <string name="nfqws2_item_raw_edit">تعديل العنصر الخام</string>
+    <string name="nfqws2_item_raw_hint">جسم العنصر كاملاً، خيار واحد لكل سطر (بدون --new)</string>
+    <string name="nfqws2_list_editor_title">محرر القوائم</string>
+    <string name="nfqws2_list_kind_hostlist">قائمة النطاقات</string>
+    <string name="nfqws2_list_kind_ipset">قائمة عناوين IP</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">قائمة نطاقات مستثناة</string>
+    <string name="nfqws2_list_kind_ipset_exclude">قائمة IP مستثناة</string>
+    <string name="nfqws2_list_create">قائمة جديدة</string>
+    <string name="nfqws2_list_search">بحث</string>
+    <string name="nfqws2_list_create_name">اسم القائمة</string>
+    <string name="nfqws2_list_edit">تعديل القائمة</string>
+    <string name="nfqws2_list_delete">حذف القائمة</string>
+    <string name="nfqws2_list_delete_confirm">حذف القائمة «%1$s»؟ تُحذف إدخالات المستخدم؛ يبقى الجزء المدمج في الوحدة.</string>
+    <string name="nfqws2_list_tab_user">المستخدم</string>
+    <string name="nfqws2_list_tab_final">النهائي</string>
+    <string name="nfqws2_list_entries_hint">إدخال واحد في كل سطر</string>
+    <string name="nfqws2_list_builtin_locked">الإدخالات المدمجة للقراءة فقط وتأتي من الوحدة. تُضاف إدخالات المستخدم فوقها عند بناء القائمة النهائية.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

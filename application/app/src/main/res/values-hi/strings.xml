@@ -2125,6 +2125,12 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="dpi_detector_share_failed">रिपोर्ट संग्रह साझा नहीं किया जा सका।</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">इस लक्ष्य के लिए हर संभावित रणनीति पहले से पुष्ट है। परीक्षण के लिए कुछ नहीं</string>
+    <string name="blockcheck_error_config_no_desync">सक्रिय प्रोफ़ाइल में कोई रणनीति नहीं है (खाली या लोड विफल)</string>
+    <string name="blockcheck_error_no_strategies">इस प्रोग्राम के लिए कोई रणनीति नहीं मिली</string>
+    <string name="blockcheck_error_config_not_found">रणनीति कॉन्फ़िगरेशन फ़ाइल नहीं मिली</string>
+    <string name="blockcheck_error_hosts_required">इस प्रोटोकॉल के लिए होस्ट सूची आवश्यक है</string>
+    <string name="blockcheck_error_snapshot_load">सक्रिय प्रोफ़ाइल कॉन्फ़िगरेशन लोड नहीं हो सका</string>
 
     <string name="enable_blocked_profile_overlap">सक्षम करना अवरुद्ध: ओवरलैपिंग प्रोफ़ाइल अक्षम करें</string>
     <string name="enable_blocked_profile_overlap_detail">प्रोग्राम “%2$s” की प्रोफ़ाइल “%1$s” सक्षम नहीं की जा सकती — उसका पहले से सक्षम प्रोफ़ाइल “%3$s” (प्रोग्राम “%4$s”) के साथ साझा ऐप्स हैं (%5$s)। पहले विरोधी प्रोफ़ाइल अक्षम करें।</string>
@@ -2133,6 +2139,56 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
         <item quantity="one">%1$d ऐप</item>
         <item quantity="other">%1$d ऐप्स</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">आइटम</string>
+    <string name="nfqws2_items_empty">इस कॉन्फ़िग में कोई आइटम नहीं है। पहले लाइब्रेरी से एक प्रीसेट लागू करें।</string>
+    <string name="nfqws2_item_strategy">रणनीति</string>
+    <string name="nfqws2_item_strategy_pick">रणनीति चुनें</string>
+    <string name="nfqws2_items_strategies_none">कोई रणनीति उपलब्ध नहीं है।</string>
+    <string name="nfqws2_item_move_up">ऊपर ले जाएँ</string>
+    <string name="nfqws2_item_move_down">नीचे ले जाएँ</string>
+    <string name="nfqws2_item_duplicate">आइटम डुप्लिकेट करें</string>
+    <string name="nfqws2_item_delete">आइटम हटाएँ</string>
+    <string name="nfqws2_item_enabled">चालू</string>
+    <string name="nfqws2_item_disabled">बंद</string>
+    <string name="nfqws2_item_ports_fmt">पोर्ट: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">स्ट्रैटेजी लाइनें (इस आइटम की desync तकनीक)</string>
+    <string name="nfqws2_item_raw_lines">आइटम का कच्चा टेक्स्ट</string>
+    <string name="nfqws2_item_sections_hint">हर कार्ड एक आइटम है: यह क्या पकड़ता है (प्रोटोकॉल, पोर्ट, सूचियाँ) और कौन सी रणनीति इसे बायपास करती है। «रणनीति» बायपास तकनीक चुनती है, «Match» नाम/पोर्ट संपादित करता है, «Raw lines» पूरा टेक्स्ट संपादित करता है।</string>
+
+    <string name="nfqws2_cutover_title">प्रति-आइटम सूचियों पर स्विच करें</string>
+    <string name="nfqws2_cutover_hint">यह प्रोफ़ाइल अभी भी पुरानी ग्लोबल होस्टलिस्ट/ipset चयन का उपयोग करती है। एक बार का स्विच डिफ़ॉल्ट प्रीसेट से कॉन्फ़िगरेशन को फिर से लिखता है, ऐप्स और पोर्ट बने रहते हैं। पहले मैनिफ़ेस्ट के साथ बैकअप सहेजा जाता है।</string>
+    <string name="nfqws2_cutover_run">स्विच करें और बैकअप लें</string>
+    <string name="nfqws2_cutover_done">प्रति-आइटम सूचियों पर स्विच हो गया। बैकअप: %1$s</string>
+    <string name="nfqws2_cutover_failed">स्विच विफल — लॉग देखें। कुछ नहीं बदला।</string>
+    <string name="nfqws2_cutover_profiles_pending">प्रभावित प्रोफ़ाइल: %1$s</string>
+    <string name="nfqws2_item_match_title">मैच</string>
+    <string name="nfqws2_item_match_edit">मैच संपादित करें</string>
+    <string name="nfqws2_item_match_name">आइटम का नाम</string>
+    <string name="nfqws2_item_match_name_hint">केवल आइटम सूची में दिखता है</string>
+    <string name="nfqws2_item_match_filter">फ़िल्टर पोर्ट (जैसे 80,443 या 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">सूचियाँ</string>
+    <string name="nfqws2_item_lists_none">इस आइटम से कोई सूची जुड़ी नहीं है।</string>
+    <string name="nfqws2_item_list_attach">सूची जोड़ें</string>
+    <string name="nfqws2_item_list_detach">हटाएँ</string>
+    <string name="nfqws2_item_raw_title">रॉ लाइनें</string>
+    <string name="nfqws2_item_raw_edit">रॉ आइटम संपादित करें</string>
+    <string name="nfqws2_item_raw_hint">पूरा आइटम बॉडी, प्रति पंक्ति एक विकल्प (--new के बिना)</string>
+    <string name="nfqws2_list_editor_title">सूची संपादक</string>
+    <string name="nfqws2_list_kind_hostlist">होस्टलिस्ट</string>
+    <string name="nfqws2_list_kind_ipset">IP सूची</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">एक्सक्लूड होस्टलिस्ट</string>
+    <string name="nfqws2_list_kind_ipset_exclude">एक्सक्लूड IP सूची</string>
+    <string name="nfqws2_list_create">नई सूची</string>
+    <string name="nfqws2_list_search">खोजें</string>
+    <string name="nfqws2_list_create_name">सूची का नाम</string>
+    <string name="nfqws2_list_edit">सूची संपादित करें</string>
+    <string name="nfqws2_list_delete">सूची हटाएँ</string>
+    <string name="nfqws2_list_delete_confirm">सूची "%1$s" हटाएँ? उपयोगकर्ता प्रविष्टियाँ हट जाएँगी; बिल्ट-इन भाग मॉड्यूल में रहेगा।</string>
+    <string name="nfqws2_list_tab_user">उपयोगकर्ता</string>
+    <string name="nfqws2_list_tab_final">अंतिम</string>
+    <string name="nfqws2_list_entries_hint">प्रति पंक्ति एक प्रविष्टि</string>
+    <string name="nfqws2_list_builtin_locked">बिल्ट-इन प्रविष्टियाँ केवल-पढ़ने के लिए हैं और मॉड्यूल से आती हैं। डेमन द्वारा अंतिम सूची बनाते समय उपयोगकर्ता प्रविष्टियाँ ऊपर जोड़ी जाती हैं।</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

@@ -297,6 +297,12 @@ on top of the merge base) are a smaller, focused set:
   per-service host lists / `ipset-*` files and fake TLS/QUIC/`syn` packet bins
   under `module_template/strategic/bin/` and `strategic/list/` that are not in
   upstream.
+- **Per-item `config.txt` editor for nfqws2.** An "Items" tab on `nfqws2`
+  profiles renders every `--new` block as a card: protocol/port/filter chips,
+  hostlist/ipset refs, strategy lines, plus enable/disable, duplicate, delete
+  and move actions — all through the new daemon item API that atomically
+  rewrites `config.txt` and validates strategies against the catalog.
+  Upstream only offers plain-text editing.
 - **Host-list maintenance tooling** in `scripts/lists/`: `dedup_check.py` (local
   + upstream-zapret2 duplicate/baseline checks), `strategy_dedup.py` (mirrors
   the daemon's selection stripping for local edits) and a validation harness.

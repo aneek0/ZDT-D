@@ -87,15 +87,38 @@ zygisk/               — Zygisk native library (DO NOT touch)
 - Commits: conventional style (`feat:`, `fix:`, `perf:`, `refactor:`)
 - Package name: `com.android.zdtd.service` — DO NOT change
 
-### nfqws2 strategy selection
+### nfqws2 strategy selection (legacy profiles)
 
-The daemon owns hostlist/IP-set binding for `nfqws2` (and `byedpi` profiles). At apply time it
-strips every `--hostlist*` / `--ipset*` token from each `--new` block and
-re-injects the user selection into every section (`rust/zdtd/src/api.rs
-apply_selection_to_config`). So do not rely on hardcoded `--hostlist*` /
-`--ipset*` inside `strategicvar/*.txt`; the user's choice wins. `--hostlist-auto=`
-blocks are data-driven and kept as-is. When editing those strategy files by hand,
-use `scripts/lists/strategy_dedup.py` to strip/re-dedup consistently.
+Legacy `nfqws2` profiles (and `byedpi`) still use the global-selection flow: at apply time the
+daemon strips every `--hostlist*` / `--ipset*` token from each `--new` block and re-injects the
+user selection into the global section (`rust/zdtd/src/api.rs apply_selection_to_config`). Do
+not rely on hardcoded `--hostlist*` / `--ipset*` inside those configs; the user's choice wins.
+`--hostlist-auto=` blocks are data-driven and kept as-is.
+
+### nfqws2 per-item lists (new profiles)
+
+New-style `nfqws2` profiles keep hostlist/ipset refs **inside each item** (`--new` block); the
+daemon does not strip them on apply. Items are managed through the per-item API
+(`/api/presets/nfqws2/profile/{p}/items/...`, `.../lists/...`). Profiles that still carry a
+legacy global injection (variant marker or selectors before the first item boundary) are
+migrated by a one-time cutover (`POST /api/cutover/nfqws2-items/run`): configs are backed up
+with a sha256 manifest to `working_folder/nfqws2-items-backup/<timestamp>/`, nfqws2 is
+stopped, each legacy config is rewritten from the shipped default preset, and a versioned
+marker (`working_folder/nfqws2-items-cutover.json`) makes the migration idempotent.
+Builtin ZDT-D preset format opens the first item **without** `--new` — `--name=chatgpt`
+or `--filter-tcp=...` right after the preamble starts the first item; treat those tokens as
+item boundaries when parsing. When editing strategy files by hand, use
+`scripts/lists/strategy_dedup.py` to strip/re-dedup consistently.
+
+### Blockcheck scan history
+
+The tester (`rust/nfqws-tester`) reads `strategy_history.json` (written by the
+app to filesDir, passed as `--history`) to order candidates: confirmed first,
+then fresh, recently-failed last. The app's "Skip tested" chip passes
+`--skip-confirmed`, which drops history-confirmed strategies from the batch so
+re-scans explore fresh candidates. If every candidate is confirmed, the tester
+bails with an explicit error. Baseline/pass-open confirm dialogs mark the run
+`forced` (informational: history not saved).
 
 ## Build
 

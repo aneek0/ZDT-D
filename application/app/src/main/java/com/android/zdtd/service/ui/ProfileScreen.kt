@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.ui.Nfqws2ItemsEditor
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.R
 
@@ -70,6 +71,7 @@ fun ProfileScreen(
     val tabs = buildList {
       add(0 to stringResource(R.string.tab_apps))
       add(1 to stringResource(R.string.tab_config))
+      if (programId == "nfqws2") add(2 to stringResource(R.string.nfqws2_items_tab))
       if (programId == "operaproxy") add(2 to stringResource(R.string.tab_sni))
     }
     StrategicProfileTabs(
@@ -113,7 +115,9 @@ fun ProfileScreen(
         }
       }
       2 -> {
-        if (programId == "operaproxy") {
+        if (programId == "nfqws2") {
+          Nfqws2ItemsEditor(profile = profile, actions = actions, snackHost = snackHost)
+        } else if (programId == "operaproxy") {
           TextEditorCard(
             title = stringResource(R.string.profile_fake_sni_txt_title),
             desc = stringResource(R.string.profile_fake_sni_desc),
@@ -124,7 +128,6 @@ fun ProfileScreen(
         }
       }
     }
-
     Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }

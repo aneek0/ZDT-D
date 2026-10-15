@@ -2124,6 +2124,12 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="dpi_detector_share_failed">レポートのアーカイブを共有できませんでした。</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">このターゲットに対する候補戦略はすべて確認済みです。テストするものがありません</string>
+    <string name="blockcheck_error_config_no_desync">アクティブなプロファイルに戦略がありません（空または読み込み失敗）</string>
+    <string name="blockcheck_error_no_strategies">このプログラムの戦略が見つかりません</string>
+    <string name="blockcheck_error_config_not_found">戦略設定ファイルが見つかりません</string>
+    <string name="blockcheck_error_hosts_required">このプロトコルにはホストリストが必要です</string>
+    <string name="blockcheck_error_snapshot_load">アクティブなプロファイル設定を読み込めませんでした</string>
 
     <string name="enable_blocked_profile_overlap">有効化はブロックされました：重複するプロファイルを無効にしてください</string>
     <string name="enable_blocked_profile_overlap_detail">プログラム「%2$s」のプロファイル「%1$s」は有効にできません — 既に有効なプロファイル「%3$s」（プログラム「%4$s」）と共通のアプリがあります（%5$s）。先に競合するプロファイルを無効にしてください。</string>
@@ -2131,6 +2137,56 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <plurals name="profile_overlap_apps_count">
         <item quantity="other">%1$d個のアプリ</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">アイテム</string>
+    <string name="nfqws2_items_empty">この設定にはアイテムがありません。先にライブラリからプリセットを適用してください。</string>
+    <string name="nfqws2_item_strategy">ストラテジー</string>
+    <string name="nfqws2_item_strategy_pick">ストラテジーを選択</string>
+    <string name="nfqws2_items_strategies_none">利用できるストラテジーはありません。</string>
+    <string name="nfqws2_item_move_up">上へ移動</string>
+    <string name="nfqws2_item_move_down">下へ移動</string>
+    <string name="nfqws2_item_duplicate">アイテムを複製</string>
+    <string name="nfqws2_item_delete">アイテムを削除</string>
+    <string name="nfqws2_item_enabled">オン</string>
+    <string name="nfqws2_item_disabled">オフ</string>
+    <string name="nfqws2_item_ports_fmt">ポート: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">ストラテジ行（このアイテムのdesync手法）</string>
+    <string name="nfqws2_item_raw_lines">アイテムの生テキスト</string>
+    <string name="nfqws2_item_sections_hint">各カードは1つのアイテム：何を捕捉するか（プロトコル、ポート、リスト）と、どのストラテジで回避するか。「ストラテジ」で回避手法を選び、「Match」で名前/ポートを編集、「Raw lines」で全文を編集します。</string>
+
+    <string name="nfqws2_cutover_title">アイテムごとのリストへ切り替え</string>
+    <string name="nfqws2_cutover_hint">このプロファイルはまだ古いグローバルな hostlist/ipset 選択を使っています。一度の切り替えで設定をデフォルトのプリセットから書き直し、アプリとポートは保持されます。まずマニフェスト付きのバックアップが保存されます。</string>
+    <string name="nfqws2_cutover_run">切り替えてバックアップ</string>
+    <string name="nfqws2_cutover_done">アイテムごとのリストに切り替えました。バックアップ: %1$s</string>
+    <string name="nfqws2_cutover_failed">切り替えに失敗 — ログを確認。何も変更されていません。</string>
+    <string name="nfqws2_cutover_profiles_pending">影響するプロファイル: %1$s</string>
+    <string name="nfqws2_item_match_title">マッチ</string>
+    <string name="nfqws2_item_match_edit">マッチを編集</string>
+    <string name="nfqws2_item_match_name">アイテム名</string>
+    <string name="nfqws2_item_match_name_hint">アイテム一覧にのみ表示</string>
+    <string name="nfqws2_item_match_filter">フィルターポート（例: 80,443 または 50000-51000）</string>
+    <string name="nfqws2_item_lists_title">リスト</string>
+    <string name="nfqws2_item_lists_none">このアイテムに割り当てられたリストはありません。</string>
+    <string name="nfqws2_item_list_attach">リストを割り当て</string>
+    <string name="nfqws2_item_list_detach">解除</string>
+    <string name="nfqws2_item_raw_title">生の行</string>
+    <string name="nfqws2_item_raw_edit">生のアイテムを編集</string>
+    <string name="nfqws2_item_raw_hint">アイテム全体の本体、1 行に 1 オプション（--new なし）</string>
+    <string name="nfqws2_list_editor_title">リストエディタ</string>
+    <string name="nfqws2_list_kind_hostlist">ホストリスト</string>
+    <string name="nfqws2_list_kind_ipset">IP リスト</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">除外ホストリスト</string>
+    <string name="nfqws2_list_kind_ipset_exclude">除外 IP リスト</string>
+    <string name="nfqws2_list_create">新しいリスト</string>
+    <string name="nfqws2_list_search">検索</string>
+    <string name="nfqws2_list_create_name">リスト名</string>
+    <string name="nfqws2_list_edit">リストを編集</string>
+    <string name="nfqws2_list_delete">リストを削除</string>
+    <string name="nfqws2_list_delete_confirm">リスト「%1$s」を削除しますか？ユーザー項目は削除されます。内蔵部分はモジュールに残ります。</string>
+    <string name="nfqws2_list_tab_user">ユーザー</string>
+    <string name="nfqws2_list_tab_final">最終</string>
+    <string name="nfqws2_list_entries_hint">1 行に 1 項目</string>
+    <string name="nfqws2_list_builtin_locked">内蔵項目は読み取り専用でモジュール由来です。デーモンが最終リストを組み立てるとき、ユーザー項目は上に追加されます。</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

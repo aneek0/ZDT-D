@@ -2125,6 +2125,12 @@ APatch: 10700+</string>
     <string name="dpi_detector_share_failed">اشتراک‌گذاری فایل گزارش ممکن نشد.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">همه استراتژی‌های نامزد برای این هدف تأیید شده‌اند. چیزی برای تست نیست</string>
+    <string name="blockcheck_error_config_no_desync">پروفایل فعال هیچ استراتژی ندارد (خالی یا خطای بارگذاری)</string>
+    <string name="blockcheck_error_no_strategies">هیچ استراتژی برای این برنامه پیدا نشد</string>
+    <string name="blockcheck_error_config_not_found">فایل پیکربندی استراتژی یافت نشد</string>
+    <string name="blockcheck_error_hosts_required">برای این پروتکل فهرست میزبان لازم است</string>
+    <string name="blockcheck_error_snapshot_load">بارگذاری پیکربندی پروفایل فعال ناموفق بود</string>
 
     <string name="enable_blocked_profile_overlap">فعال‌سازی مسدود شد: پروفایل‌های هم‌پوشان را غیرفعال کنید</string>
     <string name="enable_blocked_profile_overlap_detail">پروفایل «%1$s» برنامه «%2$s» را نمی‌توان فعال کرد — اپلیکیشن‌های مشترکی با پروفایل فعال «%3$s» برنامه «%4$s» دارد (%5$s). ابتدا پروفایل متعارض را غیرفعال کنید.</string>
@@ -2133,6 +2139,56 @@ APatch: 10700+</string>
         <item quantity="one">%1$d اپلیکیشن</item>
         <item quantity="other">%1$d اپلیکیشن</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">موارد</string>
+    <string name="nfqws2_items_empty">هیچ موردی در این پیکربندی نیست. ابتدا یک پیش‌تنظیم از کتابخانه را اعمال کنید.</string>
+    <string name="nfqws2_item_strategy">استراتژی</string>
+    <string name="nfqws2_item_strategy_pick">انتخاب استراتژی</string>
+    <string name="nfqws2_items_strategies_none">استراتژی‌ای در دسترس نیست.</string>
+    <string name="nfqws2_item_move_up">انتقال به بالا</string>
+    <string name="nfqws2_item_move_down">انتقال به پایین</string>
+    <string name="nfqws2_item_duplicate">تکثیر مورد</string>
+    <string name="nfqws2_item_delete">حذف مورد</string>
+    <string name="nfqws2_item_enabled">روشن</string>
+    <string name="nfqws2_item_disabled">خاموش</string>
+    <string name="nfqws2_item_ports_fmt">پورت‌ها: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">خطوط استراتژی (تکنیک desync برای این آیتم)</string>
+    <string name="nfqws2_item_raw_lines">متن خام آیتم</string>
+    <string name="nfqws2_item_sections_hint">هر کارت یک آیتم است: چه چیزی را می‌گیرد (پروتکل، پورت‌ها، لیست‌ها) و کدام استراتژی آن را دور می‌زند. «استراتژی» انتخاب تکنیک دور زدن، «Match» ویرایش نام/پورت‌ها، «Raw lines» ویرایش متن کامل.</string>
+
+    <string name="nfqws2_cutover_title">سوئیچ به فهرست‌های هر آیتم</string>
+    <string name="nfqws2_cutover_hint">این نمایه هنوز از انتخاب سراسری قدیمی فهرست‌ها استفاده می‌کند. یک سوئیچ یک‌باره پیکربندی را از پیش‌فرض بازنویسی می‌کند و برنامه‌ها و درگاه‌ها حفظ می‌شوند. ابتدا نسخه پشتیبان با مانیفست ذخیره می‌شود.</string>
+    <string name="nfqws2_cutover_run">سوئیچ و پشتیبان‌گیری</string>
+    <string name="nfqws2_cutover_done">به فهرست‌های هر آیتم سوئیچ شد. پشتیبان: %1$s</string>
+    <string name="nfqws2_cutover_failed">سوئیچ ناموفق — گزارش‌ها را ببینید. چیزی تغییر نکرد.</string>
+    <string name="nfqws2_cutover_profiles_pending">نمایه‌های تحت تأثیر: %1$s</string>
+    <string name="nfqws2_item_match_title">تطبیق</string>
+    <string name="nfqws2_item_match_edit">ویرایش تطبیق</string>
+    <string name="nfqws2_item_match_name">نام آیتم</string>
+    <string name="nfqws2_item_match_name_hint">فقط در فهرست آیتم‌ها نمایش داده می‌شود</string>
+    <string name="nfqws2_item_match_filter">پورت‌های فیلتر (مثلاً 80,443 یا 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">فهرست‌ها</string>
+    <string name="nfqws2_item_lists_none">فهرستی به این آیتم متصل نیست.</string>
+    <string name="nfqws2_item_list_attach">اتصال فهرست</string>
+    <string name="nfqws2_item_list_detach">جدا کردن</string>
+    <string name="nfqws2_item_raw_title">خطوط خام</string>
+    <string name="nfqws2_item_raw_edit">ویرایش آیتم خام</string>
+    <string name="nfqws2_item_raw_hint">بدنه کامل آیتم، یک گزینه در هر خط (بدون --new)</string>
+    <string name="nfqws2_list_editor_title">ویرایشگر فهرست</string>
+    <string name="nfqws2_list_kind_hostlist">فهرست دامنه‌ها</string>
+    <string name="nfqws2_list_kind_ipset">فهرست IP</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">فهرست استثنا</string>
+    <string name="nfqws2_list_kind_ipset_exclude">فهرست IP مستثنا</string>
+    <string name="nfqws2_list_create">فهرست جدید</string>
+    <string name="nfqws2_list_search">جستجو</string>
+    <string name="nfqws2_list_create_name">نام فهرست</string>
+    <string name="nfqws2_list_edit">ویرایش فهرست</string>
+    <string name="nfqws2_list_delete">حذف فهرست</string>
+    <string name="nfqws2_list_delete_confirm">حذف فهرست «%1$s»؟ ورودی‌های کاربر حذف می‌شوند؛ بخش داخلی در ماژول می‌ماند.</string>
+    <string name="nfqws2_list_tab_user">کاربر</string>
+    <string name="nfqws2_list_tab_final">نهایی</string>
+    <string name="nfqws2_list_entries_hint">یک ورودی در هر خط</string>
+    <string name="nfqws2_list_builtin_locked">ورودی‌های داخلی فقط‌خواندنی‌اند و از ماژول می‌آیند. ورودی‌های کاربر هنگام ساخت فهرست نهایی روی آنها افزوده می‌شوند.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

@@ -2125,6 +2125,12 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="dpi_detector_share_failed">Das Berichtsarchiv konnte nicht geteilt werden.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">Jede Kandidaten-Strategie ist für dieses Ziel bereits bestätigt. Nichts zu testen</string>
+    <string name="blockcheck_error_config_no_desync">Das aktive Profil enthält keine Strategien (leer oder Ladefehler)</string>
+    <string name="blockcheck_error_no_strategies">Keine Strategien für dieses Programm gefunden</string>
+    <string name="blockcheck_error_config_not_found">Strategie-Konfigurationsdatei nicht gefunden</string>
+    <string name="blockcheck_error_hosts_required">Für dieses Protokoll ist eine Hostliste erforderlich</string>
+    <string name="blockcheck_error_snapshot_load">Konfiguration des aktiven Profils konnte nicht geladen werden</string>
 
     <string name="enable_blocked_profile_overlap">Aktivieren blockiert: überlappende Profile deaktivieren</string>
     <string name="enable_blocked_profile_overlap_detail">Profil „%1$s“ des Programms „%2$s“ kann nicht aktiviert werden — es teilt Apps mit dem bereits aktivierten Profil „%3$s“ des Programms „%4$s“ (%5$s). Deaktivieren Sie zuerst das konfliktierende Profil.</string>
@@ -2133,6 +2139,56 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
         <item quantity="one">%1$d App</item>
         <item quantity="other">%1$d Apps</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">Elemente</string>
+    <string name="nfqws2_items_empty">Keine Elemente in dieser Konfiguration. Wenden Sie zuerst ein Preset aus der Bibliothek an.</string>
+    <string name="nfqws2_item_strategy">Strategie</string>
+    <string name="nfqws2_item_strategy_pick">Strategie wählen</string>
+    <string name="nfqws2_items_strategies_none">Keine Strategien verfügbar.</string>
+    <string name="nfqws2_item_move_up">Nach oben</string>
+    <string name="nfqws2_item_move_down">Nach unten</string>
+    <string name="nfqws2_item_duplicate">Element duplizieren</string>
+    <string name="nfqws2_item_delete">Element löschen</string>
+    <string name="nfqws2_item_enabled">Ein</string>
+    <string name="nfqws2_item_disabled">Aus</string>
+    <string name="nfqws2_item_ports_fmt">Ports: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">Strategiezeilen (Desync-Verfahren für dieses Item)</string>
+    <string name="nfqws2_item_raw_lines">Roher Item-Text</string>
+    <string name="nfqws2_item_sections_hint">Jede Karte ist ein Item: was es abfängt (Protokoll, Ports, Listen) und welche Strategie es umgeht. „Strategie“ wählt die Umgehungstechnik, „Match“ bearbeitet Name/Ports, „Raw lines“ den vollständigen Item-Text.</string>
+
+    <string name="nfqws2_cutover_title">Wechsel zu Listen pro Element</string>
+    <string name="nfqws2_cutover_hint">Dieses Profil nutzt noch die alte globale Hostlist-/IPset-Auswahl. Ein einmaliger Wechsel schreibt die Konfiguration aus dem Preset neu, Apps und Ports bleiben erhalten. Zuerst wird ein Backup mit Manifest gespeichert.</string>
+    <string name="nfqws2_cutover_run">Wechseln und sichern</string>
+    <string name="nfqws2_cutover_done">Zu Listen pro Element gewechselt. Backup: %1$s</string>
+    <string name="nfqws2_cutover_failed">Wechsel fehlgeschlagen — siehe Logs. Nichts wurde geändert.</string>
+    <string name="nfqws2_cutover_profiles_pending">Betroffene Profile: %1$s</string>
+    <string name="nfqws2_item_match_title">Match</string>
+    <string name="nfqws2_item_match_edit">Match bearbeiten</string>
+    <string name="nfqws2_item_match_name">Elementname</string>
+    <string name="nfqws2_item_match_name_hint">Wird nur in der Elementliste angezeigt</string>
+    <string name="nfqws2_item_match_filter">Filter-Ports (z.B. 80,443 oder 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">Listen</string>
+    <string name="nfqws2_item_lists_none">Keine Listen an dieses Element gebunden.</string>
+    <string name="nfqws2_item_list_attach">Liste binden</string>
+    <string name="nfqws2_item_list_detach">Lösen</string>
+    <string name="nfqws2_item_raw_title">Rohzeilen</string>
+    <string name="nfqws2_item_raw_edit">Roh-Element bearbeiten</string>
+    <string name="nfqws2_item_raw_hint">Voller Elementkörper, eine Option pro Zeile (ohne --new)</string>
+    <string name="nfqws2_list_editor_title">Listen-Editor</string>
+    <string name="nfqws2_list_kind_hostlist">Hostlist</string>
+    <string name="nfqws2_list_kind_ipset">IP-Liste</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">Exclude-Hostlist</string>
+    <string name="nfqws2_list_kind_ipset_exclude">Exclude-IP-Liste</string>
+    <string name="nfqws2_list_create">Neue Liste</string>
+    <string name="nfqws2_list_search">Suchen</string>
+    <string name="nfqws2_list_create_name">Listenname</string>
+    <string name="nfqws2_list_edit">Liste bearbeiten</string>
+    <string name="nfqws2_list_delete">Liste löschen</string>
+    <string name="nfqws2_list_delete_confirm">Liste „%1$s“ löschen? Nutzereinträge werden entfernt; der eingebaute Teil bleibt im Modul.</string>
+    <string name="nfqws2_list_tab_user">Benutzer</string>
+    <string name="nfqws2_list_tab_final">Final</string>
+    <string name="nfqws2_list_entries_hint">Ein Eintrag pro Zeile</string>
+    <string name="nfqws2_list_builtin_locked">Eingebaute Einträge sind schreibgeschützt und stammen vom Modul. Nutzereinträge werden obenauf gelegt, wenn der Daemon die Finalliste baut.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

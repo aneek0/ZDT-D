@@ -210,12 +210,25 @@ private fun StrategicTextDirSection(
         }
       }
 
+      var dirQuery by remember { mutableStateOf("") }
+      val dirFiltered = remember(files, dirQuery) {
+        if (dirQuery.isBlank()) files else files.filter { it.contains(dirQuery.trim(), ignoreCase = true) }
+      }
+      if (files.size > 8) {
+        OutlinedTextField(
+          value = dirQuery,
+          onValueChange = { dirQuery = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text(stringResource(R.string.nfqws2_list_search)) },
+        )
+      }
       if (listLoading) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
       } else if (files.isEmpty()) {
         Text(stringResource(R.string.common_no_files), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       } else {
-        files.forEach { f ->
+        dirFiltered.forEach { f ->
           Column {
             Row(
               modifier = Modifier
@@ -486,12 +499,25 @@ private fun StrategicBinDirSection(
         }
       }
 
+      var binQuery by remember { mutableStateOf("") }
+      val binFiltered = remember(files, binQuery) {
+        if (binQuery.isBlank()) files else files.filter { it.contains(binQuery.trim(), ignoreCase = true) }
+      }
+      if (files.size > 8) {
+        OutlinedTextField(
+          value = binQuery,
+          onValueChange = { binQuery = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text(stringResource(R.string.nfqws2_list_search)) },
+        )
+      }
       if (listLoading) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
       } else if (files.isEmpty()) {
         Text(stringResource(R.string.common_no_files), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       } else {
-        files.forEach { f ->
+        binFiltered.forEach { f ->
           Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,

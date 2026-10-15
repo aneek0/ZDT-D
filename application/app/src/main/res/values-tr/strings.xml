@@ -2124,6 +2124,12 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="dpi_detector_share_failed">Rapor arşivi paylaşılamadı.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">Bu hedef için tüm aday stratejiler zaten onaylandı. Test edilecek bir şey yok</string>
+    <string name="blockcheck_error_config_no_desync">Aktif profilde strateji yok (boş veya yükleme hatası)</string>
+    <string name="blockcheck_error_no_strategies">Bu program için strateji bulunamadı</string>
+    <string name="blockcheck_error_config_not_found">Strateji yapılandırma dosyası bulunamadı</string>
+    <string name="blockcheck_error_hosts_required">Bu protokol için ana bilgisayar listesi gerekli</string>
+    <string name="blockcheck_error_snapshot_load">Aktif profil yapılandırması yüklenemedi</string>
 
     <string name="enable_blocked_profile_overlap">Etkinleştirme engellendi: çakışan profilleri devre dışı bırakın</string>
     <string name="enable_blocked_profile_overlap_detail">“%2$s” programındaki “%1$s” profili etkinleştirilemiyor — zaten etkin olan “%3$s” profili (“%4$s” programı) ile ortak uygulamalar paylaşıyor (%5$s). Önce çakışan profili devre dışı bırakın.</string>
@@ -2132,6 +2138,56 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
         <item quantity="one">%1$d uygulama</item>
         <item quantity="other">%1$d uygulama</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">Öğeler</string>
+    <string name="nfqws2_items_empty">Bu yapılandırmada öğe yok. Önce kitaplıktan bir ön ayar uygulayın.</string>
+    <string name="nfqws2_item_strategy">Strateji</string>
+    <string name="nfqws2_item_strategy_pick">Strateji seç</string>
+    <string name="nfqws2_items_strategies_none">Kullanılabilir strateji yok.</string>
+    <string name="nfqws2_item_move_up">Yukarı taşı</string>
+    <string name="nfqws2_item_move_down">Aşağı taşı</string>
+    <string name="nfqws2_item_duplicate">Öğeyi çoğalt</string>
+    <string name="nfqws2_item_delete">Öğeyi sil</string>
+    <string name="nfqws2_item_enabled">Açık</string>
+    <string name="nfqws2_item_disabled">Kapalı</string>
+    <string name="nfqws2_item_ports_fmt">Portlar: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">Strateji satırları (bu öğe için desync tekniği)</string>
+    <string name="nfqws2_item_raw_lines">Öğenin ham metni</string>
+    <string name="nfqws2_item_sections_hint">Her kart bir öğedir: neyi yakalar (protokol, portlar, listeler) ve hangi strateji onu atlatır. «Strateji» bypass tekniğini seçer, «Match» ad/portları düzenler, «Raw lines» tam metni düzenler.</string>
+
+    <string name="nfqws2_cutover_title">Öğe başına listelere geç</string>
+    <string name="nfqws2_cutover_hint">Bu profil hâlâ eski genel hostlist/ipset seçimini kullanıyor. Tek seferlik geçiş, yapılandırmayı varsayılan ön ayardan yeniden yazar; uygulamalar ve portlar korunur. Önce manifestolu bir yedek kaydedilir.</string>
+    <string name="nfqws2_cutover_run">Geç ve yedekle</string>
+    <string name="nfqws2_cutover_done">Öğe başına listelere geçildi. Yedek: %1$s</string>
+    <string name="nfqws2_cutover_failed">Geçiş başarısız — kayıtlara bakın. Hiçbir şey değişmedi.</string>
+    <string name="nfqws2_cutover_profiles_pending">Etkilenen profiller: %1$s</string>
+    <string name="nfqws2_item_match_title">Eşleşme</string>
+    <string name="nfqws2_item_match_edit">Eşleşmeyi düzenle</string>
+    <string name="nfqws2_item_match_name">Öğe adı</string>
+    <string name="nfqws2_item_match_name_hint">Yalnızca öğe listesinde gösterilir</string>
+    <string name="nfqws2_item_match_filter">Filtre bağlantı noktaları (örn. 80,443 veya 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">Listeler</string>
+    <string name="nfqws2_item_lists_none">Bu öğeye bağlı liste yok.</string>
+    <string name="nfqws2_item_list_attach">Liste bağla</string>
+    <string name="nfqws2_item_list_detach">Ayır</string>
+    <string name="nfqws2_item_raw_title">Ham satırlar</string>
+    <string name="nfqws2_item_raw_edit">Ham öğeyi düzenle</string>
+    <string name="nfqws2_item_raw_hint">Tamamı öğe gövdesi, satır başına bir seçenek (--new olmadan)</string>
+    <string name="nfqws2_list_editor_title">Liste düzenleyici</string>
+    <string name="nfqws2_list_kind_hostlist">Alan adı listesi</string>
+    <string name="nfqws2_list_kind_ipset">IP listesi</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">Hariç tutma listesi</string>
+    <string name="nfqws2_list_kind_ipset_exclude">Hariç IP listesi</string>
+    <string name="nfqws2_list_create">Yeni liste</string>
+    <string name="nfqws2_list_search">Ara</string>
+    <string name="nfqws2_list_create_name">Liste adı</string>
+    <string name="nfqws2_list_edit">Listeyi düzenle</string>
+    <string name="nfqws2_list_delete">Listeyi sil</string>
+    <string name="nfqws2_list_delete_confirm">“%1$s” listesi silinsin mi? Kullanıcı kayıtları kaldırılır; yerleşik kısım modülde kalır.</string>
+    <string name="nfqws2_list_tab_user">Kullanıcı</string>
+    <string name="nfqws2_list_tab_final">Nihai</string>
+    <string name="nfqws2_list_entries_hint">Satır başına bir kayıt</string>
+    <string name="nfqws2_list_builtin_locked">Yerleşik kayıtlar salt okunurdur ve modülden gelir. Arka plan programı nihai listeyi oluştururken kullanıcı kayıtları üste eklenir.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

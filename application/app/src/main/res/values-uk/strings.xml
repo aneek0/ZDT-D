@@ -2127,6 +2127,12 @@ APatch: 10700+</string>
     <string name="dpi_detector_share_failed">Не вдалося поділитися архівом звіту.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">Усі стратегії-кандидати вже підтверджені для цієї цілі. Немає чого перевіряти</string>
+    <string name="blockcheck_error_config_no_desync">В активному профілі немає стратегій (порожній або помилка завантаження)</string>
+    <string name="blockcheck_error_no_strategies">Стратегій для цієї програми не знайдено</string>
+    <string name="blockcheck_error_config_not_found">Файл конфігурації стратегії не знайдено</string>
+    <string name="blockcheck_error_hosts_required">Для цього протоколу потрібен список хостів</string>
+    <string name="blockcheck_error_snapshot_load">Не вдалося завантажити конфігурацію активного профілю</string>
 
     <string name="enable_blocked_profile_overlap">Увімкнення заблоковано: вимкніть профілі, що перетинаються</string>
     <string name="enable_blocked_profile_overlap_detail">Не можна ввімкнути профіль «%1$s» програми «%2$s»: у нього є спільні застосунки з уже увімкненим профілем «%3$s» програми «%4$s» (%5$s). Спершу вимкніть конфліктний профіль.</string>
@@ -2137,6 +2143,56 @@ APatch: 10700+</string>
         <item quantity="many">%1$d застосунків</item>
         <item quantity="other">%1$d застосунка</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">Елементи</string>
+    <string name="nfqws2_items_empty">У цій конфігурації немає елементів. Спочатку застосуйте пресет із бібліотеки.</string>
+    <string name="nfqws2_item_strategy">Стратегія</string>
+    <string name="nfqws2_item_strategy_pick">Вибрати стратегію</string>
+    <string name="nfqws2_items_strategies_none">Стратегій немає.</string>
+    <string name="nfqws2_item_move_up">Перемістити вгору</string>
+    <string name="nfqws2_item_move_down">Перемістити вниз</string>
+    <string name="nfqws2_item_duplicate">Дублювати елемент</string>
+    <string name="nfqws2_item_delete">Видалити елемент</string>
+    <string name="nfqws2_item_enabled">Увімк.</string>
+    <string name="nfqws2_item_disabled">Вимк.</string>
+    <string name="nfqws2_item_ports_fmt">Порти: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">Рядки стратегії (метод десинхронізації для цього item)</string>
+    <string name="nfqws2_item_raw_lines">Тіло item (як у конфігу)</string>
+    <string name="nfqws2_item_sections_hint">Кожна картка — один item: що він перехоплює (протокол, порти, списки) і яка стратегія його обходить. «Стратегія» — вибір техніки обходу, «Match» — ім\'я/порти, «Raw-рядки» — повний текст item.</string>
+
+    <string name="nfqws2_cutover_title">Перейти до списків за елементом</string>
+    <string name="nfqws2_cutover_hint">Цей профіль досі використовує старий глобальний вибір hostlist/ipset. Одноразовий перехід перепише конфігурацію з типового пресету; застосунки та порти збережено. Спочатку створюється резервна копія з маніфестом.</string>
+    <string name="nfqws2_cutover_run">Перейти та створити резервну копію</string>
+    <string name="nfqws2_cutover_done">Перехід до списків за елементом виконано. Резервна копія: %1$s</string>
+    <string name="nfqws2_cutover_failed">Перехід не вдався — див. журналів. Нічого не змінено.</string>
+    <string name="nfqws2_cutover_profiles_pending">Уражені профілі: %1$s</string>
+    <string name="nfqws2_item_match_title">Збіг</string>
+    <string name="nfqws2_item_match_edit">Змінити збіг</string>
+    <string name="nfqws2_item_match_name">Назва елемента</string>
+    <string name="nfqws2_item_match_name_hint">Показується лише у списку елементів</string>
+    <string name="nfqws2_item_match_filter">Порти фільтра (напр. 80,443 або 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">Списки</string>
+    <string name="nfqws2_item_lists_none">До цього елемента не прив’язано списків.</string>
+    <string name="nfqws2_item_list_attach">Прив’язати список</string>
+    <string name="nfqws2_item_list_detach">Відв’язати</string>
+    <string name="nfqws2_item_raw_title">Сирі рядки</string>
+    <string name="nfqws2_item_raw_edit">Редагувати сирий елемент</string>
+    <string name="nfqws2_item_raw_hint">Повне тіло елемента, по одній опції на рядок (без --new)</string>
+    <string name="nfqws2_list_editor_title">Редактор списків</string>
+    <string name="nfqws2_list_kind_hostlist">Список доменів</string>
+    <string name="nfqws2_list_kind_ipset">Список IP</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">Список виключень</string>
+    <string name="nfqws2_list_kind_ipset_exclude">Список виключених IP</string>
+    <string name="nfqws2_list_create">Новий список</string>
+    <string name="nfqws2_list_search">Пошук</string>
+    <string name="nfqws2_list_create_name">Назва списку</string>
+    <string name="nfqws2_list_edit">Змінити список</string>
+    <string name="nfqws2_list_delete">Видалити список</string>
+    <string name="nfqws2_list_delete_confirm">Видалити список «%1$s»? Записи користувача вилучаються; вбудована частина залишається в модулі.</string>
+    <string name="nfqws2_list_tab_user">Користувач</string>
+    <string name="nfqws2_list_tab_final">Підсумковий</string>
+    <string name="nfqws2_list_entries_hint">Один запис на рядок</string>
+    <string name="nfqws2_list_builtin_locked">Вбудовані записи лише для читання й походять із модуля. Записи користувача додаються зверху, коли демон збирає підсумковий список.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

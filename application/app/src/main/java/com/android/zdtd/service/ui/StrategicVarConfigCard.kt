@@ -1,5 +1,7 @@
 package com.android.zdtd.service.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.BottomSheetDefaults
@@ -36,6 +39,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.MainViewModel.ZapretPreset
 import com.android.zdtd.service.api.ApiModels
 import java.security.MessageDigest
 import java.util.Locale
@@ -135,6 +140,7 @@ private fun sha256HexUtf8(s: String): String {
 
 private fun ApiModels.StrategyVariant.displayName(): String = name.removeSuffix(".txt")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StrategicVarConfigCard(
   programId: String,
@@ -162,6 +168,10 @@ fun StrategicVarConfigCard(
   // the file hash) and survives config edits that keep the variant intact.
   var currentVariantName by remember(programId, profile) { mutableStateOf<String?>(null) }
 
+  // nfqws2 hostlist/ipset refs live inside per-item strategy text (Items
+  // tab); the global chooser/injection below is the legacy model kept for
+  // byedpi only.
+  val legacyGlobalLists = programId != "nfqws2"
   // hostlist selection
   var hostlistFiles by remember(programId) { mutableStateOf<List<String>>(emptyList()) }
   var hostlistFilesLoading by remember(programId) { mutableStateOf(true) }
@@ -181,6 +191,42 @@ fun StrategicVarConfigCard(
 
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
+  var presetImportError by remember { mutableStateOf<String?>(null) }
+  var userPresets by remember(programId) { mutableStateOf<List<ZapretPreset>>(emptyList()) }
+  var presetEditorOpen by remember { mutableStateOf(false) }
+  var presetName by remember { mutableStateOf("") }
+  var presetContent by remember { mutableStateOf("") }
+  var presetBusy by remember { mutableStateOf(false) }
+  var editingPreset by remember { mutableStateOf<String?>(null) }
+  var presetToDelete by remember { mutableStateOf<String?>(null) }
+  var managePresetsOpen by remember { mutableStateOf(false) }
+  var manageTarget by remember { mutableStateOf<ZapretPreset?>(null) }
+  var manageAction by remember { mutableStateOf("duplicate") }
+  val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    if (uri != null) {
+      val readResult = runCatching { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("Unable to read selected file") }
+      val imported = readResult.getOrNull()
+      val fileName = (uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')?.ifBlank { null } ?: "imported").removeSuffix(".txt").trim() + ".txt"
+      if (imported == null) {
+        presetImportError = ctx.getString(R.string.common_error)
+      } else {
+        actions.importZapretPreset(fileName, imported) { result ->
+          if (result.isSuccess) {
+            presetImportError = null
+            actions.listZapretPresets { users -> userPresets = users ?: emptyList() }
+          } else {
+            presetImportError = ctx.getString(R.string.common_error)
+          }
+        }
+      }
+    }
+  }
+  var pendingExport by remember { mutableStateOf<String?>(null) }
+  val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+    val content = pendingExport
+    if (uri != null && content != null) runCatching { ctx.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) } }
+    pendingExport = null
+  }
 
   fun reloadConfig() {
     loading = true
@@ -211,17 +257,20 @@ fun StrategicVarConfigCard(
       lastLoadedExcludeHostlists = ex
       lastLoadedIpsets = ips
       lastLoadedExcludeIpsets = exi
-      if (marker != null) currentVariantName = marker
-      else if (hashMatch != null) currentVariantName = hashMatch.name
+      currentVariantName = marker ?: hashMatch?.name
       loading = false
     }
   }
 
   fun reloadVariants() {
     variantsLoading = true
-    actions.listStrategicVariants(programId) { v ->
-      variants = (v ?: emptyList()).sortedBy { it.name.lowercase(Locale.ROOT) }
-      variantsLoading = false
+    actions.listStrategicVariants(programId) { builtIns ->
+      actions.listZapretPresets { users ->
+        userPresets = users ?: emptyList()
+        variants = ((builtIns ?: emptyList()) + userPresets.map { ApiModels.StrategyVariant(it.name, null) })
+          .distinctBy { it.name }.sortedBy { it.name.lowercase(Locale.ROOT) }
+        variantsLoading = false
+      }
     }
   }
 
@@ -238,23 +287,24 @@ fun StrategicVarConfigCard(
     applying = true
     // De-duplicate before sending so the daemon never receives bloat, even
     // if upstream state accidentally accumulated duplicates.
-    val hl = selectedHostlists.distinct()
-    val ex = selectedExcludeHostlists.distinct()
-    val ips = selectedIpsets.distinct()
-    val exi = selectedExcludeIpsets.distinct()
-    actions.applyStrategicVariant(programId, profile, variant.name, hl, ex, ips, exi) { ok ->
+    // nfqws2: global list selection is not part of the apply payload — its
+    // list refs live inside per-item strategy text.
+    val hl = if (legacyGlobalLists) selectedHostlists.distinct() else emptyList()
+    val ex = if (legacyGlobalLists) selectedExcludeHostlists.distinct() else emptyList()
+    val ips = if (legacyGlobalLists) selectedIpsets.distinct() else emptyList()
+    val exi = if (legacyGlobalLists) selectedExcludeIpsets.distinct() else emptyList()
+    val userPreset = userPresets.any { it.name == variant.name }
+    fun complete(ok: Boolean) {
       applying = false
-      if (ok) {
-        currentVariantName = variant.name
-        reloadConfig()
-      }
-      scope.launch {
-        snackHost.showSnackbar(
-          if (ok) ctx.getString(R.string.common_applied_with_value, variant.displayName())
-          else ctx.getString(R.string.common_apply_failed)
-        )
-      }
+      if (ok) { currentVariantName = variant.name; reloadConfig() }
+      scope.launch { snackHost.showSnackbar(if (ok) ctx.getString(R.string.common_applied_with_value, variant.displayName()) else ctx.getString(R.string.common_apply_failed)) }
     }
+    if (userPreset) {
+      actions.loadZapretPreset(variant.name) { preset ->
+        if (preset == null) complete(false)
+        else actions.applyZapretPreset(profile, variant.name, preset.content, ::complete)
+      }
+    } else actions.applyStrategicVariant(programId, profile, variant.name, hl, ex, ips, exi, ::complete)
   }
 
   fun applyHostlistsOnly() {
@@ -277,7 +327,7 @@ fun StrategicVarConfigCard(
 
   LaunchedEffect(configPath) { reloadConfig() }
   LaunchedEffect(programId) { reloadVariants() }
-  LaunchedEffect(programId) { reloadHostlistFiles() }
+  LaunchedEffect(programId) { if (legacyGlobalLists) reloadHostlistFiles() }
 
   // When the user returns to this screen (e.g. after applying a strategy from
   // blockcheck on the same profile), the config may have changed out-of-band.
@@ -285,7 +335,7 @@ fun StrategicVarConfigCard(
   LifecycleResumeEffect(Unit) {
     reloadConfig()
     reloadVariants()
-    reloadHostlistFiles()
+    if (legacyGlobalLists) reloadHostlistFiles()
     onPauseOrDispose { }
   }
 
@@ -309,8 +359,8 @@ fun StrategicVarConfigCard(
   }
   val isUserConfig = !variantsLoading && variants.isNotEmpty() && activeVariant == null
   val canChooseVariant = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty()
-  val hostlistsChanged = selectedHostlists != lastLoadedHostlists || selectedExcludeHostlists != lastLoadedExcludeHostlists
-  val ipsetsChanged = selectedIpsets != lastLoadedIpsets || selectedExcludeIpsets != lastLoadedExcludeIpsets
+  val hostlistsChanged = legacyGlobalLists && (selectedHostlists != lastLoadedHostlists || selectedExcludeHostlists != lastLoadedExcludeHostlists)
+  val ipsetsChanged = legacyGlobalLists && (selectedIpsets != lastLoadedIpsets || selectedExcludeIpsets != lastLoadedExcludeIpsets)
   val canSave = !loading && !saving && !applying && (text != lastLoaded || hostlistsChanged || ipsetsChanged)
 
   fun saveConfig() {
@@ -333,7 +383,13 @@ fun StrategicVarConfigCard(
       .replace(Regex("""--ipset-exclude=[^\s]+"""), "")
       .replace(Regex("""[ \t]{2,}"""), " ")
       .trimEnd()
-    val newText = if (hostlistArgs.isEmpty()) cleaned else {
+    // nfqws2: write the text verbatim — list refs belong to item lines and
+    // must not be stripped/re-injected globally.
+    val newText = if (!legacyGlobalLists) {
+      text
+    } else if (hostlistArgs.isEmpty()) {
+      cleaned
+    } else {
       cleaned + "\n" + hostlistArgs.joinToString(" ") + "\n"
     }
     actions.saveText(configPath, newText) { ok ->
@@ -358,6 +414,152 @@ fun StrategicVarConfigCard(
         )
       }
     }
+  }
+
+  if (presetEditorOpen) {
+    AlertDialog(
+      onDismissRequest = { presetEditorOpen = false },
+      title = { Text(stringResource(if (editingPreset == null) R.string.strategic_preset_create else R.string.strategic_preset_edit)) },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedTextField(value = presetName, onValueChange = { presetName = it }, label = { Text(stringResource(R.string.strategic_preset_name)) }, enabled = editingPreset == null)
+          OutlinedTextField(value = presetContent, onValueChange = { presetContent = it }, label = { Text(stringResource(R.string.strategic_preset_content)) }, minLines = 8)
+        }
+      },
+      confirmButton = {
+        TextButton(enabled = !presetBusy && presetName.isNotBlank(), onClick = {
+          presetBusy = true
+          val done: (Boolean) -> Unit = { ok ->
+            presetBusy = false
+            if (ok) { presetEditorOpen = false; reloadVariants() }
+            scope.launch { snackHost.showSnackbar(ctx.getString(if (ok) R.string.common_saved else R.string.common_error)) }
+          }
+          val normalizedName = "${presetName.trim().removeSuffix(".txt").trim()}.txt"
+          if (editingPreset == null) actions.saveZapretPreset(normalizedName, presetContent, done)
+          else actions.updateZapretPreset(editingPreset!!, presetContent, done)
+        }) { Text(stringResource(R.string.common_save)) }
+      },
+      dismissButton = { TextButton(onClick = { presetEditorOpen = false }) { Text(stringResource(R.string.common_cancel)) } },
+    )
+  }
+  presetImportError?.let { error ->
+    AlertDialog(
+      onDismissRequest = { presetImportError = null },
+      title = { Text(stringResource(R.string.common_error)) },
+      text = { Text(error) },
+      confirmButton = {
+        TextButton(onClick = { presetImportError = null }) { Text(stringResource(R.string.common_ok)) }
+      },
+    )
+  }
+
+  if (managePresetsOpen) {
+    ModalBottomSheet(onDismissRequest = { managePresetsOpen = false }) {
+      Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.strategic_presets_manage), style = MaterialTheme.typography.titleMedium)
+        var manageQuery by remember { mutableStateOf("") }
+        val manageFiltered = remember(userPresets, manageQuery) {
+          if (manageQuery.isBlank()) userPresets
+          else userPresets.filter { it.name.removeSuffix(".txt").contains(manageQuery.trim(), ignoreCase = true) }
+        }
+        if (userPresets.size > 8) {
+          OutlinedTextField(
+            value = manageQuery,
+            onValueChange = { manageQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(stringResource(R.string.nfqws2_list_search)) },
+          )
+        }
+        if (userPresets.isEmpty()) Text(stringResource(R.string.strategic_strategies_none), style = MaterialTheme.typography.bodyMedium)
+        manageFiltered.forEach { item ->
+          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(item.name.removeSuffix(".txt"), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = {
+              managePresetsOpen = false; editingPreset = item.name; presetName = item.name
+              actions.loadZapretPreset(item.name) { content -> presetContent = content?.content.orEmpty(); presetEditorOpen = content != null }
+            }) { Text(stringResource(R.string.strategic_preset_edit)) }
+            TextButton(onClick = { managePresetsOpen = false; manageAction = "duplicate"; manageTarget = item; presetName = "${item.name.removeSuffix(".txt")}-copy" }) { Text(stringResource(R.string.strategic_preset_duplicate)) }
+            TextButton(onClick = { managePresetsOpen = false; manageAction = "rename"; manageTarget = item; presetName = item.name.removeSuffix(".txt") }) { Text(stringResource(R.string.strategic_preset_rename)) }
+            TextButton(onClick = { managePresetsOpen = false; presetToDelete = item.name }) { Text(stringResource(R.string.strategic_preset_delete)) }
+            TextButton(onClick = {
+              actions.loadZapretPreset(item.name) { content ->
+                if (content != null) { pendingExport = content.content; exportLauncher.launch(item.name) }
+              }
+            }) { Text(stringResource(R.string.strategic_preset_export)) }
+          }
+        }
+      }
+    }
+  }
+
+  presetToDelete?.let { name ->
+    AlertDialog(
+      onDismissRequest = { presetToDelete = null },
+      title = { Text(stringResource(R.string.strategic_preset_delete)) },
+      text = { Text(stringResource(R.string.strategic_preset_delete_confirm, name)) },
+      confirmButton = { TextButton(onClick = {
+        presetBusy = true
+        actions.deleteZapretPreset(name) { ok ->
+          presetBusy = false
+          presetToDelete = null
+          if (!ok) {
+            scope.launch { snackHost.showSnackbar(ctx.getString(R.string.common_error)) }
+            return@deleteZapretPreset
+          }
+          val wasActive = currentVariantName == name
+          reloadVariants()
+          if (wasActive) {
+            actions.listStrategicVariants(programId) { builtIns ->
+              val fallback = builtIns.orEmpty().firstOrNull()
+              if (fallback == null) {
+                scope.launch { snackHost.showSnackbar(ctx.getString(R.string.common_error)) }
+                return@listStrategicVariants
+              }
+              applying = true
+              actions.applyStrategicVariant(
+                programId, profile, fallback.name,
+                if (legacyGlobalLists) selectedHostlists.distinct() else emptyList(),
+                if (legacyGlobalLists) selectedExcludeHostlists.distinct() else emptyList(),
+                if (legacyGlobalLists) selectedIpsets.distinct() else emptyList(),
+                if (legacyGlobalLists) selectedExcludeIpsets.distinct() else emptyList(),
+              ) { applied ->
+                applying = false
+                if (applied) {
+                  currentVariantName = fallback.name
+                  reloadConfig()
+                  scope.launch { snackHost.showSnackbar(ctx.getString(R.string.common_applied_with_value, fallback.displayName())) }
+                } else {
+                  scope.launch { snackHost.showSnackbar(ctx.getString(R.string.common_error)) }
+                }
+              }
+            }
+          }
+          scope.launch { snackHost.showSnackbar(ctx.getString(R.string.common_deleted)) }
+        }
+      }) { Text(stringResource(R.string.strategic_preset_delete)) } },
+      dismissButton = { TextButton(onClick = { presetToDelete = null }) { Text(stringResource(R.string.common_cancel)) } },
+    )
+  }
+
+  manageTarget?.let { target ->
+    AlertDialog(
+      onDismissRequest = { manageTarget = null },
+      title = { Text(stringResource(if (manageAction == "duplicate") R.string.strategic_preset_duplicate else R.string.strategic_preset_rename)) },
+      text = { OutlinedTextField(value = presetName, onValueChange = { presetName = it }, label = { Text(stringResource(R.string.strategic_preset_name)) }) },
+      confirmButton = { TextButton(enabled = presetName.isNotBlank(), onClick = {
+        val entered = presetName.trim().removeSuffix(".txt").trim()
+        val normalizedName = "$entered.txt"
+        val done: (Boolean) -> Unit = { ok ->
+          manageTarget = null
+          if (ok) reloadVariants()
+          scope.launch { snackHost.showSnackbar(ctx.getString(if (ok) R.string.common_saved else R.string.common_error)) }
+        }
+        if (manageAction == "duplicate") actions.duplicateZapretPreset(target.name, normalizedName, done)
+        else actions.renameZapretPreset(target.name, normalizedName, done)
+      }) { Text(stringResource(R.string.common_save)) } },
+      dismissButton = { TextButton(onClick = { manageTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
+    )
   }
 
   if (chooserOpen) {
@@ -494,11 +696,40 @@ fun StrategicVarConfigCard(
           }
         }
       }
+      TextButton(onClick = { managePresetsOpen = true }) { Text(stringResource(R.string.strategic_presets_manage)) }
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { editingPreset = null; presetName = ""; presetContent = text; presetEditorOpen = true }) {
+          Text(stringResource(R.string.strategic_preset_create))
+        }
+        TextButton(onClick = { importLauncher.launch("text/*") }) { Text(stringResource(R.string.strategic_preset_import)) }
+        if (activeVariantName != null && userPresets.any { it.name == activeVariantName }) {
+          TextButton(onClick = {
+            val selected = userPresets.first { it.name == activeVariantName }
+            editingPreset = selected.name; presetName = selected.name
+            actions.loadZapretPreset(selected.name) { preset -> presetContent = preset?.content.orEmpty(); presetEditorOpen = true }
+          }) { Text(stringResource(R.string.strategic_preset_edit)) }
+          TextButton(onClick = {
+            val selected = userPresets.first { it.name == activeVariantName }
+            actions.loadZapretPreset(selected.name) { preset ->
+              if (preset != null) { pendingExport = preset.content; exportLauncher.launch(selected.name) }
+            }
+          }) { Text(stringResource(R.string.strategic_preset_export)) }
+          TextButton(onClick = {
+            val selected = userPresets.first { it.name == activeVariantName }
+            presetName = "${selected.name.removeSuffix(".txt")}-copy"; manageAction = "duplicate"; manageTarget = selected
+          }) { Text(stringResource(R.string.strategic_preset_duplicate)) }
+          TextButton(onClick = {
+            val selected = userPresets.first { it.name == activeVariantName }
+            presetName = selected.name.removeSuffix(".txt"); manageAction = "rename"; manageTarget = selected
+          }) { Text(stringResource(R.string.strategic_preset_rename)) }
+          TextButton(onClick = { presetToDelete = activeVariantName }) { Text(stringResource(R.string.strategic_preset_delete)) }
+        }
+      }
 
       Spacer(Modifier.height(10.dp))
 
       // ---- hostlist selection ----
-      if (hostlistChooserOpen) {
+      if (legacyGlobalLists && hostlistChooserOpen) {
         HostlistChooserBottomSheet(
           allFiles = hostlistFiles,
           selectedHostlists = selectedHostlists,
@@ -518,7 +749,7 @@ fun StrategicVarConfigCard(
       }
 
       // ---- ipset selection ----
-      if (ipsetChooserOpen) {
+      if (legacyGlobalLists && ipsetChooserOpen) {
         IpSetChooserBottomSheet(
           allFiles = hostlistFiles,
           selectedIpsets = selectedIpsets,
@@ -537,112 +768,117 @@ fun StrategicVarConfigCard(
         )
       }
 
-      Spacer(Modifier.height(10.dp))
+      if (legacyGlobalLists) {
+        Spacer(Modifier.height(10.dp))
 
-      Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          stringResource(R.string.strategic_ipsets_title),
-          style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Button(
-            onClick = { ipsetChooserOpen = true },
-            enabled = !loading && !saving && !applying && !hostlistFilesLoading,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-          ) {
-            Text(
-              if (selectedIpsets.isNotEmpty() || selectedExcludeIpsets.isNotEmpty()) {
-                stringResource(R.string.strategic_ipsets_edit)
-              } else {
-                stringResource(R.string.common_choose)
-              },
-              style = MaterialTheme.typography.labelSmall,
-            )
-          }
-        }
-      }
-
-      Spacer(Modifier.height(6.dp))
-
-      val ipsetSummary = buildList {
-        if (selectedIpsets.isNotEmpty()) {
-          add(stringResource(R.string.strategic_ipsets_count, selectedIpsets.size))
-        }
-        if (selectedExcludeIpsets.isNotEmpty()) {
-          add(stringResource(R.string.strategic_exclude_ipsets_count, selectedExcludeIpsets.size))
-        }
-      }.joinToString(", ")
-
-      Text(
-        text = if (ipsetSummary.isNotEmpty()) ipsetSummary else stringResource(R.string.strategic_ipsets_none),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-      )
-
-      Spacer(Modifier.height(10.dp))
-
-      Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          stringResource(R.string.strategic_hostlists_title),
-          style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          if (activeVariant == null && (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty())) {
+        Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            stringResource(R.string.strategic_ipsets_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-              onClick = { applyHostlistsOnly() },
-              enabled = !loading && !saving && !applying && !applyingHostlists && !hostlistFilesLoading,
+              onClick = { ipsetChooserOpen = true },
+              enabled = !loading && !saving && !applying && !hostlistFilesLoading,
               contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
               Text(
-                if (applyingHostlists) stringResource(R.string.common_ellipsis)
-                else stringResource(R.string.strategic_hostlists_apply),
+                if (selectedIpsets.isNotEmpty() || selectedExcludeIpsets.isNotEmpty()) {
+                  stringResource(R.string.strategic_ipsets_edit)
+                } else {
+                  stringResource(R.string.common_choose)
+                },
                 style = MaterialTheme.typography.labelSmall,
               )
             }
           }
-          Button(
-            onClick = { hostlistChooserOpen = true },
-            enabled = !loading && !saving && !applying && !hostlistFilesLoading,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-          ) {
-            Text(
-              if (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty()) {
-                stringResource(R.string.strategic_hostlists_edit)
-              } else {
-                stringResource(R.string.common_choose)
-              },
-              style = MaterialTheme.typography.labelSmall,
-            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        val ipsetSummary = buildList {
+          if (selectedIpsets.isNotEmpty()) {
+            add(stringResource(R.string.strategic_ipsets_count, selectedIpsets.size))
+          }
+          if (selectedExcludeIpsets.isNotEmpty()) {
+            add(stringResource(R.string.strategic_exclude_ipsets_count, selectedExcludeIpsets.size))
+          }
+        }.joinToString(", ")
+
+        Text(
+          text = if (ipsetSummary.isNotEmpty()) ipsetSummary else stringResource(R.string.strategic_ipsets_none),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        )
+
+        Spacer(Modifier.height(10.dp))
+      }
+      if (legacyGlobalLists) {
+        Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            stringResource(R.string.strategic_hostlists_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (activeVariant == null && (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty())) {
+              Button(
+                onClick = { applyHostlistsOnly() },
+                enabled = !loading && !saving && !applying && !applyingHostlists && !hostlistFilesLoading,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+              ) {
+                Text(
+                  if (applyingHostlists) stringResource(R.string.common_ellipsis)
+                  else stringResource(R.string.strategic_hostlists_apply),
+                  style = MaterialTheme.typography.labelSmall,
+                )
+              }
+            }
+            Button(
+              onClick = { hostlistChooserOpen = true },
+              enabled = !loading && !saving && !applying && !hostlistFilesLoading,
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            ) {
+              Text(
+                if (selectedHostlists.isNotEmpty() || selectedExcludeHostlists.isNotEmpty()) {
+                  stringResource(R.string.strategic_hostlists_edit)
+                } else {
+                  stringResource(R.string.common_choose)
+                },
+                style = MaterialTheme.typography.labelSmall,
+              )
+            }
           }
         }
+
+        Spacer(Modifier.height(6.dp))
+
+        val hostlistSummary = buildList {
+          if (selectedHostlists.isNotEmpty()) {
+            add(stringResource(R.string.strategic_hostlists_count, selectedHostlists.size))
+          }
+          if (selectedExcludeHostlists.isNotEmpty()) {
+            add(stringResource(R.string.strategic_exclude_hostlists_count, selectedExcludeHostlists.size))
+          }
+        }.joinToString(", ")
+
+        Text(
+          text = if (hostlistSummary.isNotEmpty()) hostlistSummary else stringResource(R.string.strategic_hostlists_none),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        )
+
+        Spacer(Modifier.height(10.dp))
       }
-
-      Spacer(Modifier.height(6.dp))
-
-      val hostlistSummary = buildList {
-        if (selectedHostlists.isNotEmpty()) {
-          add(stringResource(R.string.strategic_hostlists_count, selectedHostlists.size))
-        }
-        if (selectedExcludeHostlists.isNotEmpty()) {
-          add(stringResource(R.string.strategic_exclude_hostlists_count, selectedExcludeHostlists.size))
-        }
-      }.joinToString(", ")
-
-      Text(
-        text = if (hostlistSummary.isNotEmpty()) hostlistSummary else stringResource(R.string.strategic_hostlists_none),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-      )
 
       Spacer(Modifier.height(10.dp))
 
@@ -708,11 +944,20 @@ private fun StrategicVariantsBottomSheet(
       }
 
       Spacer(Modifier.height(8.dp))
-      Text(
-        stringResource(R.string.strategic_variants_sheet_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-      )
+      var sheetQuery by remember { mutableStateOf("") }
+      val sheetFiltered = remember(variants, sheetQuery) {
+        if (sheetQuery.isBlank()) variants
+        else variants.filter { it.name.removeSuffix(".txt").contains(sheetQuery.trim(), ignoreCase = true) }
+      }
+      if (variants.size > 8) {
+        OutlinedTextField(
+          value = sheetQuery,
+          onValueChange = { sheetQuery = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text(stringResource(R.string.nfqws2_list_search)) },
+        )
+      }
 
       Spacer(Modifier.height(12.dp))
 
@@ -723,7 +968,7 @@ private fun StrategicVariantsBottomSheet(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 16.dp),
       ) {
-        items(variants, key = { it.name }, contentType = { "strategic_variant" }) { variant ->
+        items(sheetFiltered, key = { it.name }, contentType = { "strategic_variant" }) { variant ->
           val isCurrent = variant.name == currentVariantName
           Card(
             onClick = { onChoose(variant) },

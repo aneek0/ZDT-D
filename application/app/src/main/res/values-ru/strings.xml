@@ -463,6 +463,18 @@
     <string name="strategic_variants_sheet_hint">Нажмите на конфиг, чтобы сразу применить его.</string>
     <string name="strategic_variants_current_hint">Текущий конфиг</string>
     <string name="strategic_variants_tap_to_apply">Нажмите, чтобы применить</string>
+    <string name="strategic_preset_create">Создать пресет</string>
+    <string name="strategic_preset_edit">Изменить</string>
+    <string name="strategic_preset_name">Название пресета</string>
+    <string name="strategic_preset_content">Текст пресета</string>
+    <string name="strategic_preset_delete">Удалить</string>
+    <string name="strategic_preset_delete_confirm">Удалить пресет «%1$s»?</string>
+    <string name="strategic_preset_export">Экспорт</string>
+    <string name="strategic_preset_import">Импорт</string>
+    <string name="strategic_preset_export_hint">Используйте системный выбор файлов, чтобы сохранить пресет.</string>
+    <string name="strategic_preset_duplicate">Дублировать</string>
+    <string name="strategic_preset_rename">Переименовать</string>
+    <string name="strategic_presets_manage">Управление пресетами</string>
 
     <!-- Common -->
     <string name="common_close">Закрыть</string><string name="common_update">Обновить</string>
@@ -2127,6 +2139,7 @@ APatch: 10700+</string>
     <string name="blockcheck_failed">Не работает</string>
     <string name="blockcheck_failed_count_fmt">Не работает (%1$d)</string>
     <string name="blockcheck_title">Подбор стратегии</string>
+    <string name="blockcheck_skip_tested">Пропустить проверенные</string>
     <string name="blockcheck_short_desc">Автоматически проверить стратегии обхода и выбрать лучшую</string>
     <string name="analysis_tools_badge_recommended">Рекомендуется</string>
     <string name="blockcheck_unstable">Нестабильно</string>
@@ -2143,7 +2156,7 @@ APatch: 10700+</string>
     <string name="blockcheck_mode_full">Полный (все)</string>
     <string name="blockcheck_phase_network">Проверка интернета…</string>
     <string name="blockcheck_phase_pass_control">Контрольная проверка…</string>
-    <string name="blockcheck_confirm_baseline_open">Цели открываются и без обхода — результаты будут информационными. Продолжить?</string>
+    <string name="blockcheck_confirm_baseline_open">Сейчас на этом соединении нет DPI-блокировки — без обхода ничего не блокируется. Скан всё равно запустится, но результаты будут информационными и не попадут в историю. Продолжить?</string>
     <string name="blockcheck_confirm_pass_opened">Цели открываются даже без модификации трафика — измерения ненадёжны. Продолжить?</string>
     <string name="blockcheck_confirm_continue">Продолжить</string>
     <string name="blockcheck_apply_best">Применить лучшую</string>
@@ -2153,6 +2166,12 @@ APatch: 10700+</string>
     <string name="blockcheck_fatal_dns_stub">DNS возвращает заглушки провайдера</string>
     <string name="blockcheck_fatal_address_block">Адреса целей полностью недоступны</string>
     <string name="blockcheck_fatal_network_lost">Соединение потеряно во время проверки</string>
+    <string name="blockcheck_error_all_confirmed">Все стратегии-кандидаты уже подтверждены для этой цели. Нечего проверять</string>
+    <string name="blockcheck_error_config_no_desync">В конфиге активного профиля нет стратегий (пустой или не загрузился)</string>
+    <string name="blockcheck_error_no_strategies">Для этой программы не найдено стратегий</string>
+    <string name="blockcheck_error_config_not_found">Файл конфига стратегии не найден</string>
+    <string name="blockcheck_error_hosts_required">Для этого протокола нужен список хостов</string>
+    <string name="blockcheck_error_snapshot_load">Не удалось загрузить конфиг активного профиля</string>
     <string name="blockcheck_udp_targets_fmt">Цели: %1$s</string>
     <string name="enable_blocked_profile_overlap">Включение заблокировано: отключите пересекающиеся профили</string>
     <string name="enable_blocked_profile_overlap_detail">Нельзя включить профиль «%1$s» программы «%2$s»: у него есть общие приложения с уже включённым профилем «%3$s» программы «%4$s» (%5$s). Сначала отключите конфликтующий профиль.</string>
@@ -2163,6 +2182,56 @@ APatch: 10700+</string>
         <item quantity="many">%1$d приложений</item>
         <item quantity="other">%1$d приложения</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">Элементы</string>
+    <string name="nfqws2_items_empty">В этом конфиге нет элементов. Сначала примените пресет из библиотеки.</string>
+    <string name="nfqws2_item_strategy">Стратегия</string>
+    <string name="nfqws2_item_strategy_pick">Выбрать стратегию</string>
+    <string name="nfqws2_items_strategies_none">Стратегии недоступны.</string>
+    <string name="nfqws2_item_move_up">Переместить выше</string>
+    <string name="nfqws2_item_move_down">Переместить ниже</string>
+    <string name="nfqws2_item_duplicate">Дублировать элемент</string>
+    <string name="nfqws2_item_delete">Удалить элемент</string>
+    <string name="nfqws2_item_enabled">Вкл</string>
+    <string name="nfqws2_item_disabled">Выкл</string>
+    <string name="nfqws2_item_ports_fmt">Порты: %1$s</string>
+    <string name="nfqws2_item_strategy_lines">Стратегия (метод десинхронизации для этого item)</string>
+    <string name="nfqws2_item_raw_lines">Тело item (как в config)</string>
+    <string name="nfqws2_item_sections_hint">Каждая карточка — один item: что он перехватывает (протокол, порты, списки) и какая стратегия его обходит. «Стратегия» — выбор техники обхода, «Match» — имя/порты, «Raw-строки» — полный текст item.</string>
+
+    <string name="nfqws2_cutover_title">Перейти на списки по item</string>
+    <string name="nfqws2_cutover_hint">Профиль всё ещё использует старый глобальный выбор hostlist/ipset. Одноразовый переход перепишет config из дефолтного пресета, приложения и порты сохранятся. Сначала создаётся бэкап с манифестом.</string>
+    <string name="nfqws2_cutover_run">Перейти и создать бэкап</string>
+    <string name="nfqws2_cutover_done">Переход на списки по item выполнен. Бэкап: %1$s</string>
+    <string name="nfqws2_cutover_failed">Переход не удался — см. логи. Ничего не изменено.</string>
+    <string name="nfqws2_cutover_profiles_pending">Затронутые профили: %1$s</string>
+    <string name="nfqws2_item_match_title">Матч</string>
+    <string name="nfqws2_item_match_edit">Править матч</string>
+    <string name="nfqws2_item_match_name">Имя item</string>
+    <string name="nfqws2_item_match_name_hint">Показывается только в списке items</string>
+    <string name="nfqws2_item_match_filter">Порты фильтра (напр. 80,443 или 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">Списки</string>
+    <string name="nfqws2_item_lists_none">У этого item нет прикреплённых списков.</string>
+    <string name="nfqws2_item_list_attach">Прикрепить список</string>
+    <string name="nfqws2_item_list_detach">Открепить</string>
+    <string name="nfqws2_item_raw_title">Raw-строки</string>
+    <string name="nfqws2_item_raw_edit">Править raw item</string>
+    <string name="nfqws2_item_raw_hint">Тело item целиком, по одной опции в строке (без --new)</string>
+    <string name="nfqws2_list_editor_title">Редактор списков</string>
+    <string name="nfqws2_list_kind_hostlist">Hostlist</string>
+    <string name="nfqws2_list_kind_ipset">IP-список</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">Exclude hostlist</string>
+    <string name="nfqws2_list_kind_ipset_exclude">Exclude IP-список</string>
+    <string name="nfqws2_list_create">Новый список</string>
+    <string name="nfqws2_list_search">Поиск</string>
+    <string name="nfqws2_list_create_name">Имя списка</string>
+    <string name="nfqws2_list_edit">Изменить список</string>
+    <string name="nfqws2_list_delete">Удалить список</string>
+    <string name="nfqws2_list_delete_confirm">Удалить список «%1$s»? Пользовательские записи удалятся; встроенная часть останется в модуле.</string>
+    <string name="nfqws2_list_tab_user">Пользователь</string>
+    <string name="nfqws2_list_tab_final">Итоговый</string>
+    <string name="nfqws2_list_entries_hint">Одна запись в строке</string>
+    <string name="nfqws2_list_builtin_locked">Встроенные записи только для чтения и принадлежат модулю. Пользовательские записи добавляются сверху при сборке финального списка.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

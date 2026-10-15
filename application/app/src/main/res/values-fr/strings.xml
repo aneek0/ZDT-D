@@ -2125,6 +2125,12 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="dpi_detector_share_failed">Impossible de partager l’archive du rapport.</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
+    <string name="blockcheck_error_all_confirmed">Toutes les stratégies candidates sont déjà confirmées pour cette cible. Rien à tester</string>
+    <string name="blockcheck_error_config_no_desync">Le profil actif ne contient aucune stratégie (vide ou échec de chargement)</string>
+    <string name="blockcheck_error_no_strategies">Aucune stratégie trouvée pour ce programme</string>
+    <string name="blockcheck_error_config_not_found">Fichier de configuration de stratégie introuvable</string>
+    <string name="blockcheck_error_hosts_required">Une liste d\'hôtes est requise pour ce protocole</string>
+    <string name="blockcheck_error_snapshot_load">Impossible de charger la configuration du profil actif</string>
 
     <string name="enable_blocked_profile_overlap">Activation bloquée : désactivez les profils qui se chevauchent</string>
     <string name="enable_blocked_profile_overlap_detail">Impossible d’activer le profil « %1$s » du programme « %2$s » : il partage des applications avec le profil déjà activé « %3$s » du programme « %4$s » (%5$s). Désactivez d’abord le profil en conflit.</string>
@@ -2134,6 +2140,56 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
         <item quantity="many">%1$d applications</item>
         <item quantity="other">%1$d applications</item>
     </plurals>
+    <!-- NFQWS2 per-item editor (config.txt items) -->
+    <string name="nfqws2_items_tab">Éléments</string>
+    <string name="nfqws2_items_empty">Aucun élément dans cette configuration. Appliquez d’abord un preset de la bibliothèque.</string>
+    <string name="nfqws2_item_strategy">Stratégie</string>
+    <string name="nfqws2_item_strategy_pick">Choisir une stratégie</string>
+    <string name="nfqws2_items_strategies_none">Aucune stratégie disponible.</string>
+    <string name="nfqws2_item_move_up">Monter</string>
+    <string name="nfqws2_item_move_down">Descendre</string>
+    <string name="nfqws2_item_duplicate">Dupliquer l’élément</string>
+    <string name="nfqws2_item_delete">Supprimer l’élément</string>
+    <string name="nfqws2_item_enabled">Activé</string>
+    <string name="nfqws2_item_disabled">Désactivé</string>
+    <string name="nfqws2_item_ports_fmt">Ports : %1$s</string>
+    <string name="nfqws2_item_strategy_lines">Lignes de stratégie (technique de désynchronisation de cet élément)</string>
+    <string name="nfqws2_item_raw_lines">Corps brut de l\'élément</string>
+    <string name="nfqws2_item_sections_hint">Chaque carte est un élément : ce qu\'il intercepte (protocole, ports, listes) et quelle stratégie le contourne. « Stratégie » choisit la technique de contournement, « Match » modifie nom/ports, « Raw lines » le texte complet.</string>
+
+    <string name="nfqws2_cutover_title">Passer aux listes par élément</string>
+    <string name="nfqws2_cutover_hint">Ce profil utilise encore l’ancienne sélection globale hostlist/ipset. Un passage unique réécrit la configuration depuis le préréglage, en conservant applis et ports. Une sauvegarde avec manifeste est créée d’abord.</string>
+    <string name="nfqws2_cutover_run">Passer et sauvegarder</string>
+    <string name="nfqws2_cutover_done">Passé aux listes par élément. Sauvegarde : %1$s</string>
+    <string name="nfqws2_cutover_failed">Échec du passage — voir les journaux. Rien n’a été modifié.</string>
+    <string name="nfqws2_cutover_profiles_pending">Profils concernés : %1$s</string>
+    <string name="nfqws2_item_match_title">Correspondance</string>
+    <string name="nfqws2_item_match_edit">Modifier la correspondance</string>
+    <string name="nfqws2_item_match_name">Nom de l’élément</string>
+    <string name="nfqws2_item_match_name_hint">Affiché uniquement dans la liste des éléments</string>
+    <string name="nfqws2_item_match_filter">Ports du filtre (ex. 80,443 ou 50000-51000)</string>
+    <string name="nfqws2_item_lists_title">Listes</string>
+    <string name="nfqws2_item_lists_none">Aucune liste rattachée à cet élément.</string>
+    <string name="nfqws2_item_list_attach"> rattacher une liste</string>
+    <string name="nfqws2_item_list_detach">Détacher</string>
+    <string name="nfqws2_item_raw_title">Lignes brutes</string>
+    <string name="nfqws2_item_raw_edit">Modifier l’élément brut</string>
+    <string name="nfqws2_item_raw_hint">Corps complet de l’élément, une option par ligne (sans --new)</string>
+    <string name="nfqws2_list_editor_title">Éditeur de listes</string>
+    <string name="nfqws2_list_kind_hostlist">Liste de domaines</string>
+    <string name="nfqws2_list_kind_ipset">Liste IP</string>
+    <string name="nfqws2_list_kind_hostlist_exclude">Liste d’exclusion</string>
+    <string name="nfqws2_list_kind_ipset_exclude">Liste d’IP exclues</string>
+    <string name="nfqws2_list_create">Nouvelle liste</string>
+    <string name="nfqws2_list_search">Rechercher</string>
+    <string name="nfqws2_list_create_name">Nom de la liste</string>
+    <string name="nfqws2_list_edit">Modifier la liste</string>
+    <string name="nfqws2_list_delete">Supprimer la liste</string>
+    <string name="nfqws2_list_delete_confirm">Supprimer la liste « %1$s » ? Les entrées utilisateur sont retirées ; la partie intégrée reste dans le module.</string>
+    <string name="nfqws2_list_tab_user">Utilisateur</string>
+    <string name="nfqws2_list_tab_final">Finale</string>
+    <string name="nfqws2_list_entries_hint">Une entrée par ligne</string>
+    <string name="nfqws2_list_builtin_locked">Les entrées intégrées sont en lecture seule et proviennent du module. Les entrées utilisateur sont ajoutées au-dessus lorsque le démon construit la liste finale.</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
