@@ -248,6 +248,24 @@ async fn resolve_system(domain: &str, timeout_d: Duration) -> String {
     }
 }
 
+/// Resolves a custom domain to a usable IP (prefers IPv4), or None on failure.
+async fn resolve_domain_ip(domain: &str) -> Option<String> {
+    let resolved = timeout(Duration::from_millis(DNS_TIMEOUT_MS), lookup_host((domain, 443)))
+        .await
+        .ok()?
+        .ok()?;
+    let mut first = None;
+    for addr in resolved {
+        if addr.is_ipv4() {
+            return Some(addr.ip().to_string());
+        }
+        if first.is_none() {
+            first = Some(addr.ip());
+        }
+    }
+    first.map(|ip| ip.to_string())
+}
+
 fn classify_domain(dns: &str, tls12: &str, tls13: &str, http: &str, https: &str) -> &'static str {
     let dns_bad = matches_blocked_signal(dns) || matches_suspicious_signal(dns);
     let tls_bad = [tls12, tls13].iter().any(|s| matches_blocked_signal(s) || matches_suspicious_signal(s));

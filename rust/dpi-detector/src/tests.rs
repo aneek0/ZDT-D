@@ -406,26 +406,66 @@ fn domain_diagnosis(dns: &str, tls12: &str, tls13: &str, http: &str, https: &str
 async fn check_tcp16<W: EventWriter + Send>(options: &RunOptions, writer: &mut W) -> TestSummary {
     let id = "tcp16";
     let title = "TCP 12-64KB payload threshold";
-    let targets = load_tcp_targets(options.max_tcp_targets);
+    enum Tcp16Task {
+        Static(TcpTarget),
+        Domain(String),
+    }
+
+    let mut tasks_input: Vec<Tcp16Task> = load_tcp_targets(options.max_tcp_targets).into_iter().map(Tcp16Task::Static).collect();
+    let custom_domains: Vec<String> = options
+        .domains_override
+        .iter()
+        .map(|d| clean_hostname(d))
+        .filter(|d| !d.is_empty())
+        .collect();
+    custom_domains.iter().for_each(|domain| tasks_input.push(Tcp16Task::Domain(domain.clone())));
+    let static_count = tasks_input.len() - custom_domains.len();
     let concurrency = options.concurrency.min(8);
-    let _ = writer.started(id, title, json!({"targets": targets.len(), "total_probes": targets.len(), "min_kb": TCP_BLOCK_MIN_KB, "max_kb": TCP_BLOCK_MAX_KB, "steps_kb": TCP_PAYLOAD_STEPS_KB, "concurrency": concurrency}));
+    let _ = writer.started(
+        id,
+        title,
+        json!({"targets": tasks_input.len(), "total_probes": tasks_input.len(), "static_targets": static_count, "domains": custom_domains.len(), "min_kb": TCP_BLOCK_MIN_KB, "max_kb": TCP_BLOCK_MAX_KB, "steps_kb": TCP_PAYLOAD_STEPS_KB, "concurrency": concurrency}),
+    );
     let mut ok = 0usize;
     let mut detected = 0usize;
     let mut failed = 0usize;
     let mut rows = Vec::new();
     let proxy = options.proxy.clone();
 
-    let tasks: Vec<_> = targets.into_iter().map(|target| {
+    let tasks: Vec<_> = tasks_input.into_iter().map(|task_input| {
         let proxy = proxy.clone();
         move |tx: ScanTx<(TcpTarget, ProbeResult)>| async move {
-            let key = format!("tcp16:{}", target.id);
-            let target_addr = format!("{}:{}", target.ip, target.port());
-            send_probe(&tx, key.clone(), "TCP payload threshold", target_addr, "checking", "measuring RTT and sending increasing X-Pad payloads".to_string(), json!({"target": target.id, "provider": target.provider, "size_label": format!("{}-{} KB", TCP_BLOCK_MIN_KB, TCP_PAYLOAD_STEPS_KB.iter().copied().filter(|kb| *kb <= TCP_BLOCK_MAX_KB).max().unwrap_or(TCP_BLOCK_MAX_KB)), "checks": []}));
-            send_progress(&tx, "running", format!("{} {}:{}", target.id, target.ip, target.port()), json!({"target": target.id}));
-            let res = tcp_payload_probe_staged(&target, Duration::from_millis(READ_TIMEOUT_MS), proxy.as_deref(), Some((&tx, &key))).await;
-            (target, res)
+            match task_input {
+                Tcp16Task::Static(target) => {
+                    let key = format!("tcp16:{}", target.id);
+                    let target_addr = format!("{}:{}", target.ip, target.port());
+                    send_probe(&tx, key.clone(), "TCP payload threshold", target_addr, "checking", "measuring RTT and sending increasing X-Pad payloads".to_string(), json!({"target": target.id, "provider": target.provider, "size_label": format!("{}-{} KB", TCP_BLOCK_MIN_KB, TCP_PAYLOAD_STEPS_KB.iter().copied().filter(|kb| *kb <= TCP_BLOCK_MAX_KB).max().unwrap_or(TCP_BLOCK_MAX_KB)), "checks": []}));
+                    send_progress(&tx, "running", format!("{} {}:{}", target.id, target.ip, target.port()), json!({"target": target.id}));
+                    let res = tcp_payload_probe_staged(&target, Duration::from_millis(READ_TIMEOUT_MS), proxy.as_deref(), Some((&tx, &key))).await;
+                    (target, res)
+                }
+                Tcp16Task::Domain(domain) => {
+                    let target_id = format!("DOM-{domain}");
+                    let key = format!("tcp16:{target_id}");
+                    let target_addr = format!("{domain}:443");
+                    send_probe(&tx, key.clone(), "TCP payload threshold", target_addr.clone(), "checking", format!("resolving {domain} for TCP payload probing"), json!({"target": target_id, "provider": "Custom domain", "phase": "resolve", "size_label": format!("{}-{} KB", TCP_BLOCK_MIN_KB, TCP_PAYLOAD_STEPS_KB.iter().copied().filter(|kb| *kb <= TCP_BLOCK_MAX_KB).max().unwrap_or(TCP_BLOCK_MAX_KB)), "checks": []}));
+                    let resolved = resolve_domain_ip(&domain).await;
+                    let target = match resolved.as_deref().map(|ip| IpAddr::from_str(ip).ok()).flatten() {
+                        Some(ip) => TcpTarget { id: target_id.clone(), asn: None, provider: "Custom domain".to_string(), ip: ip.to_string(), port: Some(443), comma_port: None, sni: Some(domain.clone()) },
+                        None => {
+                            let detail = format!("domain resolution failed for {domain}");
+                            send_probe(&tx, key, "TCP payload threshold", target_addr, "blocked", detail.clone(), json!({"target": target_id, "provider": "Custom domain", "phase": "resolve", "error": "dns_fail"}));
+                            return (TcpTarget { id: target_id, asn: None, provider: "Custom domain".to_string(), ip: domain.clone(), port: Some(443), comma_port: None, sni: Some(domain) }, ProbeResult { status: "dns_fail".to_string(), detail, bytes: 0, elapsed_ms: 0, rtt_ms: None, break_kb: None, size_label: "DNS".to_string(), checks: Vec::new() });
+                        }
+                    };
+                    send_progress(&tx, "running", format!("{target_id} {} -> {}", target.ip, domain), json!({"target": target_id, "resolved_ip": target.ip, "phase": "resolve"}));
+                    let res = tcp_payload_probe_staged(&target, Duration::from_millis(READ_TIMEOUT_MS), proxy.as_deref(), Some((&tx, &key))).await;
+                    (target, res)
+                }
+            }
         }
     }).collect();
+
 
     run_probes_concurrent(writer, id, concurrency, tasks, |writer, (target, res)| {
         let key = format!("tcp16:{}", target.id);
@@ -435,7 +475,7 @@ async fn check_tcp16<W: EventWriter + Send>(options: &RunOptions, writer: &mut W
             "tcp16" | "reset" | "timeout" | "tls_rst" | "tcp_rst" => detected += 1,
             _ => failed += 1,
         }
-        let detail = format!("{} {} {}:{} => {} ({})", target.id, target.provider, target.ip, target.port(), res.status, res.detail);
+        let detail = format!("{} {} {} => {} ({})", target.id, target.provider, target_addr, res.status, res.detail);
         let probe_status = match res.status.as_str() { "ok" => "available", "tcp16" | "reset" | "timeout" | "tls_rst" | "tcp_rst" => "suspicious", "refused" | "unreachable" => "blocked", other => other };
         let _ = writer.probe(id, &key, "TCP payload threshold", &target_addr, probe_status, &detail, json!({"target": target.id, "bytes": res.bytes, "elapsed_ms": res.elapsed_ms, "rtt_ms": res.rtt_ms, "break_kb": res.break_kb, "size_label": res.size_label.clone(), "checks": res.checks.clone()}));
         let _ = writer.progress(id, &res.status, &detail, json!({"target": target.id, "bytes": res.bytes, "break_kb": res.break_kb}));

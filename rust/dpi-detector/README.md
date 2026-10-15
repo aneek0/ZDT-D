@@ -62,7 +62,10 @@ dpi-detector run \
 - `--max-domains <N>` — limit domain availability targets.
 - `--max-tcp-targets <N>` — limit TCP payload threshold targets.
 - `--max-sni <N>` — limit whitelist SNI targets.
-- `--domain <HOST>` — add an explicit domain target. Can be used more than once.
+- `--domain <HOST>` — add an explicit domain target. Used by the `domains`
+  test (replaces the built-in list) and by `tcp16`, which resolves the domain
+  and runs the full 4–64 KB X-Pad payload sweep against it in addition to the
+  built-in IP targets. Can be used more than once.
 - `--proxy <URL>` — optional proxy URL for supported HTTP/TCP checks.
 - `--concurrency <N>` — concurrency limit for applicable checks.
 
