@@ -84,6 +84,16 @@ internal const val ZDTD_APP_PACKAGE_NAME = "com.android.zdtd.service"
  *  "conflicts in every slot" rule without duplicating a program list. */
 internal const val EXCLUSIVE_NETWORK_DOMAIN = "exclusive_network"
 
+/** Whether two app lists whose routing domains are [left] and [right] may claim
+ *  the same app. Mirrors `app_domains_conflict` in `rust/zdtd/src/api.rs`: equal
+ *  domains collide, `exclusive_network` collides with everything, and a program
+ *  with no domain (blockedquic, an unknown id) never does. */
+internal fun appDomainsConflict(left: String, right: String): Boolean {
+  if (left.isEmpty() || right.isEmpty()) return false
+  return left == right ||
+    left == EXCLUSIVE_NETWORK_DOMAIN || right == EXCLUSIVE_NETWORK_DOMAIN
+}
+
 data class InstalledApp(
   val packageName: String,
   val label: String,
@@ -373,15 +383,8 @@ internal fun AppPickerSheet(
     else -> programId
   }
 
-  /** Two app lists conflict when their daemon-reported routing domains are equal
-   *  or when either one is `exclusive_network` (a VPN/netd backend cannot share
-   *  an app with any other traffic handler). Programs with no domain (for example
-   *  blockedquic) never conflict. Mirrors `app_domains_conflict` in the daemon. */
-  fun appListsConflict(leftDomain: String, rightDomain: String): Boolean {
-    if (leftDomain.isEmpty() || rightDomain.isEmpty()) return false
-    return leftDomain == rightDomain ||
-      leftDomain == EXCLUSIVE_NETWORK_DOMAIN || rightDomain == EXCLUSIVE_NETWORK_DOMAIN
-  }
+  fun appListsConflict(leftDomain: String, rightDomain: String): Boolean =
+    appDomainsConflict(leftDomain, rightDomain)
 
   fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
     val base = programLabel(entry.programId)
