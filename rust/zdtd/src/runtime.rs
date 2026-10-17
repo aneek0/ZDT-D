@@ -328,63 +328,52 @@ if !any_main_service_running() {
     Ok(())
 }
 
-/// Validate that enabled profiles of mihomo and zapret (nfqws/nfqws2) do not
-/// share common applications. Overlap is allowed at assignment time but must
-/// be resolved before starting the service.
+/// Validate that no two enabled app lists whose routing domains conflict claim
+/// the same application. Overlap is allowed at assignment time but must be
+/// resolved before starting the service.
+///
+/// This is the start-time half of the same rule the API applies when a profile is
+/// enabled: both read `api::collect_enabled_app_scopes`, so a list assigned while
+/// another program was disabled, edited by hand, or left over from a previous run
+/// is caught here even though the enable-time check never saw it.
 fn validate_no_profile_app_overlap() -> Result<()> {
-    // Read enabled profiles for each program
-    let mihomo_enabled = read_enabled_profile_names(mihomo::active_path());
-    let nfqws2_enabled = read_enabled_profile_names(nfqws2::active_path());
-
-    // Check mihomo profile overlap
-    if mihomo_enabled.len() > 1 {
-        let mut apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for name in &mihomo_enabled {
-            let profile_dir = mihomo::profile_root(name);
-            let pkgs = read_app_packages(&profile_dir.join("app/uid/user_program"))?;
-            apps_by_profile.insert(name.clone(), pkgs);
-        }
-        let names: Vec<&String> = apps_by_profile.keys().collect();
-        for i in 0..names.len() {
-            for j in (i + 1)..names.len() {
-                let a = apps_by_profile.get(names[i]).unwrap();
-                let b = apps_by_profile.get(names[j]).unwrap();
-                let common: BTreeSet<_> = a.intersection(b).collect();
-                if !common.is_empty() {
+    let scopes = crate::api::collect_enabled_app_scopes();
+    for (i, left) in scopes.iter().enumerate() {
+        for right in scopes.iter().skip(i + 1) {
+            let (Some(left_domain), Some(right_domain)) = (
+                crate::api::app_domain(left.program_id),
+                crate::api::app_domain(right.program_id),
+            ) else {
+                continue;
+            };
+            if !crate::api::app_domains_conflict(left_domain, right_domain) {
+                continue;
+            }
+            for (lname, lpkgs) in &left.profiles {
+                for (rname, rpkgs) in &right.profiles {
+                    // One list compared against itself is not an overlap.
+                    if left.program_id == right.program_id && lname == rname {
+                        continue;
+                    }
+                    let common: BTreeSet<_> = lpkgs.intersection(rpkgs).collect();
+                    if common.is_empty() {
+                        continue;
+                    }
+                    let label = |pid: &str, name: &str| {
+                        if name.is_empty() { pid.to_string() } else { format!("{pid}/{name}") }
+                    };
+                    let mut pkgs: Vec<&str> = common.iter().map(|s| s.as_str()).collect();
+                    pkgs.sort_unstable();
                     bail!(
-                        "mihomo profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
-                        names[i], names[j], common.len()
+                        "{} and {} share app(s): {}; disable one or remove the overlap",
+                        label(left.program_id, lname),
+                        label(right.program_id, rname),
+                        pkgs.join(", ")
                     );
                 }
             }
         }
     }
-
-    // Check zapret (nfqws2) profile overlap
-    let mut zapret_apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for name in &nfqws2_enabled {
-        let profile_dir = nfqws2::profile_root(name);
-        let mut pkgs = BTreeSet::new();
-        for slot in &["user_program", "mobile_program", "wifi_program"] {
-            pkgs.extend(read_app_packages(&profile_dir.join(format!("app/uid/{slot}")))?);
-        }
-        zapret_apps_by_profile.insert(format!("nfqws2/{name}"), pkgs);
-    }
-    let zapret_names: Vec<&String> = zapret_apps_by_profile.keys().collect();
-    for i in 0..zapret_names.len() {
-        for j in (i + 1)..zapret_names.len() {
-            let a = zapret_apps_by_profile.get(zapret_names[i]).unwrap();
-            let b = zapret_apps_by_profile.get(zapret_names[j]).unwrap();
-            let common: BTreeSet<_> = a.intersection(b).collect();
-            if !common.is_empty() {
-                bail!(
-                    "zapret profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
-                    zapret_names[i], zapret_names[j], common.len()
-                );
-            }
-        }
-    }
-
     Ok(())
 }
 
