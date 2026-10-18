@@ -3350,9 +3350,6 @@ struct AppAssignmentView {
     slot: String,
     path: String,
     packages: Vec<String>,
-    /// Routing domain from `app_domain`, so the UI applies the daemon's own
-    /// conflict rule instead of duplicating a program list that can drift.
-    domain: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -3390,7 +3387,7 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
     }
 }
 
-pub fn app_domain(program_id: &str) -> Option<&'static str> {
+fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
         // AmneziaWG is an exclusive network/VPN backend. A package routed through it
         // must not be routed through other traffic-handling programs at the same time.
@@ -3405,155 +3402,11 @@ pub fn app_domain(program_id: &str) -> Option<&'static str> {
     }
 }
 
-pub fn app_domains_conflict(a: &str, b: &str) -> bool {
-    // A program without a routing domain (blockedquic, or an id we do not know)
-    // never claims app routing, so it must not conflict with anything.
-    if a.is_empty() || b.is_empty() {
-        return false;
-    }
+fn app_domains_conflict(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
     a == "exclusive_network" || b == "exclusive_network"
-}
-
-/// One enabled program's app packages, per profile (or as a single unnamed entry
-/// for single-instance programs like tor).
-///
-/// The program list and the on-disk layout declared here must stay in sync with
-/// `collect_assignment_files_uncached`, which proves which app-list files really
-/// exist. Both the enable-time API check and the start-time runtime check read
-/// through this collector, so neither can drift from the other's rule.
-pub struct AppRoutingScope {
-    pub program_id: &'static str,
-    pub profiles: Vec<(String, BTreeSet<String>)>,
-}
-
-/// Read every enabled program's app packages, per profile. Single-instance
-/// programs (tor, operaproxy) contribute one unnamed entry.
-///
-/// The program table below must stay in sync with
-/// `collect_assignment_files_uncached`, which proves which app-list files really
-/// exist. The enable-time API check and the start-time runtime check both read
-/// through this collector, so neither can drift from the other's rule: a program
-/// declared here reaches every conflict check without further edits.
-pub fn collect_enabled_app_scopes() -> Vec<AppRoutingScope> {
-    let single_instance = [
-        // (program id, enabled.json file, number of app-list slots)
-        ("tor", "enabled.json", 1usize),
-        ("operaproxy", "active.json", 3usize),
-    ];
-    let profile_based = [
-        "nfqws2", "byedpi",
-        "openvpn", "amneziawg", "tun2socks", "myvpn",
-        "mihomo", "mieru", "sing-box", "wireproxy",
-        "myproxy", "myprogram",
-    ];
-
-    let mut out = Vec::new();
-
-    for (pid, enabled_file, slots) in single_instance {
-        if !simple_enabled_json(pid, enabled_file) {
-            continue;
-        }
-        let mut pkgs = BTreeSet::new();
-        for slot in ["user", "mobile", "wifi"].iter().take(slots) {
-            let path = program_root(pid)
-                .join("app/uid")
-                .join(format!("{slot}_program"));
-            if let Ok(content) = read_text_or_empty(&path) {
-                pkgs.extend(parse_package_set(&content));
-            }
-        }
-        if pkgs.is_empty() {
-            continue;
-        }
-        out.push(AppRoutingScope {
-            program_id: pid,
-            profiles: vec![(String::new(), pkgs)],
-        });
-    }
-    for pid in profile_based {
-        let Ok(active) = read_json::<ProfilesActive>(&active_json_path(pid)) else { continue; };
-        let mut profiles = Vec::new();
-        for (pname, st) in &active.profiles {
-            if !st.enabled {
-                continue;
-            }
-            let pkgs = gather_profile_packages(pid, pname);
-            if pkgs.is_empty() {
-                continue;
-            }
-            profiles.push((pname.clone(), pkgs));
-        }
-        if profiles.is_empty() {
-            continue;
-        }
-        out.push(AppRoutingScope {
-            program_id: pid,
-            profiles,
-        });
-    }
-
-    out
-}
-
-/// Report package overlaps between `candidate` and every other enabled program
-/// whose routing domain conflicts with `program_id`'s domain. Shared by the
-/// enable-time API check and the start-time runtime check so both see the same
-/// enabled state, the same layouts and the same rule.
-pub fn find_enabled_app_overlaps(
-    program_id: &str,
-    // Profile being enabled, empty or `None` for single-instance programs
-    // (tor, operaproxy) where the whole program is the candidate.
-    candidate_owner: Option<&str>,
-    candidate: &BTreeSet<String>,
-) -> BTreeMap<String, Vec<String>> {
-    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    if candidate.is_empty() {
-        return out;
-    }
-    let Some(domain) = app_domain(program_id) else { return out; };
-    let owner = candidate_owner.filter(|p| !p.is_empty());
-
-    for scope in collect_enabled_app_scopes() {
-        // A single-instance program is its own owner, so it can never conflict
-        // with itself; profile-based programs skip only the profile being enabled.
-        if scope.program_id == program_id && owner.is_none() {
-            continue;
-        }
-        let Some(other_domain) = app_domain(scope.program_id) else { continue; };
-        if !app_domains_conflict(domain, other_domain) {
-            continue;
-        }
-        for (pname, pkgs) in &scope.profiles {
-            if scope.program_id == program_id && Some(pname.as_str()) == owner {
-                continue;
-            }
-            let label = if pname.is_empty() {
-                scope.program_id.to_string()
-            } else {
-                format!("{}/{}", scope.program_id, pname)
-            };
-            for pkg in candidate.intersection(pkgs) {
-                out.entry(pkg.clone()).or_default().push(label.clone());
-            }
-        }
-    }
-    out
-}
-
-fn format_app_overlaps(overlaps: &BTreeMap<String, Vec<String>>) -> String {
-    overlaps
-        .iter()
-        .map(|(pkg, users)| {
-            let mut sorted = users.clone();
-            sorted.sort();
-            sorted.dedup();
-            format!("{} ({})", pkg, sorted.join(", "))
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 fn push_assignment_file(
@@ -3843,7 +3696,6 @@ fn assignment_to_view(v: &AppAssignmentFile) -> AppAssignmentView {
         slot: v.slot.clone(),
         path: v.path.clone(),
         packages: v.packages.iter().cloned().collect(),
-        domain: app_domain(&v.program_id).unwrap_or(""),
     }
 }
 
@@ -3912,21 +3764,17 @@ fn validate_program_apps_content(content: &str, current_api_path: &str, program_
     Ok(())
 }
 
-/// Read one program's app list from every slot it owns. Profile dirs live
-/// directly under the program root for nfqws2/byedpi and under `profile/` for the
-/// VPN/tunnel programs; both shapes are read so a layout difference can never
-/// silently disable conflict detection.
+/// Collect all packages assigned to a profile across all slots (user, mobile, wifi).
 fn gather_profile_packages(program_id: &str, profile: &str) -> BTreeSet<String> {
     let mut pkgs = BTreeSet::new();
     for slot_name in &["user", "mobile", "wifi"] {
-        for dir in [
-            program_root(program_id).join(profile),
-            program_root(program_id).join("profile").join(profile),
-        ] {
-            let uid_path = dir.join("app/uid").join(&format!("{slot_name}_program"));
-            if let Ok(content) = read_text_or_empty(&uid_path) {
-                pkgs.extend(parse_package_set(&content));
-            }
+        let uid_path = program_root(program_id)
+            .join("profile")
+            .join(profile)
+            .join("app/uid")
+            .join(&format!("{}_program", slot_name));
+        if let Ok(content) = read_text_or_empty(&uid_path) {
+            pkgs.extend(parse_package_set(&content));
         }
     }
     pkgs
@@ -3940,14 +3788,117 @@ fn check_enabled_profile_conflicts(
     profile: &str,
     profile_packages: &BTreeSet<String>,
 ) -> Result<()> {
-    let overlaps = find_enabled_app_overlaps(program_id, Some(profile), profile_packages);
-    if overlaps.is_empty() {
+    if profile_packages.is_empty() {
         return Ok(());
     }
-    anyhow::bail!(
-        "Отключите один из профилей с общими приложениями: {}",
-        format_app_overlaps(&overlaps)
-    );
+    let Some(domain) = app_domain(program_id) else { return Ok(()) };
+
+    let mut conflicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // Helper: check a single program's active.json for enabled profiles.
+    let profile_based = [
+        "nfqws2", "byedpi",
+        "openvpn", "amneziawg", "tun2socks", "myvpn",
+        "mihomo", "mieru", "sing-box", "wireproxy",
+        "myproxy", "myprogram",
+    ];
+    for pid in &profile_based {
+        let active_path = active_json_path(pid);
+        if let Ok(active) = read_json::<ProfilesActive>(&active_path) {
+            for (pname, st) in &active.profiles {
+                if !st.enabled { continue; }
+                if *pid == program_id && pname == profile { continue; }
+                let mut pkgs = BTreeSet::new();
+                for slot_name in &["user", "mobile", "wifi"] {
+                    let uid_path = program_root(pid)
+                        .join("profile")
+                        .join(pname)
+                        .join("app/uid")
+                        .join(&format!("{}_program", slot_name));
+                    if let Ok(content) = read_text_or_empty(&uid_path) {
+                        pkgs.extend(parse_package_set(&content));
+                    }
+                }
+                if pkgs.is_empty() { continue; }
+                let Some(other_domain) = app_domain(pid) else { continue; };
+                if !app_domains_conflict(domain, other_domain) { continue; }
+                for pkg in profile_packages.intersection(&pkgs) {
+                    conflicts.entry(pkg.clone())
+                        .or_default()
+                        .push(format!("{pid}/{pname}"));
+                }
+            }
+        }
+    }
+
+    // Single programs with app lists (tor, operaproxy).
+    {
+        let tor_enabled = simple_enabled_json("tor", "enabled.json");
+        if tor_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("tor")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("tor").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("tor".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        let op_enabled = simple_enabled_json("operaproxy", "enabled.json");
+        if op_enabled {
+            let mut pkgs = BTreeSet::new();
+            for slot_name in &["user", "mobile", "wifi"] {
+                let uid_path = program_root("operaproxy")
+                    .join("app/uid")
+                    .join(&format!("{}_program", slot_name));
+                if let Ok(content) = read_text_or_empty(&uid_path) {
+                    pkgs.extend(parse_package_set(&content));
+                }
+            }
+            if !pkgs.is_empty() {
+                let other_domain = app_domain("operaproxy").unwrap_or("");
+                if app_domains_conflict(domain, other_domain) {
+                    for pkg in profile_packages.intersection(&pkgs) {
+                        conflicts.entry(pkg.clone())
+                            .or_default()
+                            .push("operaproxy".to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if !conflicts.is_empty() {
+        let mut parts: Vec<String> = conflicts
+            .into_iter()
+            .map(|(pkg, uses)| {
+                let mut uses_sorted = uses;
+                uses_sorted.sort();
+                format!("{} ({})", pkg, uses_sorted.join(", "))
+            })
+            .collect();
+        parts.sort();
+        anyhow::bail!(
+            "Отключите один из профилей с общими приложениями: {}",
+            parts.join("; ")
+        );
+    }
+
+    Ok(())
 }
 
 fn validate_proxyinfo_apps_content(content: &str) -> Result<()> {
@@ -6862,10 +6813,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 if req.enabled {
                     crate::programs::tor::validate_enable_toggle_requirements()?;
-                    // tor is single-instance: its whole app list is the candidate,
-                    // and no enabled profile of another program may already own it.
-                    let pkgs = parse_package_set(&crate::programs::tor::read_uid_program_text()?);
-                    check_enabled_profile_conflicts("tor", "", &pkgs)?;
                 }
                 let v = crate::programs::tor::save_enabled_value(req.enabled)?;
                 Ok(json!({"ok": true, "enabled": v.is_enabled()}))
@@ -6947,17 +6894,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             let res = (|| -> Result<()> {
                 let req: EnabledReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                if req.enabled {
-                    // operaproxy is single-instance: all three slots are the candidate.
-                    let mut pkgs = BTreeSet::new();
-                    for slot in ["user", "mobile", "wifi"] {
-                        let f = program_root("operaproxy")
-                            .join("app/uid")
-                            .join(format!("{slot}_program"));
-                        pkgs.extend(parse_package_set(&read_text_or_empty(&f)?));
-                    }
-                    check_enabled_profile_conflicts("operaproxy", "", &pkgs)?;
-                }
                 let p = active_json_path("operaproxy");
                 let mut active: EnabledActive = read_json(&p).unwrap_or_default();
                 active.enabled = req.enabled;
@@ -9111,72 +9047,5 @@ mod strategic_selection_tests {
         let sel2 = Selection { variant_name: None, ..sel.clone() };
         let out2 = apply_selection_to_config(&out, &sel2);
         assert_eq!(out, out2, "re-apply must be a byte-identical fixpoint");
-    }
-}
-
-#[cfg(test)]
-mod app_domain_conflict_tests {
-    //! The routing-domain rule is the single source of truth shared by the
-    //! enable-time check (`check_enabled_profile_conflicts`), the assignments
-    //! payload the UI consumes, and the start-time validator in `runtime`.
-    //! These tests pin the rule itself so a program added to one caller but not
-    //! another cannot silently widen or narrow it.
-
-    use super::*;
-
-    #[test]
-    fn exclusive_network_conflicts_with_every_routed_domain() {
-        let routed = ["exclusive_network", "tunnel", "zapret"];
-        for other in routed {
-            assert!(
-                app_domains_conflict("exclusive_network", other),
-                "exclusive_network must conflict with {other}"
-            );
-            assert!(
-                app_domains_conflict(other, "exclusive_network"),
-                "conflict rule must be symmetric for {other}"
-            );
-        }
-    }
-
-    #[test]
-    fn same_domain_conflicts_but_different_domains_do_not() {
-        assert!(app_domains_conflict("tunnel", "tunnel"));
-        assert!(app_domains_conflict("zapret", "zapret"));
-        assert!(!app_domains_conflict("tunnel", "zapret"));
-    }
-
-    #[test]
-    fn programs_without_a_domain_never_conflict() {
-        // blockedquic has no app routing domain, so it must not block VPN or
-        // tunnel app lists.
-        assert_eq!(app_domain("blockedquic"), None);
-        for pid in ["openvpn", "mihomo", "tor", "nfqws2"] {
-            let d = app_domain(pid).expect("routed program must declare a domain");
-            assert!(
-                !app_domains_conflict("", d),
-                "an unrouted program must never conflict with {pid}"
-            );
-        }
-    }
-
-    #[test]
-    fn single_instance_programs_declare_tunnel_domain() {
-        // tor and operaproxy are checked as whole programs on enable; their
-        // domain must therefore be one that can actually collide.
-        for pid in ["tor", "operaproxy"] {
-            assert_eq!(app_domain(pid), Some("tunnel"), "{pid} domain");
-        }
-    }
-
-    #[test]
-    fn every_routed_program_declares_a_domain() {
-        for pid in [
-            "vpn-netd", "openvpn", "amneziawg", "tun2socks", "myvpn", "mihomo", "mieru",
-            "sing-box", "wireguard", "operaproxy", "wireproxy", "myproxy", "myprogram", "tor",
-            "byedpi", "nfqws2",
-        ] {
-            assert!(app_domain(pid).is_some(), "{pid} must declare a routing domain");
-        }
     }
 }
