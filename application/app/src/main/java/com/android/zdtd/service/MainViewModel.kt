@@ -6075,8 +6075,10 @@ private fun shQuote(s: String): String {
 
   /**
    * Check whether enabling a specific profile would cause an app overlap
-   * with another already-enabled profile. Returns a ProfileConflictDialog
-   * if there's a conflict, or null if the profile can be safely enabled.
+   * with an already-enabled profile of *another* program. Profiles of one
+   * program may share apps freely, so the same-program branch is skipped
+   * outright. Returns a ProfileConflictDialog if there's a conflict, or null
+   * if the profile can be safely enabled.
    */
   private suspend fun checkEnableProfileConflict(
     programId: String,
@@ -6095,19 +6097,15 @@ private fun shQuote(s: String): String {
     }
     if (targetApps.isEmpty()) return null
 
-    // Find enabled profiles that conflict
+    // Find enabled profiles of other programs that conflict
     for (p in programs) {
       if (p.id !in guardedProfileProgramIds) continue
-      val enabledProfiles = if (p.id == programId) {
-        // For same program, check other enabled profiles (including the one we're enabling)
-        p.profiles.filter { it.enabled || (it.name == profile) }.map { it.name }.toSet()
-      } else {
-        p.profiles.filter { it.enabled }.map { it.name }.toSet()
-      }
+      // Profiles of the same program are allowed to share apps.
+      if (p.id == programId) continue
+      val enabledProfiles = p.profiles.filter { it.enabled }.map { it.name }.toSet()
       if (enabledProfiles.isEmpty()) continue
 
       for (otherProfile in enabledProfiles) {
-        if (p.id == programId && otherProfile == profile) continue
         val otherApps = mutableSetOf<String>()
         for (entry in assignments.lists) {
           if (entry.programId == p.id && entry.profile == otherProfile) {
@@ -6128,6 +6126,7 @@ private fun shQuote(s: String): String {
     }
     return null
   }
+
 
   private suspend fun refreshProgramsNow(force: Boolean = false) {
     val now = System.currentTimeMillis()
