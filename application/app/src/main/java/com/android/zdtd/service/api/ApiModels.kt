@@ -327,11 +327,6 @@ object ApiModels {
     val slot: String,
     val path: String,
     val packages: Set<String> = emptySet(),
-    /** Routing domain reported by the daemon (`exclusive_network`, `tunnel`,
-     *  `zapret`, or empty when a program has no app-routing domain). The UI
-     *  applies the daemon's conflict rule through this field instead of keeping
-     *  a local program list that can drift from the daemon. */
-    val domain: String = "",
   )
 
   data class AppAssignmentsState(
@@ -801,7 +796,6 @@ object ApiModels {
               slot = slot,
               path = path,
               packages = pkgs,
-              domain = o.optString("domain", "").trim(),
             )
           )
         }

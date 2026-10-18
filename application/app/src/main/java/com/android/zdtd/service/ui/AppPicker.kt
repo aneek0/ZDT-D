@@ -79,21 +79,6 @@ import java.util.Locale
 
 internal const val ZDTD_APP_PACKAGE_NAME = "com.android.zdtd.service"
 
-/** Routing domain the daemon reports for VPN/netd backends; see `app_domain` in
- *  `rust/zdtd/src/api.rs`. Kept as a constant so the UI can apply the
- *  "conflicts in every slot" rule without duplicating a program list. */
-internal const val EXCLUSIVE_NETWORK_DOMAIN = "exclusive_network"
-
-/** Whether two app lists whose routing domains are [left] and [right] may claim
- *  the same app. Mirrors `app_domains_conflict` in `rust/zdtd/src/api.rs`: equal
- *  domains collide, `exclusive_network` collides with everything, and a program
- *  with no domain (blockedquic, an unknown id) never does. */
-internal fun appDomainsConflict(left: String, right: String): Boolean {
-  if (left.isEmpty() || right.isEmpty()) return false
-  return left == right ||
-    left == EXCLUSIVE_NETWORK_DOMAIN || right == EXCLUSIVE_NETWORK_DOMAIN
-}
-
 data class InstalledApp(
   val packageName: String,
   val label: String,
@@ -383,8 +368,17 @@ internal fun AppPickerSheet(
     else -> programId
   }
 
-  fun appListsConflict(leftDomain: String, rightDomain: String): Boolean =
-    appDomainsConflict(leftDomain, rightDomain)
+  fun programGroup(programId: String): String? = when (programId) {
+    "operaproxy", "sing-box", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
+    "nfqws2" -> "zapret"
+    else -> null
+  }
+
+  fun appListsConflict(leftProgramId: String, rightProgramId: String): Boolean {
+    // All programs and profiles are isolated — no cross-profile/cross-program conflicts.
+    // Users may freely assign the same app to multiple profiles and programs.
+    return false
+  }
 
   fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
     val base = programLabel(entry.programId)
@@ -417,20 +411,18 @@ internal fun AppPickerSheet(
     val out = linkedMapOf<String, MutableList<ApiModels.AppAssignmentEntry>>()
     val entry = currentEntry
     val data = assignments
-    if (entry != null && data != null && entry.domain.isNotEmpty()) {
-      for (other in data.lists) {
-        if (other.path == entry.path) continue
-        // Programs that route one traffic class across all slots (VPN backends)
-        // conflict with a list in any slot; same-domain tunnels only collide
-        // when they route the same slot.
-        val requiresSameSlot = entry.domain != EXCLUSIVE_NETWORK_DOMAIN &&
-          other.domain != EXCLUSIVE_NETWORK_DOMAIN
-        if (requiresSameSlot && other.slot != entry.slot) continue
-        if (!appListsConflict(entry.domain, other.domain)) continue
-        if (isAssignmentEnabled(other) != active) continue
-        for (pkg in other.packages) {
-          if (pkg == ZDTD_APP_PACKAGE_NAME) continue
-          out.getOrPut(pkg) { mutableListOf() }.add(other)
+    if (entry != null && data != null) {
+      if (programGroup(entry.programId) != null) {
+        for (other in data.lists) {
+          if (other.path == entry.path) continue
+          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo" && entry.programId != "mieru" && other.programId != "mieru" && entry.programId != "amneziawg" && other.programId != "amneziawg"
+          if (requiresSameSlot && other.slot != entry.slot) continue
+          if (!appListsConflict(entry.programId, other.programId)) continue
+          if (isAssignmentEnabled(other) != active) continue
+          for (pkg in other.packages) {
+            if (pkg == ZDTD_APP_PACKAGE_NAME) continue
+            out.getOrPut(pkg) { mutableListOf() }.add(other)
+          }
         }
       }
     }
