@@ -383,29 +383,20 @@ internal fun AppPickerSheet(
     else -> programId
   }
 
-  fun sameProgramId(left: String, right: String): Boolean {
-    fun normalize(id: String): String = id.trim().lowercase(Locale.ROOT).replace("_", "-")
-    val l = normalize(left)
-    val r = normalize(right)
-    return l == r || (l == "singbox" && r == "sing-box") || (l == "sing-box" && r == "singbox")
-  }
-
-  fun appListsConflict(
-    leftProgramId: String,
-    leftDomain: String,
-    rightProgramId: String,
-    rightDomain: String,
-  ): Boolean {
-    // Profiles of one program may share apps; only a different program can claim
-    // the same app twice. Mirrors `app_lists_conflict` in `rust/zdtd/src/api.rs`.
-    if (sameProgramId(leftProgramId, rightProgramId)) return false
-    return appDomainsConflict(leftDomain, rightDomain)
-  }
+  fun appListsConflict(leftDomain: String, rightDomain: String): Boolean =
+    appDomainsConflict(leftDomain, rightDomain)
 
   fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
     val base = programLabel(entry.programId)
     val slot = slotLabel(entry.slot)
     return if (entry.profile.isNullOrBlank()) "$base / $slot" else "$base / ${entry.profile} / $slot"
+  }
+
+  fun sameProgramId(left: String, right: String): Boolean {
+    fun normalize(id: String): String = id.trim().lowercase(Locale.ROOT).replace("_", "-")
+    val l = normalize(left)
+    val r = normalize(right)
+    return l == r || (l == "singbox" && r == "sing-box") || (l == "sing-box" && r == "singbox")
   }
 
   fun isAssignmentEnabled(entry: ApiModels.AppAssignmentEntry): Boolean {
@@ -435,7 +426,7 @@ internal fun AppPickerSheet(
         val requiresSameSlot = entry.domain != EXCLUSIVE_NETWORK_DOMAIN &&
           other.domain != EXCLUSIVE_NETWORK_DOMAIN
         if (requiresSameSlot && other.slot != entry.slot) continue
-        if (!appListsConflict(entry.programId, entry.domain, other.programId, other.domain)) continue
+        if (!appListsConflict(entry.domain, other.domain)) continue
         if (isAssignmentEnabled(other) != active) continue
         for (pkg in other.packages) {
           if (pkg == ZDTD_APP_PACKAGE_NAME) continue

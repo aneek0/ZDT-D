@@ -3405,30 +3405,6 @@ pub fn app_domain(program_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Whether the app lists owned by [left_program]/[right_program] may claim the
-/// same application.
-///
-/// Two profiles of the *same* program never collide: a profile is a separate
-/// routing engine instance inside one program (mihomo profile1 + profile2), and
-/// running two of them over the same apps is a supported setup. Two *different*
-/// programs still can collide, because then one app really would be driven by
-/// two engines at once.
-pub fn app_lists_conflict(left_program: &str, right_program: &str) -> bool {
-    if left_program == right_program {
-        return false;
-    }
-    let (Some(left), Some(right)) = (app_domain(left_program), app_domain(right_program)) else {
-        return false;
-    };
-    app_domains_conflict(left, right)
-}
-
-/// Domain-level part of the rule: equal domains collide, `exclusive_network`
-/// collides with every routed domain, and an empty domain (blockedquic, an
-/// unknown id) never claims app routing so it collides with nothing.
-///
-/// Only meaningful across different programs; callers should prefer
-/// `app_lists_conflict`, which applies this rule to whole programs.
 pub fn app_domains_conflict(a: &str, b: &str) -> bool {
     // A program without a routing domain (blockedquic, or an id we do not know)
     // never claims app routing, so it must not conflict with anything.
@@ -3534,14 +3510,20 @@ pub fn find_enabled_app_overlaps(
     candidate: &BTreeSet<String>,
 ) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    if candidate.is_empty() || app_domain(program_id).is_none() {
+    if candidate.is_empty() {
         return out;
     }
+    let Some(domain) = app_domain(program_id) else { return out; };
     let owner = candidate_owner.filter(|p| !p.is_empty());
 
     for scope in collect_enabled_app_scopes() {
-        // Profiles of one program may share apps; a different program may not.
-        if !app_lists_conflict(program_id, scope.program_id) {
+        // A single-instance program is its own owner, so it can never conflict
+        // with itself; profile-based programs skip only the profile being enabled.
+        if scope.program_id == program_id && owner.is_none() {
+            continue;
+        }
+        let Some(other_domain) = app_domain(scope.program_id) else { continue; };
+        if !app_domains_conflict(domain, other_domain) {
             continue;
         }
         for (pname, pkgs) in &scope.profiles {
@@ -9162,29 +9144,6 @@ mod app_domain_conflict_tests {
         assert!(app_domains_conflict("tunnel", "tunnel"));
         assert!(app_domains_conflict("zapret", "zapret"));
         assert!(!app_domains_conflict("tunnel", "zapret"));
-    }
-    #[test]
-    fn profiles_of_one_program_may_share_apps() {
-        // The whole point of a profile is a second routing instance inside the
-        // same program; running two of them over one app list must stay allowed.
-        for pid in ["mihomo", "nfqws2", "byedpi", "openvpn", "sing-box"] {
-            assert!(
-                !app_lists_conflict(pid, pid),
-                "two {pid} profiles must be allowed to share apps"
-            );
-        }
-    }
-
-    #[test]
-    fn different_programs_still_conflict_by_domain() {
-        // Same domain, different programs -> a real double-routing conflict.
-        assert!(app_lists_conflict("tor", "operaproxy"));
-        assert!(app_lists_conflict("tor", "wireproxy"));
-        assert!(app_lists_conflict("openvpn", "tor"));
-        // Different, non-exclusive domains coexist.
-        assert!(!app_lists_conflict("nfqws2", "tor"));
-        // A program with no domain never conflicts.
-        assert!(!app_lists_conflict("blockedquic", "openvpn"));
     }
 
     #[test]

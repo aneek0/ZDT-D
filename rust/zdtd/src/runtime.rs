@@ -328,10 +328,9 @@ if !any_main_service_running() {
     Ok(())
 }
 
-/// Validate that no two enabled app lists owned by *different* programs claim
-/// the same application. Profiles of one program may share apps freely; overlap
-/// between programs is allowed at assignment time but must be resolved before
-/// starting the service.
+/// Validate that no two enabled app lists whose routing domains conflict claim
+/// the same application. Overlap is allowed at assignment time but must be
+/// resolved before starting the service.
 ///
 /// This is the start-time half of the same rule the API applies when a profile is
 /// enabled: both read `api::collect_enabled_app_scopes`, so a list assigned while
@@ -341,11 +340,21 @@ fn validate_no_profile_app_overlap() -> Result<()> {
     let scopes = crate::api::collect_enabled_app_scopes();
     for (i, left) in scopes.iter().enumerate() {
         for right in scopes.iter().skip(i + 1) {
-            if !crate::api::app_lists_conflict(left.program_id, right.program_id) {
+            let (Some(left_domain), Some(right_domain)) = (
+                crate::api::app_domain(left.program_id),
+                crate::api::app_domain(right.program_id),
+            ) else {
+                continue;
+            };
+            if !crate::api::app_domains_conflict(left_domain, right_domain) {
                 continue;
             }
             for (lname, lpkgs) in &left.profiles {
                 for (rname, rpkgs) in &right.profiles {
+                    // One list compared against itself is not an overlap.
+                    if left.program_id == right.program_id && lname == rname {
+                        continue;
+                    }
                     let common: BTreeSet<_> = lpkgs.intersection(rpkgs).collect();
                     if common.is_empty() {
                         continue;
