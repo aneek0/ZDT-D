@@ -168,7 +168,7 @@ pub fn ensure_profile_layout(profile: &str) -> Result<()> {
     ensure_file_empty(&root.join("app/out/user_program"))?;
     let setting_path = root.join("setting.json");
     if !setting_path.exists() {
-        write_json_pretty(&setting_path, &ProfileSetting::default())?;
+        write_json_pretty(&setting_path, &default_setting_for_profile(profile))?;
     }
     let config_path = root.join("config.yaml");
     if !config_path.exists() {
@@ -383,6 +383,43 @@ pub fn assign_free_ports_for_profile(profile: &str) -> Result<()> {
         write_setting(profile, &setting)?;
     }
     Ok(())
+}
+
+/// Name the tun interface for a newly created [profile].
+///
+/// `ProfileSetting::default()` hard-codes `tun20`, so every mihomo profile
+/// created from the template claimed the same interface and
+/// `validate_plan_conflicts` refused to run two of them together — no matter
+/// which apps they routed. Pick the first `mtun<N>` no existing profile holds;
+/// an explicit user choice in an already-written `setting.json` is untouched.
+fn default_setting_for_profile(profile: &str) -> ProfileSetting {
+    let mut s = ProfileSetting::default();
+    s.tun = free_tun_name_excluding(profile);
+    s
+}
+
+/// First `mtun<N>` not present in [taken].
+fn first_free_tun(taken: &BTreeSet<String>) -> String {
+    (0..)
+        .map(|n| format!("mtun{n}"))
+        .find(|name| !taken.contains(name))
+        .unwrap_or_else(|| "mtun0".to_string())
+}
+
+/// Tun names held by every mihomo profile except [profile].
+fn claimed_tun_names_excluding(profile: &str) -> BTreeSet<String> {
+    let Ok(rd) = fs::read_dir(profiles_root()) else { return BTreeSet::new(); };
+    rd.flatten()
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|name| name != profile && !name.starts_with('.'))
+        .filter_map(|name| read_setting(&name).ok())
+        .map(|s| s.tun)
+        .collect()
+}
+
+fn free_tun_name_excluding(profile: &str) -> String {
+    first_free_tun(&claimed_tun_names_excluding(profile))
 }
 
 pub fn validate_port_uniqueness_with_override(
@@ -1280,4 +1317,38 @@ proxy-groups:
 rules:
   - MATCH,Proxy
 "#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: `ProfileSetting::default()` hard-coded `tun20`, so a second
+    /// mihomo profile claimed the same interface and `validate_plan_conflicts`
+    /// refused to run both — the app-conflict rule never got a chance to apply.
+    #[test]
+    fn new_profiles_get_distinct_tun_names() {
+        let taken: BTreeSet<String> = ["mtun0", "mtun1"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(first_free_tun(&taken), "mtun2");
+    }
+
+    #[test]
+    fn first_profile_gets_the_first_tun_name() {
+        assert_eq!(first_free_tun(&BTreeSet::new()), "mtun0");
+    }
+
+    /// A gap must be reused, not skipped: profiles are created and deleted freely.
+    #[test]
+    fn freed_tun_name_is_reused() {
+        let taken: BTreeSet<String> = ["mtun0", "mtun2"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(first_free_tun(&taken), "mtun1");
+    }
+
+    #[test]
+    fn tun_names_are_valid_interfaces() {
+        let taken: BTreeSet<String> = (0..5000).map(|n| format!("mtun{n}")).collect();
+        let name = first_free_tun(&taken);
+        assert!(crate::programs::common::is_valid_ifname(&name), "{name} must be a valid interface");
+        assert_eq!(name, "mtun5000");
+    }
 }
