@@ -2132,14 +2132,6 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="blockcheck_error_hosts_required">Uma lista de hosts é necessária para este protocolo</string>
     <string name="blockcheck_error_snapshot_load">Falha ao carregar a configuração do perfil ativo</string>
 
-    <string name="enable_blocked_profile_overlap">Ativação bloqueada: desative os perfis sobrepostos</string>
-    <string name="enable_blocked_profile_overlap_detail">Não é possível ativar o perfil “%1$s” do programa “%2$s” — ele compartilha apps com o perfil já ativado “%3$s” do programa “%4$s” (%5$s). Desative primeiro o perfil conflitante.</string>
-    <string name="profile_overlap_detail">Os perfis “%2$s” e “%3$s” do programa %1$s compartilham apps (%4$s). Desative primeiro um deles.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d app</item>
-        <item quantity="many">%1$d apps</item>
-        <item quantity="other">%1$d apps</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Itens</string>
     <string name="nfqws2_items_empty">Nenhum item nesta configuração. Aplique um preset da biblioteca primeiro.</string>

@@ -2132,14 +2132,6 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="blockcheck_error_hosts_required">Une liste d\'hôtes est requise pour ce protocole</string>
     <string name="blockcheck_error_snapshot_load">Impossible de charger la configuration du profil actif</string>
 
-    <string name="enable_blocked_profile_overlap">Activation bloquée : désactivez les profils qui se chevauchent</string>
-    <string name="enable_blocked_profile_overlap_detail">Impossible d’activer le profil « %1$s » du programme « %2$s » : il partage des applications avec le profil déjà activé « %3$s » du programme « %4$s » (%5$s). Désactivez d’abord le profil en conflit.</string>
-    <string name="profile_overlap_detail">Les profils « %2$s » et « %3$s » du programme %1$s partagent des applications (%4$s). Désactivez d’abord l’un d’eux.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d application</item>
-        <item quantity="many">%1$d applications</item>
-        <item quantity="other">%1$d applications</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Éléments</string>
     <string name="nfqws2_items_empty">Aucun élément dans cette configuration. Appliquez d’abord un preset de la bibliothèque.</string>

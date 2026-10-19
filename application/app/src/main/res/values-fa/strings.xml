@@ -2132,13 +2132,6 @@ APatch: 10700+</string>
     <string name="blockcheck_error_hosts_required">برای این پروتکل فهرست میزبان لازم است</string>
     <string name="blockcheck_error_snapshot_load">بارگذاری پیکربندی پروفایل فعال ناموفق بود</string>
 
-    <string name="enable_blocked_profile_overlap">فعال‌سازی مسدود شد: پروفایل‌های هم‌پوشان را غیرفعال کنید</string>
-    <string name="enable_blocked_profile_overlap_detail">پروفایل «%1$s» برنامه «%2$s» را نمی‌توان فعال کرد — اپلیکیشن‌های مشترکی با پروفایل فعال «%3$s» برنامه «%4$s» دارد (%5$s). ابتدا پروفایل متعارض را غیرفعال کنید.</string>
-    <string name="profile_overlap_detail">پروفایل‌های «%2$s» و «%3$s» برنامه %1$s اپلیکیشن‌های مشترک دارند (%4$s). ابتدا یکی از آن‌ها را غیرفعال کنید.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d اپلیکیشن</item>
-        <item quantity="other">%1$d اپلیکیشن</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">موارد</string>
     <string name="nfqws2_items_empty">هیچ موردی در این پیکربندی نیست. ابتدا یک پیش‌تنظیم از کتابخانه را اعمال کنید.</string>

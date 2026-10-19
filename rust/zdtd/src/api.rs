@@ -3387,26 +3387,201 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn app_domain(program_id: &str) -> Option<&'static str> {
-    match program_id {
-        // AmneziaWG is an exclusive network/VPN backend. A package routed through it
-        // must not be routed through other traffic-handling programs at the same time.
-        // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
-        // marker is ignored by package conflict parsing, and blockedquic has no app
-        // routing domain so QUIC blocking may coexist with VPN/netd routing.
-        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
-        "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "byedpi" => Some("tunnel"),
-        "nfqws2" => Some("zapret"),
-        // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
-        _ => None,
+/// One app list that is currently enabled and claims some packages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnabledAppList {
+    pub program_id: String,
+    /// Empty for single-instance programs (tor, operaproxy), else the profile name.
+    pub profile: String,
+    pub packages: BTreeSet<String>,
+}
+
+impl EnabledAppList {
+    pub fn label(&self) -> String {
+        if self.profile.is_empty() {
+            self.program_id.clone()
+        } else {
+            format!("{}/{}", self.program_id, self.profile)
+        }
     }
 }
 
-fn app_domains_conflict(a: &str, b: &str) -> bool {
-    if a == b {
-        return true;
+/// Read every enabled app list from `working_folder`, discovering programs by
+/// walking the tree instead of matching known program ids, so a rule written
+/// here applies to every program without naming any of them.
+///
+/// Two layouts exist on disk and both are discovered:
+///   - profile based: `<program>/<profile>/app/uid/*_program` (nfqws2) or
+///     `<program>/profile/<profile>/app/uid/*_program` (everything else),
+///     enabled per profile in `<program>/active.json`.
+///   - single instance: `<program>/app/uid/*_program`, enabled by
+///     `<program>/enabled.json` (tor, operaproxy).
+///
+/// `.deleted` holds trash from previous runs and is skipped.
+pub fn collect_enabled_app_lists() -> Vec<EnabledAppList> {
+    collect_enabled_app_lists_under(&working_root())
+}
+
+/// [`collect_enabled_app_lists`] against an arbitrary `working_folder`, so the
+/// rule can be exercised on a scratch tree.
+fn collect_enabled_app_lists_under(root: &Path) -> Vec<EnabledAppList> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else { return out; };
+    for program in entries.flatten() {
+        let program_id = program.file_name().to_string_lossy().to_string();
+        let program_root = program.path();
+        if !program_root.is_dir() || program_id.starts_with('.') {
+            continue;
+        }
+        collect_program_app_lists(&program_id, &program_root, &mut out);
     }
-    a == "exclusive_network" || b == "exclusive_network"
+    out.sort_by(|a, b| a.label().cmp(&b.label()));
+    out
+}
+
+/// Slot files a list may keep its packages in, relative to an `app/uid` dir.
+const APP_LIST_SLOTS: [&str; 3] = ["user_program", "mobile_program", "wifi_program"];
+
+fn read_app_list_dir(uid_dir: &Path) -> BTreeSet<String> {
+    let mut pkgs = BTreeSet::new();
+    for slot in APP_LIST_SLOTS {
+        if let Ok(content) = read_text_or_empty(&uid_dir.join(slot)) {
+            pkgs.extend(parse_package_set(&content));
+        }
+    }
+    pkgs
+}
+
+fn collect_program_app_lists(program_id: &str, root: &Path, out: &mut Vec<EnabledAppList>) {
+    let enabled = |name: &str| -> bool {
+        read_json::<ProfilesActive>(&root.join("active.json"))
+            .map(|a| a.profiles.get(name).is_some_and(|st| st.enabled))
+            .unwrap_or(false)
+    };
+
+    // Single-instance program: the whole program is one list, enabled through
+    // its own flag file. Both names in use on disk are accepted so that no
+    // program id has to be named here.
+    let single_enabled = ["enabled.json", "active.json"].iter().any(|file| {
+        read_json::<EnabledActive>(&root.join(file))
+            .map(|v| v.enabled)
+            .unwrap_or(false)
+    });
+    if single_enabled {
+        let uid_dir = root.join("app/uid");
+        let packages = read_app_list_dir(&uid_dir);
+        if !packages.is_empty() {
+            out.push(EnabledAppList {
+                program_id: program_id.to_string(),
+                profile: String::new(),
+                packages,
+            });
+        }
+    }
+
+    // Profile based: `<program>/<profile>/app/uid` (nfqws2) and
+    // `<program>/profile/<profile>/app/uid` (the rest). Both are walked.
+    for container in [root.to_path_buf(), root.join("profile")] {
+        let Ok(profiles) = std::fs::read_dir(&container) else { continue; };
+        for entry in profiles.flatten() {
+            let profile = entry.file_name().to_string_lossy().to_string();
+            if profile.starts_with('.') {
+                continue;
+            }
+            let uid_dir = entry.path().join("app/uid");
+            if !uid_dir.is_dir() || !enabled(&profile) {
+                continue;
+            }
+            let packages = read_app_list_dir(&uid_dir);
+            if packages.is_empty() {
+                continue;
+            }
+            out.push(EnabledAppList {
+                program_id: program_id.to_string(),
+                profile,
+                packages,
+            });
+        }
+    }
+}
+
+/// The single app-list rule: one application may be assigned to as many
+/// profiles and programs as the user likes, but two *different* enabled lists
+/// must never claim it at the same time, because then the daemon would drive
+/// the same traffic twice.
+///
+/// A list compared against itself is not a pair, so re-enabling the list that
+/// already holds an app never trips the rule. No program is named: it applies
+/// to every program the same way.
+pub fn find_enabled_app_overlaps() -> Vec<(EnabledAppList, EnabledAppList, usize)> {
+    find_enabled_app_overlaps_under(&working_root())
+}
+
+/// [`find_enabled_app_overlaps`] against an arbitrary `working_folder`, so the
+/// rule can be exercised on a scratch tree.
+fn find_enabled_app_overlaps_under(root: &Path) -> Vec<(EnabledAppList, EnabledAppList, usize)> {
+    let lists = collect_enabled_app_lists_under(root);
+    let mut out = Vec::new();
+    for i in 0..lists.len() {
+        for j in (i + 1)..lists.len() {
+            let common = lists[i].packages.intersection(&lists[j].packages).count();
+            if common > 0 {
+                out.push((lists[i].clone(), lists[j].clone(), common));
+            }
+        }
+    }
+    out
+}
+
+/// True when at least one program would start something: a profile is
+/// enabled in `active.json`, or a single-instance program has its flag file
+/// set. Discovered by walking `working_folder`, so no program id is named
+/// here either — a new program is covered without touching this function.
+///
+/// Deliberately broader than [`collect_enabled_app_lists`]: a profile can be
+/// enabled with no app list and still be the user's intent (whole-device
+/// mode), so enablement alone counts.
+pub fn any_program_enabled() -> bool {
+    any_program_enabled_under(&working_root())
+}
+
+fn any_program_enabled_under(root: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(root) else { return false; };
+    for program in entries.flatten() {
+        let program_root = program.path();
+        if !program_root.is_dir() || program.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+
+        // Single-instance flag.
+        if ["enabled.json", "active.json"].iter().any(|file| {
+            read_json::<EnabledActive>(&program_root.join(file))
+                .map(|v| v.enabled)
+                .unwrap_or(false)
+        }) {
+            return true;
+        }
+
+        // Profile flags: both on-disk layouts.
+        for container in [program_root.clone(), program_root.join("profile")] {
+            let Ok(profiles) = std::fs::read_dir(&container) else { continue; };
+            for entry in profiles.flatten() {
+                if entry.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
+                let enabled = read_json::<ProfilesActive>(&program_root.join("active.json"))
+                    .ok()
+                    .and_then(|a| {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        a.profiles.get(&name).map(|st| st.enabled)
+                    });
+                if enabled == Some(true) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn push_assignment_file(
@@ -3764,142 +3939,6 @@ fn validate_program_apps_content(content: &str, current_api_path: &str, program_
     Ok(())
 }
 
-/// Collect all packages assigned to a profile across all slots (user, mobile, wifi).
-fn gather_profile_packages(program_id: &str, profile: &str) -> BTreeSet<String> {
-    let mut pkgs = BTreeSet::new();
-    for slot_name in &["user", "mobile", "wifi"] {
-        let uid_path = program_root(program_id)
-            .join("profile")
-            .join(profile)
-            .join("app/uid")
-            .join(&format!("{}_program", slot_name));
-        if let Ok(content) = read_text_or_empty(&uid_path) {
-            pkgs.extend(parse_package_set(&content));
-        }
-    }
-    pkgs
-}
-
-/// Check whether enabling a profile would conflict with other *enabled* profiles.
-/// Called when the user toggles a profile to enabled=true via the API.
-/// Returns an error listing the conflicting apps and which active profiles use them.
-fn check_enabled_profile_conflicts(
-    program_id: &str,
-    profile: &str,
-    profile_packages: &BTreeSet<String>,
-) -> Result<()> {
-    if profile_packages.is_empty() {
-        return Ok(());
-    }
-    let Some(domain) = app_domain(program_id) else { return Ok(()) };
-
-    let mut conflicts: BTreeMap<String, Vec<String>> = BTreeMap::new();
-
-    // Helper: check a single program's active.json for enabled profiles.
-    let profile_based = [
-        "nfqws2", "byedpi",
-        "openvpn", "amneziawg", "tun2socks", "myvpn",
-        "mihomo", "mieru", "sing-box", "wireproxy",
-        "myproxy", "myprogram",
-    ];
-    for pid in &profile_based {
-        let active_path = active_json_path(pid);
-        if let Ok(active) = read_json::<ProfilesActive>(&active_path) {
-            for (pname, st) in &active.profiles {
-                if !st.enabled { continue; }
-                if *pid == program_id && pname == profile { continue; }
-                let mut pkgs = BTreeSet::new();
-                for slot_name in &["user", "mobile", "wifi"] {
-                    let uid_path = program_root(pid)
-                        .join("profile")
-                        .join(pname)
-                        .join("app/uid")
-                        .join(&format!("{}_program", slot_name));
-                    if let Ok(content) = read_text_or_empty(&uid_path) {
-                        pkgs.extend(parse_package_set(&content));
-                    }
-                }
-                if pkgs.is_empty() { continue; }
-                let Some(other_domain) = app_domain(pid) else { continue; };
-                if !app_domains_conflict(domain, other_domain) { continue; }
-                for pkg in profile_packages.intersection(&pkgs) {
-                    conflicts.entry(pkg.clone())
-                        .or_default()
-                        .push(format!("{pid}/{pname}"));
-                }
-            }
-        }
-    }
-
-    // Single programs with app lists (tor, operaproxy).
-    {
-        let tor_enabled = simple_enabled_json("tor", "enabled.json");
-        if tor_enabled {
-            let mut pkgs = BTreeSet::new();
-            for slot_name in &["user", "mobile", "wifi"] {
-                let uid_path = program_root("tor")
-                    .join("app/uid")
-                    .join(&format!("{}_program", slot_name));
-                if let Ok(content) = read_text_or_empty(&uid_path) {
-                    pkgs.extend(parse_package_set(&content));
-                }
-            }
-            if !pkgs.is_empty() {
-                let other_domain = app_domain("tor").unwrap_or("");
-                if app_domains_conflict(domain, other_domain) {
-                    for pkg in profile_packages.intersection(&pkgs) {
-                        conflicts.entry(pkg.clone())
-                            .or_default()
-                            .push("tor".to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    {
-        let op_enabled = simple_enabled_json("operaproxy", "enabled.json");
-        if op_enabled {
-            let mut pkgs = BTreeSet::new();
-            for slot_name in &["user", "mobile", "wifi"] {
-                let uid_path = program_root("operaproxy")
-                    .join("app/uid")
-                    .join(&format!("{}_program", slot_name));
-                if let Ok(content) = read_text_or_empty(&uid_path) {
-                    pkgs.extend(parse_package_set(&content));
-                }
-            }
-            if !pkgs.is_empty() {
-                let other_domain = app_domain("operaproxy").unwrap_or("");
-                if app_domains_conflict(domain, other_domain) {
-                    for pkg in profile_packages.intersection(&pkgs) {
-                        conflicts.entry(pkg.clone())
-                            .or_default()
-                            .push("operaproxy".to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    if !conflicts.is_empty() {
-        let mut parts: Vec<String> = conflicts
-            .into_iter()
-            .map(|(pkg, uses)| {
-                let mut uses_sorted = uses;
-                uses_sorted.sort();
-                format!("{} ({})", pkg, uses_sorted.join(", "))
-            })
-            .collect();
-        parts.sort();
-        anyhow::bail!(
-            "Отключите один из профилей с общими приложениями: {}",
-            parts.join("; ")
-        );
-    }
-
-    Ok(())
-}
 
 fn validate_proxyinfo_apps_content(content: &str) -> Result<()> {
     validate_launch_marker_usage(content, "proxyInfo")?;
@@ -4407,8 +4446,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::openvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("openvpn", profile, &setting.tun)?;
-                    let pkgs = gather_profile_packages("openvpn", profile);
-                    check_enabled_profile_conflicts("openvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -4617,8 +4654,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::amneziawg::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("amneziawg", profile, &setting.tun)?;
-                    let pkgs = gather_profile_packages("amneziawg", profile);
-                    check_enabled_profile_conflicts("amneziawg", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -4822,8 +4857,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::tun2socks::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("tun2socks", profile, &setting.tun)?;
-                    let pkgs = gather_profile_packages("tun2socks", profile);
-                    check_enabled_profile_conflicts("tun2socks", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -4978,8 +5011,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if req.enabled {
                     let setting = crate::programs::myvpn::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("myvpn", profile, &setting.tun)?;
-                    let pkgs = gather_profile_packages("myvpn", profile);
-                    check_enabled_profile_conflicts("myvpn", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -5125,8 +5156,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mihomo::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mihomo", profile, &setting.tun)?;
                     crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), None, None)?;
-                    let pkgs = gather_profile_packages("mihomo", profile);
-                    check_enabled_profile_conflicts("mihomo", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -5277,8 +5306,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let setting = crate::programs::mieru::read_setting(profile).unwrap_or_default();
                     validate_cross_vpn_tun_claim("mieru", profile, &setting.tun)?;
                     crate::programs::mieru::validate_port_uniqueness_with_override(Some(profile), None)?;
-                    let pkgs = gather_profile_packages("mieru", profile);
-                    check_enabled_profile_conflicts("mieru", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -5429,8 +5456,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
                 if req.enabled {
-                    let pkgs = gather_profile_packages("sing-box", profile);
-                    check_enabled_profile_conflicts("sing-box", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -5778,8 +5803,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
                 if req.enabled {
-                    let pkgs = gather_profile_packages("wireproxy", profile);
-                    check_enabled_profile_conflicts("wireproxy", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -6053,8 +6076,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
                 st.enabled = req.enabled;
                 if req.enabled {
-                    let pkgs = gather_profile_packages(id, profile);
-                    check_enabled_profile_conflicts(id, profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -6424,8 +6445,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
                 if req.enabled {
-                    let pkgs = gather_profile_packages("myproxy", profile);
-                    check_enabled_profile_conflicts("myproxy", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -6581,8 +6600,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
                 active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
                 if req.enabled {
-                    let pkgs = gather_profile_packages("myprogram", profile);
-                    check_enabled_profile_conflicts("myprogram", profile, &pkgs)?;
                 }
                 write_json_pretty(&p, &active)?;
                 Ok(())
@@ -9047,5 +9064,183 @@ mod strategic_selection_tests {
         let sel2 = Selection { variant_name: None, ..sel.clone() };
         let out2 = apply_selection_to_config(&out, &sel2);
         assert_eq!(out, out2, "re-apply must be a byte-identical fixpoint");
+    }
+}
+
+/// The app-list rule: assignment is free, but two *different* enabled lists
+/// must never claim the same application. The rule is over enabled lists, so
+/// it has to hold for any program — these tests use invented program ids to
+/// prove no program is special-cased.
+#[cfg(test)]
+mod app_list_rule_tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch(name: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!(
+            "zdtd_applist_{name}_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Scratch(dir)
+    }
+
+    /// Write a profile-based list under `<root>/<program>/profile/<p>/app/uid`.
+    fn profile_list(root: &Path, program: &str, profile: &str, enabled: bool, pkgs: &[&str]) {
+        let uid = root.join(program).join("profile").join(profile).join("app/uid");
+        std::fs::create_dir_all(&uid).unwrap();
+        std::fs::write(uid.join("user_program"), pkgs.join("\n")).unwrap();
+        set_profile_enabled(root, program, profile, enabled);
+    }
+
+    /// Write a profile-based list in the flat `<root>/<program>/<p>/app/uid` layout.
+    fn flat_list(root: &Path, program: &str, profile: &str, enabled: bool, pkgs: &[&str]) {
+        let uid = root.join(program).join(profile).join("app/uid");
+        std::fs::create_dir_all(&uid).unwrap();
+        std::fs::write(uid.join("user_program"), pkgs.join("\n")).unwrap();
+        set_profile_enabled(root, program, profile, enabled);
+    }
+
+    fn set_profile_enabled(root: &Path, program: &str, profile: &str, enabled: bool) {
+        let path = root.join(program).join("active.json");
+        let mut active: ProfilesActive = read_json(&path).unwrap_or_default();
+        active
+            .profiles
+            .entry(profile.to_string())
+            .or_default()
+            .enabled = enabled;
+        std::fs::write(&path, serde_json::to_string_pretty(&active).unwrap()).unwrap();
+    }
+
+    fn overlaps(root: &Path) -> Vec<(String, String, usize)> {
+        find_enabled_app_overlaps_under(root)
+            .into_iter()
+            .map(|(a, b, n)| (a.label(), b.label(), n))
+            .collect()
+    }
+
+    #[test]
+    fn same_app_in_two_profiles_of_one_program_is_a_conflict() {
+        let s = scratch("same_program");
+        let root = &s.0;
+        profile_list(root, "alpha", "one", true, &["com.a", "com.shared"]);
+        profile_list(root, "alpha", "two", true, &["com.shared", "com.b"]);
+
+        let found = overlaps(root);
+        assert_eq!(found.len(), 1, "expected exactly one overlapping pair: {found:?}");
+        assert_eq!(found[0].2, 1);
+        assert_eq!(&found[0].0, "alpha/one");
+        assert_eq!(&found[0].1, "alpha/two");
+    }
+
+    #[test]
+    fn same_app_in_two_different_programs_is_a_conflict() {
+        // Invented ids: the rule must not know or care which programs exist.
+        let s = scratch("cross_program");
+        let root = &s.0;
+        profile_list(root, "alpha", "one", true, &["com.shared"]);
+        profile_list(root, "beta", "solo", true, &["com.shared", "com.other"]);
+
+        let found = overlaps(root);
+        assert_eq!(found.len(), 1, "expected one overlapping pair: {found:?}");
+        assert_eq!(&found[0].0, "alpha/one");
+        assert_eq!(&found[0].1, "beta/solo");
+    }
+
+    #[test]
+    fn a_disabled_list_never_conflicts() {
+        let s = scratch("disabled");
+        let root = &s.0;
+        profile_list(root, "alpha", "one", true, &["com.shared"]);
+        profile_list(root, "alpha", "two", false, &["com.shared"]);
+
+        assert!(overlaps(root).is_empty(), "disabled list must be ignored");
+    }
+
+    #[test]
+    fn flat_and_nested_layouts_are_both_covered() {
+        let s = scratch("layouts");
+        let root = &s.0;
+        // Two programs using the two on-disk layouts that exist in practice.
+        flat_list(root, "flatprog", "one", true, &["com.shared"]);
+        profile_list(root, "deepprog", "two", true, &["com.shared"]);
+
+        let found = overlaps(root);
+        assert_eq!(found.len(), 1, "both layouts must be discovered: {found:?}");
+    }
+
+    #[test]
+    fn a_single_instance_list_conflicts_like_any_other() {
+        let s = scratch("single_instance");
+        let root = &s.0;
+        let uid = root.join("solo_prog").join("app/uid");
+        std::fs::create_dir_all(&uid).unwrap();
+        std::fs::write(uid.join("user_program"), "com.shared").unwrap();
+        std::fs::write(
+            root.join("solo_prog").join("enabled.json"),
+            r#"{"enabled":true}"#,
+        )
+        .unwrap();
+        profile_list(root, "alpha", "one", true, &["com.shared"]);
+
+        let found = overlaps(root);
+        assert_eq!(found.len(), 1, "single-instance list obeys the rule: {found:?}");
+        assert!(found[0].0 == "alpha/one" || found[0].1 == "alpha/one");
+    }
+
+    #[test]
+    fn the_same_list_is_never_a_pair_with_itself() {
+        // A list enabled twice (restart, re-enable) must not report itself, or
+        // enabling an already-enabled profile would fail.
+        let s = scratch("self");
+        let root = &s.0;
+        profile_list(root, "alpha", "one", true, &["com.a", "com.b"]);
+
+        assert!(overlaps(root).is_empty());
+    }
+    #[test]
+    fn enablement_walk_matches_profile_and_flag_files() {
+        // Empty tree: nothing enabled.
+        let s = scratch("enable_empty");
+        assert!(!any_program_enabled_under(&s.0));
+
+        // Enabled profile in the nested layout.
+        let s = scratch("enable_profile");
+        profile_list(&s.0, "alpha", "one", true, &[]);
+        assert!(any_program_enabled_under(&s.0));
+
+        // Enabled profile whose app list is empty still counts: enablement
+        // alone is user intent (whole-device mode).
+        let s = scratch("enable_no_apps");
+        profile_list(&s.0, "alpha", "one", true, &[]);
+        assert!(any_program_enabled_under(&s.0));
+
+        // Single-instance flag file counts.
+        let s = scratch("enable_single");
+        let prog = s.0.join("solo_prog");
+        std::fs::create_dir_all(prog.join("app/uid")).unwrap();
+        std::fs::write(prog.join("enabled.json"), r#"{"enabled":true}"#).unwrap();
+        assert!(any_program_enabled_under(&s.0));
+
+        // All-disabled profiles do not count.
+        let s = scratch("enable_disabled");
+        profile_list(&s.0, "alpha", "one", false, &["com.a"]);
+        assert!(!any_program_enabled_under(&s.0));
+    }
+
+    #[test]
+    fn flat_layout_enablement_is_discovered() {
+        // The nfqws2 layout: <program>/<profile>/app/uid, active.json at program root.
+        let s = scratch("enable_flat");
+        flat_list(&s.0, "flatprog", "one", true, &["com.a"]);
+        assert!(any_program_enabled_under(&s.0));
     }
 }

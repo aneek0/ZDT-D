@@ -2267,13 +2267,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="strategic_ipsets_applied">IP sets applied</string>
 <string name="strategic_ipsets_apply">Apply</string>
 <string name="strategic_ipsets_include">IP sets to include:</string>
-<string name="enable_blocked_profile_overlap">Enable blocked: disable overlapping profiles</string>
-<string name="enable_blocked_profile_overlap_detail">Cannot enable profile \"%1$s\" from program \"%2$s\" — it shares apps with enabled profile \"%3$s\" in program \"%4$s\" (%5$s). Disable the conflicting profile first.</string>
-<string name="profile_overlap_detail">Profiles \"%2$s\" and \"%3$s\" of program %1$s share apps (%4$s). Disable one of them first.</string>
-<plurals name="profile_overlap_apps_count">
-    <item quantity="one">%1$d app</item>
-    <item quantity="other">%1$d apps</item>
-</plurals>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

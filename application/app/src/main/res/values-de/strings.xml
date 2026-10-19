@@ -2132,13 +2132,6 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="blockcheck_error_hosts_required">Für dieses Protokoll ist eine Hostliste erforderlich</string>
     <string name="blockcheck_error_snapshot_load">Konfiguration des aktiven Profils konnte nicht geladen werden</string>
 
-    <string name="enable_blocked_profile_overlap">Aktivieren blockiert: überlappende Profile deaktivieren</string>
-    <string name="enable_blocked_profile_overlap_detail">Profil „%1$s“ des Programms „%2$s“ kann nicht aktiviert werden — es teilt Apps mit dem bereits aktivierten Profil „%3$s“ des Programms „%4$s“ (%5$s). Deaktivieren Sie zuerst das konfliktierende Profil.</string>
-    <string name="profile_overlap_detail">Die Profile „%2$s“ und „%3$s“ des Programms %1$s teilen sich Apps (%4$s). Deaktivieren Sie zuerst eines davon.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d App</item>
-        <item quantity="other">%1$d Apps</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Elemente</string>
     <string name="nfqws2_items_empty">Keine Elemente in dieser Konfiguration. Wenden Sie zuerst ein Preset aus der Bibliothek an.</string>

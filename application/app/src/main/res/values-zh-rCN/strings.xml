@@ -2131,12 +2131,6 @@ APatch：10700+</string>
     <string name="blockcheck_error_hosts_required">此协议需要主机列表</string>
     <string name="blockcheck_error_snapshot_load">无法加载当前活动配置</string>
 
-    <string name="enable_blocked_profile_overlap">启用被阻止：请禁用重叠的配置文件</string>
-    <string name="enable_blocked_profile_overlap_detail">无法启用程序“%2$s”的配置文件“%1$s” — 它与已启用的配置文件“%3$s”（程序“%4$s”）共享应用（%5$s）。请先禁用冲突的配置文件。</string>
-    <string name="profile_overlap_detail">程序 %1$s 的配置文件“%2$s”和“%3$s”共享应用（%4$s）。请先禁用其中一个。</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="other">%1$d 个应用</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">条目</string>
     <string name="nfqws2_items_empty">此配置中没有条目。请先从库中应用一个预设。</string>

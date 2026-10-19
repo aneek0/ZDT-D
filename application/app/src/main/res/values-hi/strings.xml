@@ -2132,13 +2132,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="blockcheck_error_hosts_required">इस प्रोटोकॉल के लिए होस्ट सूची आवश्यक है</string>
     <string name="blockcheck_error_snapshot_load">सक्रिय प्रोफ़ाइल कॉन्फ़िगरेशन लोड नहीं हो सका</string>
 
-    <string name="enable_blocked_profile_overlap">सक्षम करना अवरुद्ध: ओवरलैपिंग प्रोफ़ाइल अक्षम करें</string>
-    <string name="enable_blocked_profile_overlap_detail">प्रोग्राम “%2$s” की प्रोफ़ाइल “%1$s” सक्षम नहीं की जा सकती — उसका पहले से सक्षम प्रोफ़ाइल “%3$s” (प्रोग्राम “%4$s”) के साथ साझा ऐप्स हैं (%5$s)। पहले विरोधी प्रोफ़ाइल अक्षम करें।</string>
-    <string name="profile_overlap_detail">प्रोग्राम %1$s की प्रोफ़ाइल “%2$s” और “%3$s” में साझा ऐप्स हैं (%4$s)। पहले इनमें से एक को अक्षम करें।</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d ऐप</item>
-        <item quantity="other">%1$d ऐप्स</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">आइटम</string>
     <string name="nfqws2_items_empty">इस कॉन्फ़िग में कोई आइटम नहीं है। पहले लाइब्रेरी से एक प्रीसेट लागू करें।</string>

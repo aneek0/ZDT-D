@@ -2131,13 +2131,6 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="blockcheck_error_hosts_required">Bu protokol için ana bilgisayar listesi gerekli</string>
     <string name="blockcheck_error_snapshot_load">Aktif profil yapılandırması yüklenemedi</string>
 
-    <string name="enable_blocked_profile_overlap">Etkinleştirme engellendi: çakışan profilleri devre dışı bırakın</string>
-    <string name="enable_blocked_profile_overlap_detail">“%2$s” programındaki “%1$s” profili etkinleştirilemiyor — zaten etkin olan “%3$s” profili (“%4$s” programı) ile ortak uygulamalar paylaşıyor (%5$s). Önce çakışan profili devre dışı bırakın.</string>
-    <string name="profile_overlap_detail">%1$s programındaki “%2$s” ve “%3$s” profilleri ortak uygulamalar paylaşıyor (%4$s). Önce bunlardan birini devre dışı bırakın.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d uygulama</item>
-        <item quantity="other">%1$d uygulama</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Öğeler</string>
     <string name="nfqws2_items_empty">Bu yapılandırmada öğe yok. Önce kitaplıktan bir ön ayar uygulayın.</string>

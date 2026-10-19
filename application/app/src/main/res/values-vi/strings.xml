@@ -2131,12 +2131,6 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="blockcheck_error_hosts_required">Danh sách máy chủ là bắt buộc cho giao thức này</string>
     <string name="blockcheck_error_snapshot_load">Không thể tải cấu hình cấu hình hoạt động</string>
 
-    <string name="enable_blocked_profile_overlap">Bật bị chặn: hãy tắt các hồ sơ bị chồng lấn</string>
-    <string name="enable_blocked_profile_overlap_detail">Không thể bật hồ sơ “%1$s” của chương trình “%2$s” — nó dùng chung ứng dụng với hồ sơ đã bật “%3$s” của chương trình “%4$s” (%5$s). Hãy tắt hồ sơ xung đột trước.</string>
-    <string name="profile_overlap_detail">Hồ sơ “%2$s” và “%3$s” của chương trình %1$s dùng chung ứng dụng (%4$s). Hãy tắt một trong hai trước.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="other">%1$d ứng dụng</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Mục</string>
     <string name="nfqws2_items_empty">Không có mục nào trong cấu hình này. Hãy áp dụng preset từ thư viện trước.</string>

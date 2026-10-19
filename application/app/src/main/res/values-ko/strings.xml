@@ -2131,12 +2131,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="blockcheck_error_hosts_required">이 프로토콜에는 호스트 목록이 필요합니다</string>
     <string name="blockcheck_error_snapshot_load">활성 프로필 구성을 로드할 수 없습니다</string>
 
-    <string name="enable_blocked_profile_overlap">활성화 차단됨: 겹치는 프로필을 비활성화하세요</string>
-    <string name="enable_blocked_profile_overlap_detail">프로그램 “%2$s”의 프로필 “%1$s”을(를) 활성화할 수 없습니다 — 이미 활성화된 프로필 “%3$s”(프로그램 “%4$s”)와 공유 앱이 있습니다(%5$s). 먼저 충돌하는 프로필을 비활성화하세요.</string>
-    <string name="profile_overlap_detail">프로그램 %1$s의 프로필 “%2$s”과(와) “%3$s”에 공유 앱이 있습니다(%4$s). 먼저 둘 중 하나를 비활성화하세요.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="other">앱 %1$d개</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">항목</string>
     <string name="nfqws2_items_empty">이 구성에는 항목이 없습니다. 먼저 라이브러리에서 프리셋을 적용하세요.</string>

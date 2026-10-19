@@ -2131,12 +2131,6 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="blockcheck_error_hosts_required">Daftar host diperlukan untuk protokol ini</string>
     <string name="blockcheck_error_snapshot_load">Gagal memuat konfigurasi profil aktif</string>
 
-    <string name="enable_blocked_profile_overlap">Pengaktifan diblokir: nonaktifkan profil yang tumpang-tindih</string>
-    <string name="enable_blocked_profile_overlap_detail">Profil “%1$s” pada program “%2$s” tidak dapat diaktifkan — profil ini berbagi aplikasi dengan profil “%3$s” yang sudah aktif pada program “%4$s” (%5$s). Nonaktifkan dulu profil yang bertentangan.</string>
-    <string name="profile_overlap_detail">Profil “%2$s” dan “%3$s” pada program %1$s berbagi aplikasi yang sama (%4$s). Nonaktifkan salah satunya terlebih dahulu.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="other">%1$d aplikasi</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Item</string>
     <string name="nfqws2_items_empty">Tidak ada item di konfigurasi ini. Terapkan preset dari pustaka terlebih dahulu.</string>

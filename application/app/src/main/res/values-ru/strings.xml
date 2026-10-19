@@ -2173,15 +2173,6 @@ APatch: 10700+</string>
     <string name="blockcheck_error_hosts_required">Для этого протокола нужен список хостов</string>
     <string name="blockcheck_error_snapshot_load">Не удалось загрузить конфиг активного профиля</string>
     <string name="blockcheck_udp_targets_fmt">Цели: %1$s</string>
-    <string name="enable_blocked_profile_overlap">Включение заблокировано: отключите пересекающиеся профили</string>
-    <string name="enable_blocked_profile_overlap_detail">Нельзя включить профиль «%1$s» программы «%2$s»: у него есть общие приложения с уже включённым профилем «%3$s» программы «%4$s» (%5$s). Сначала отключите конфликтующий профиль.</string>
-    <string name="profile_overlap_detail">Профили «%2$s» и «%3$s» программы %1$s имеют общие приложения (%4$s). Сначала отключите один из них.</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="one">%1$d приложение</item>
-        <item quantity="few">%1$d приложения</item>
-        <item quantity="many">%1$d приложений</item>
-        <item quantity="other">%1$d приложения</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Элементы</string>
     <string name="nfqws2_items_empty">В этом конфиге нет элементов. Сначала примените пресет из библиотеки.</string>

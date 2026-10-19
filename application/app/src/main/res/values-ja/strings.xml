@@ -2131,12 +2131,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="blockcheck_error_hosts_required">このプロトコルにはホストリストが必要です</string>
     <string name="blockcheck_error_snapshot_load">アクティブなプロファイル設定を読み込めませんでした</string>
 
-    <string name="enable_blocked_profile_overlap">有効化はブロックされました：重複するプロファイルを無効にしてください</string>
-    <string name="enable_blocked_profile_overlap_detail">プログラム「%2$s」のプロファイル「%1$s」は有効にできません — 既に有効なプロファイル「%3$s」（プログラム「%4$s」）と共通のアプリがあります（%5$s）。先に競合するプロファイルを無効にしてください。</string>
-    <string name="profile_overlap_detail">プログラム %1$s のプロファイル「%2$s」と「%3$s」に共通のアプリがあります（%4$s）。先にどちらかを無効にしてください。</string>
-    <plurals name="profile_overlap_apps_count">
-        <item quantity="other">%1$d個のアプリ</item>
-    </plurals>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">アイテム</string>
     <string name="nfqws2_items_empty">この設定にはアイテムがありません。先にライブラリからプリセットを適用してください。</string>
