@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     panic::{self, AssertUnwindSafe},
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -240,8 +240,18 @@ pub fn start_full() -> Result<()> {
 // If none of these are running after startup, treat it as a failed start:
 // log an error and stop everything (return to OFF state).
 if !any_main_service_running() {
-    crate::logging::user_error("Ошибка запуска: проверьте настройки");
-    log::error!("startup sanity check failed: no main services are running after start");
+    // Two different user mistakes land here: nothing is enabled at all, or
+    // something is enabled but failed to come up. The fix differs, so say
+    // which one it is instead of a generic "check your settings".
+    if !crate::api::any_program_enabled() {
+        crate::logging::user_error(
+            "Ошибка запуска: не включён ни один профиль — включите нужную программу в приложении",
+        );
+        log::error!("startup sanity check failed: no program/profile is enabled");
+    } else {
+        crate::logging::user_error("Ошибка запуска: проверьте настройки");
+        log::error!("startup sanity check failed: no main services are running after start");
+    }
 
     // Persist enabled=false so reboot won't autostart a broken config.
     let mut st = settings::read_start_settings().unwrap_or_default();
@@ -328,111 +338,34 @@ if !any_main_service_running() {
     Ok(())
 }
 
-/// Validate that enabled profiles of mihomo and zapret (nfqws/nfqws2) do not
-/// share common applications. Overlap is allowed at assignment time but must
-/// be resolved before starting the service.
+/// The app-list rule, enforced once per start and applied to every program
+/// alike: two *different* enabled lists must never claim the same application.
+///
+/// Assigning an app to a second list stays free, so this cannot be enforced at
+/// assignment or enable time without rejecting legitimate setups. Reading the
+/// lists from disk here covers every way a start can happen — the app,
+/// autostart, the API, boot — including lists written by hand, and it runs
+/// before any program starts so nothing half-applies its routing.
+/// No program is named: the rule is over enabled lists, not program ids.
 fn validate_no_profile_app_overlap() -> Result<()> {
-    // Read enabled profiles for each program
-    let mihomo_enabled = read_enabled_profile_names(mihomo::active_path());
-    let nfqws2_enabled = read_enabled_profile_names(nfqws2::active_path());
-
-    // Check mihomo profile overlap
-    if mihomo_enabled.len() > 1 {
-        let mut apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for name in &mihomo_enabled {
-            let profile_dir = mihomo::profile_root(name);
-            let pkgs = read_app_packages(&profile_dir.join("app/uid/user_program"))?;
-            apps_by_profile.insert(name.clone(), pkgs);
-        }
-        let names: Vec<&String> = apps_by_profile.keys().collect();
-        for i in 0..names.len() {
-            for j in (i + 1)..names.len() {
-                let a = apps_by_profile.get(names[i]).unwrap();
-                let b = apps_by_profile.get(names[j]).unwrap();
-                let common: BTreeSet<_> = a.intersection(b).collect();
-                if !common.is_empty() {
-                    bail!(
-                        "mihomo profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
-                        names[i], names[j], common.len()
-                    );
-                }
-            }
-        }
+    let overlaps = crate::api::find_enabled_app_overlaps();
+    if let Some((left, right, count)) = overlaps.first() {
+        // User-visible: without this the app only sees a generic start failure
+        // and has no way to tell which two lists to fix.
+        crate::logging::user_error(&format!(
+            "Ошибка запуска: списки '{}' и '{}' содержат одинаковые приложения ({}) — отключите один из них",
+            left.label(),
+            right.label(),
+            count
+        ));
+        bail!(
+            "app lists '{}' and '{}' share {} app(s): disable one or remove overlap",
+            left.label(),
+            right.label(),
+            count
+        );
     }
-
-    // Check zapret (nfqws2) profile overlap
-    let mut zapret_apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for name in &nfqws2_enabled {
-        let profile_dir = nfqws2::profile_root(name);
-        let mut pkgs = BTreeSet::new();
-        for slot in &["user_program", "mobile_program", "wifi_program"] {
-            pkgs.extend(read_app_packages(&profile_dir.join(format!("app/uid/{slot}")))?);
-        }
-        zapret_apps_by_profile.insert(format!("nfqws2/{name}"), pkgs);
-    }
-    let zapret_names: Vec<&String> = zapret_apps_by_profile.keys().collect();
-    for i in 0..zapret_names.len() {
-        for j in (i + 1)..zapret_names.len() {
-            let a = zapret_apps_by_profile.get(zapret_names[i]).unwrap();
-            let b = zapret_apps_by_profile.get(zapret_names[j]).unwrap();
-            let common: BTreeSet<_> = a.intersection(b).collect();
-            if !common.is_empty() {
-                bail!(
-                    "zapret profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
-                    zapret_names[i], zapret_names[j], common.len()
-                );
-            }
-        }
-    }
-
     Ok(())
-}
-
-/// Read enabled profile names from a program's active.json.
-fn read_enabled_profile_names(active_path: std::path::PathBuf) -> Vec<String> {
-    let Ok(raw) = std::fs::read_to_string(&active_path) else {
-        return Vec::new();
-    };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return Vec::new();
-    };
-    v.get("profiles")
-        .and_then(|p| p.as_object())
-        .map(|m| {
-            m.iter()
-                .filter(|(_, st)| {
-                    st.get("enabled")
-                        .and_then(|x| x.as_bool())
-                        .unwrap_or(false)
-                })
-                .map(|(name, _)| name.clone())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Read package names from an app list file (one package per line).
-fn read_app_packages(path: &Path) -> Result<BTreeSet<String>> {
-    let mut out = BTreeSet::new();
-    let raw = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(_) => return Ok(out),
-    };
-    for line in raw.lines() {
-        let s = line.trim();
-        if s.is_empty() || s.starts_with('#') {
-            continue;
-        }
-        if let Some((left, _)) = s.split_once('#') {
-            let s = left.trim();
-            if !s.is_empty() {
-                out.insert(s.to_string());
-            }
-        } else {
-            out.insert(s.to_string());
-        }
-    }
-    Ok(out)
 }
 
 fn final_sync_runtime_settings_best_effort(context: &str) {
