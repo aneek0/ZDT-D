@@ -253,6 +253,23 @@ fun BlockcheckScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     )
+                    // Start sits in the FIRST card, above the (possibly very
+                    // long) host-chip list: scrolling past hundreds of chips to
+                    // reach the run button is unusable on a phone.
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Button(
+                            onClick = { startRun() },
+                            enabled = !state.isRunning && (selectedProtocol != "tcp_https" || !showCustom || customDomain.isNotBlank()),
+                        ) { Text(context.getString(R.string.blockcheck_start)) }
+                        if (state.isRunning || state.isFinished || state.isError) {
+                            OutlinedButton(onClick = { BlockcheckStore.reset() }) {
+                                Text(context.getString(R.string.blockcheck_reset))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -350,20 +367,6 @@ fun BlockcheckScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         )
-                    }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Button(
-                            onClick = { startRun() },
-                            enabled = !state.isRunning && (selectedProtocol != "tcp_https" || !showCustom || customDomain.isNotBlank()),
-                        ) { Text(context.getString(R.string.blockcheck_start)) }
-                        if (state.isRunning || state.isFinished || state.isError) {
-                            OutlinedButton(onClick = { BlockcheckStore.reset() }) {
-                                Text(context.getString(R.string.blockcheck_reset))
-                            }
-                        }
                     }
                 }
             }
