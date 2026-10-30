@@ -31,6 +31,11 @@ fun BlockcheckScreen(
     program: String,
     profile: String = "default",
     hostsFile: String,
+    // Profile names that actually exist for `program`, enabled first. The
+    // remembered profile can be stale (or the "default" placeholder, which is
+    // not a real nfqws2 profile directory), and scanning a missing profile
+    // fails with "Не удалось загрузить конфиг активного профиля".
+    availableProfiles: List<String> = emptyList(),
     onClose: () -> Unit,
     actions: ZdtdActions? = null,
     snackHost: SnackbarHostState? = null,
@@ -51,8 +56,17 @@ fun BlockcheckScreen(
     val entryProtocol = remember { resumed.protocol }
 
 
+    // A remembered profile may no longer exist (profiles renamed/deleted) and
+    // "default" is only a placeholder: fall back to a profile the daemon has.
+    fun resolveProfile(candidate: String): String {
+        if (availableProfiles.isEmpty()) return candidate
+        return candidate.takeIf { it in availableProfiles }
+            ?: availableProfiles.firstOrNull { it != "default" }
+            ?: candidate
+    }
+
     var selectedProgram by remember { mutableStateOf(resumed.program.ifBlank { program }) }
-    var selectedProfile by remember { mutableStateOf(resumed.profile.ifBlank { profile }) }
+    var selectedProfile by remember { mutableStateOf(resolveProfile(resumed.profile.ifBlank { profile })) }
     var selectedProtocol by remember { mutableStateOf(resumed.protocol) }
     var selectedMode by remember { mutableStateOf(resumed.mode) }
     var allStrategies by remember { mutableStateOf<List<String>>(resumed.allStrategies) }
@@ -73,7 +87,7 @@ fun BlockcheckScreen(
         // that finished while the user was on another tab.
         if (selectedProgram != entryProgram) {
             if (BlockcheckController.isActive) return@LaunchedEffect
-            selectedProfile = "default"
+            selectedProfile = resolveProfile("default")
         }
         hostFiles = runner.listHostFiles()
     }

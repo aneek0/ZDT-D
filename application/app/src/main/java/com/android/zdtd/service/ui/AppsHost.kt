@@ -226,6 +226,11 @@ fun AppsHost(
         program = r.program,
         profile = r.profile,
         hostsFile = "/data/adb/modules/ZDT-D/strategic/list/default.txt",
+        availableProfiles =
+          programs.firstOrNull { it.id == r.program }?.profiles
+            ?.sortedByDescending { it.enabled }
+            ?.map { it.name }
+            .orEmpty(),
         onClose = onOpenAnalysisTools,
         actions = actions,
         snackHost = snackHost,

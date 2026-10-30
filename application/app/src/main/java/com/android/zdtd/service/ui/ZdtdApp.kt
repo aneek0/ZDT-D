@@ -1099,6 +1099,7 @@ private fun MainShell(
   val internalOnOpenConstructionStudio: () -> Unit = { appsRoute = AppsRoute.ConstructionStudio }
   val internalOnOpenDpiDetector: () -> Unit = { appsRoute = AppsRoute.DpiDetector }
   val internalOnOpenProgram: (String) -> Unit = { appsRoute = AppsRoute.Program(it) }
+  val uiState by uiStateFlow.collectAsStateWithLifecycle()
   // Remember the most recent nfqws2 profile so blockcheck applies to the
   // same profile the user was configuring, instead of a hard-coded default.
   var lastStrategyProfile by rememberSaveable { mutableStateOf("nfqws2" to "default") }
@@ -1108,9 +1109,21 @@ private fun MainShell(
       lastStrategyProfile = r.programId to r.profile
     }
   }
+  // "default" is not a real nfqws2 profile directory (profiles are "1", "2",
+  // ...), so opening blockcheck without ever visiting a profile used to load
+  // a config path that does not exist. Fall back to the enabled profile.
+  val strategyProfile by remember(uiState.programs, lastStrategyProfile) {
+    val (program, profile) = lastStrategyProfile
+    val names = uiState.programs.firstOrNull { it.id == program }?.profiles.orEmpty()
+    val resolved = profile.takeIf { want -> names.any { it.name == want } }
+      ?: names.firstOrNull { it.enabled }?.name
+      ?: names.firstOrNull()?.name
+      ?: profile
+    mutableStateOf(program to resolved)
+  }
   val internalOnOpenProfile: (String, String) -> Unit = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) }
   val internalOnOpenBlockcheck: () -> Unit = {
-    val (p, pr) = lastStrategyProfile
+    val (p, pr) = strategyProfile
     appsRoute = AppsRoute.Blockcheck(p, pr)
   }
   // Notification tap reopens the live scan; also make sure the apps tab is
@@ -1122,8 +1135,8 @@ private fun MainShell(
     if (!running.isRunning) return@LaunchedEffect
     tab = Tab.APPS
     appsRoute = AppsRoute.Blockcheck(
-      running.program.ifBlank { lastStrategyProfile.first },
-      running.profile.ifBlank { lastStrategyProfile.second },
+      running.program.ifBlank { strategyProfile.first },
+      running.profile.ifBlank { strategyProfile.second },
     )
   }
   val internalOnOpenOptionalTools: () -> Unit = { appsRoute = AppsRoute.OptionalTools }
@@ -1209,7 +1222,6 @@ private fun MainShell(
   }
 
   val snackHost = remember { SnackbarHostState() }
-  val uiState by uiStateFlow.collectAsStateWithLifecycle()
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
   val christmasSeasonActive = rememberChristmasSeasonActive()

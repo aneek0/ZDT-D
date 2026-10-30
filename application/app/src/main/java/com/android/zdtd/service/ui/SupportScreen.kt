@@ -74,7 +74,7 @@ fun SupportScreen(topContentPadding: Dp = 0.dp) {
           titleRaw = "GitHub",
           titleRes = null,
           subtitleRes = R.string.support_link_github_subtitle,
-          url = "https://github.com/GAME-OVER-op/ZDT-D",
+          url = "https://github.com/aneek0/ZDT-D",
           icon = Icons.Filled.Code,
         )
       )
@@ -83,7 +83,7 @@ fun SupportScreen(topContentPadding: Dp = 0.dp) {
           titleRaw = null,
           titleRes = R.string.support_link_releases_title,
           subtitleRes = R.string.support_link_releases_subtitle,
-          url = "https://github.com/GAME-OVER-op/ZDT-D/releases",
+          url = "https://github.com/aneek0/ZDT-D/releases",
           icon = Icons.Filled.NewReleases,
         )
       )
