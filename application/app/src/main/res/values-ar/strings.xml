@@ -2134,8 +2134,6 @@ APatch: ‏10700+</string>
     <string name="blockcheck_error_no_strategies">لم يتم العثور على استراتيجيات لهذا البرنامج</string>
     <string name="blockcheck_error_config_not_found">ملف تكوين الاستراتيجية غير موجود</string>
     <string name="blockcheck_error_hosts_required">قائمة المضيفين مطلوبة لهذا البروتوكول</string>
-    <string name="blockcheck_error_snapshot_load">تعذر تحميل تكوين الملف النشط</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">العناصر</string>
     <string name="nfqws2_items_empty">لا توجد عناصر في هذا التكوين. طبّق ملفًا مسبقًا من المكتبة أولاً.</string>

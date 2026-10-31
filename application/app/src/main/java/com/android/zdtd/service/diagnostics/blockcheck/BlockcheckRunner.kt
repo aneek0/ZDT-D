@@ -100,7 +100,6 @@ class BlockcheckRunner(
         hostsFile: String?,
         protocol: String = "tcp_https",
         mode: String = "full",
-        configSnapshot: String? = null,
         // When true the tester drops history-confirmed strategies from the
         // batch (--skip-confirmed): a re-scan explores fresh candidates.
         skipConfirmed: Boolean = false,
@@ -114,13 +113,9 @@ class BlockcheckRunner(
         timeoutSecs: Int = 4,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
-        val snapshotFile = if (program == "nfqws2" && configSnapshot != null) {
-            File(context.cacheDir, "blockcheck-profile-${System.nanoTime()}.txt").apply { writeText(configSnapshot) }
-        } else null
         val args = buildList {
             add("auto")
             add("--program"); add(program)
-            if (snapshotFile != null) { add("--config"); add(snapshotFile.absolutePath) }
             if (protocol == "tcp_https" && hostsFile != null) {
                 add("--hosts"); add(hostsFile)
             }
@@ -142,7 +137,6 @@ class BlockcheckRunner(
                 .redirectErrorStream(true)
                 .start()
         } catch (e: Exception) {
-            snapshotFile?.delete()
             throw e
         }
 
@@ -297,7 +291,6 @@ class BlockcheckRunner(
             runCatching { writer.close() }
             confirmWriter = null
             process.destroy()
-            snapshotFile?.delete()
         }
 
         // Stub/missing binaries (0-byte APK asset) exit without emitting any JSON.

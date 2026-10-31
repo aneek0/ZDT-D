@@ -2171,7 +2171,6 @@ APatch: 10700+</string>
     <string name="blockcheck_error_no_strategies">Для этой программы не найдено стратегий</string>
     <string name="blockcheck_error_config_not_found">Файл конфига стратегии не найден</string>
     <string name="blockcheck_error_hosts_required">Для этого протокола нужен список хостов</string>
-    <string name="blockcheck_error_snapshot_load">Не удалось загрузить конфиг активного профиля</string>
     <string name="blockcheck_udp_targets_fmt">Цели: %1$s</string>
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Элементы</string>

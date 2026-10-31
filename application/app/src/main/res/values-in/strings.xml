@@ -2129,8 +2129,6 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="blockcheck_error_no_strategies">Tidak ada strategi yang ditemukan untuk program ini</string>
     <string name="blockcheck_error_config_not_found">Berkas konfigurasi strategi tidak ditemukan</string>
     <string name="blockcheck_error_hosts_required">Daftar host diperlukan untuk protokol ini</string>
-    <string name="blockcheck_error_snapshot_load">Gagal memuat konfigurasi profil aktif</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Item</string>
     <string name="nfqws2_items_empty">Tidak ada item di konfigurasi ini. Terapkan preset dari pustaka terlebih dahulu.</string>

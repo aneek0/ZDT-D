@@ -2129,8 +2129,6 @@ APatch：10700+</string>
     <string name="blockcheck_error_no_strategies">未找到此程序的策略</string>
     <string name="blockcheck_error_config_not_found">找不到策略配置文件</string>
     <string name="blockcheck_error_hosts_required">此协议需要主机列表</string>
-    <string name="blockcheck_error_snapshot_load">无法加载当前活动配置</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">条目</string>
     <string name="nfqws2_items_empty">此配置中没有条目。请先从库中应用一个预设。</string>

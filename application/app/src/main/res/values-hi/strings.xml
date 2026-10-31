@@ -2130,8 +2130,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="blockcheck_error_no_strategies">इस प्रोग्राम के लिए कोई रणनीति नहीं मिली</string>
     <string name="blockcheck_error_config_not_found">रणनीति कॉन्फ़िगरेशन फ़ाइल नहीं मिली</string>
     <string name="blockcheck_error_hosts_required">इस प्रोटोकॉल के लिए होस्ट सूची आवश्यक है</string>
-    <string name="blockcheck_error_snapshot_load">सक्रिय प्रोफ़ाइल कॉन्फ़िगरेशन लोड नहीं हो सका</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">आइटम</string>
     <string name="nfqws2_items_empty">इस कॉन्फ़िग में कोई आइटम नहीं है। पहले लाइब्रेरी से एक प्रीसेट लागू करें।</string>

@@ -2129,8 +2129,6 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="blockcheck_error_no_strategies">Không tìm thấy chiến lược nào cho chương trình này</string>
     <string name="blockcheck_error_config_not_found">Không tìm thấy tệp cấu hình chiến lược</string>
     <string name="blockcheck_error_hosts_required">Danh sách máy chủ là bắt buộc cho giao thức này</string>
-    <string name="blockcheck_error_snapshot_load">Không thể tải cấu hình cấu hình hoạt động</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Mục</string>
     <string name="nfqws2_items_empty">Không có mục nào trong cấu hình này. Hãy áp dụng preset từ thư viện trước.</string>

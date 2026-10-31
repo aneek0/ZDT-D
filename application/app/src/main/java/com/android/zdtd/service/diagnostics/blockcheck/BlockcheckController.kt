@@ -20,8 +20,6 @@ data class BlockcheckRequest(
     val targetKey: String,
     val allStrategies: List<String>,
     val strategyTitles: Map<String, String>,
-    /** Captured profile config; only used by nfqws2's exact-preset scan mode. */
-    val configSnapshot: String? = null,
     /** Drop history-confirmed strategies from the batch (re-scan explores fresh). */
     val skipConfirmed: Boolean = false,
 )
@@ -109,7 +107,6 @@ object BlockcheckController {
                     hostsFile = request.hostsFile,
                     protocol = request.protocol,
                     mode = request.mode,
-                    configSnapshot = request.configSnapshot,
                     skipConfirmed = request.skipConfirmed,
                     historyPath = BlockcheckHistory(appContext).path(),
                 ).collect { event -> apply(appContext, request, event) }

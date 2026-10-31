@@ -2129,8 +2129,6 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="blockcheck_error_no_strategies">Bu program için strateji bulunamadı</string>
     <string name="blockcheck_error_config_not_found">Strateji yapılandırma dosyası bulunamadı</string>
     <string name="blockcheck_error_hosts_required">Bu protokol için ana bilgisayar listesi gerekli</string>
-    <string name="blockcheck_error_snapshot_load">Aktif profil yapılandırması yüklenemedi</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Öğeler</string>
     <string name="nfqws2_items_empty">Bu yapılandırmada öğe yok. Önce kitaplıktan bir ön ayar uygulayın.</string>

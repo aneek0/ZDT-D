@@ -2130,8 +2130,6 @@ APatch: 10700+</string>
     <string name="blockcheck_error_no_strategies">هیچ استراتژی برای این برنامه پیدا نشد</string>
     <string name="blockcheck_error_config_not_found">فایل پیکربندی استراتژی یافت نشد</string>
     <string name="blockcheck_error_hosts_required">برای این پروتکل فهرست میزبان لازم است</string>
-    <string name="blockcheck_error_snapshot_load">بارگذاری پیکربندی پروفایل فعال ناموفق بود</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">موارد</string>
     <string name="nfqws2_items_empty">هیچ موردی در این پیکربندی نیست. ابتدا یک پیش‌تنظیم از کتابخانه را اعمال کنید.</string>

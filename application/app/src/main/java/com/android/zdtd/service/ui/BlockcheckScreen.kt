@@ -78,7 +78,8 @@ fun BlockcheckScreen(
     var showCustom by remember { mutableStateOf(false) }
     // Re-scan mode: drop history-confirmed strategies from the batch.
     var skipTested by remember { mutableStateOf(false) }
-
+    // nfqws2 always scans the shipped strategy catalog; the tester runs
+    // without --config, exactly like the reference (zapretgui) scan engine.
     val targetChanged = selectedProgram != entryProgram || selectedProtocol != entryProtocol
 
     LaunchedEffect(selectedProgram) {
@@ -133,25 +134,6 @@ fun BlockcheckScreen(
         }
         val targetKey = if (isTcp) hostInput?.let { File(it).name } ?: "" else selectedProtocol
         coroutineScope.launch {
-            val snapshot = if (selectedProgram == "nfqws2") {
-                val a = actions
-                if (a == null) null else suspendCancellableCoroutine<String?> { cont ->
-                    val path = "/api/programs/${selectedProgram}/profiles/${selectedProfile}/config"
-                    a.loadText(path) { value ->
-                        // A blank body means the daemon answered with an
-                        // error payload (HTTP 200 + ok:false) or the profile
-                        // has no config file: either way there is nothing to
-                        // scan, and an empty --config would make the tester
-                        // bail with a misleading all-confirmed message.
-                        val safe = value?.takeIf { it.isNotBlank() }
-                        if (cont.isActive) cont.resume(safe, onCancellation = {})
-                    }
-                }
-            } else null
-            if (selectedProgram == "nfqws2" && snapshot == null) {
-                snackHost?.showSnackbar(context.getString(R.string.blockcheck_error_snapshot_load))
-                return@launch
-            }
             BlockcheckController.start(
                 context,
                 BlockcheckRequest(
@@ -163,7 +145,6 @@ fun BlockcheckScreen(
                     targetKey = targetKey,
                     allStrategies = allStrategies,
                     strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
-                    configSnapshot = snapshot,
                     skipConfirmed = skipTested,
                 ),
             )
@@ -261,6 +242,7 @@ fun BlockcheckScreen(
                         FilterChip(selected = selectedMode == "standard", onClick = { selectedMode = "standard" }, label = { Text(context.getString(R.string.blockcheck_mode_standard)) })
                         FilterChip(selected = selectedMode == "full", onClick = { selectedMode = "full" }, label = { Text(context.getString(R.string.blockcheck_mode_full)) })
                         FilterChip(selected = skipTested, onClick = { skipTested = !skipTested }, label = { Text(context.getString(R.string.blockcheck_skip_tested)) })
+
                     }
                     Text(
                         context.getString(R.string.blockcheck_target_profile, selectedProgram, selectedProfile),

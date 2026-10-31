@@ -2132,8 +2132,6 @@ APatch: 10700+</string>
     <string name="blockcheck_error_no_strategies">Стратегій для цієї програми не знайдено</string>
     <string name="blockcheck_error_config_not_found">Файл конфігурації стратегії не знайдено</string>
     <string name="blockcheck_error_hosts_required">Для цього протоколу потрібен список хостів</string>
-    <string name="blockcheck_error_snapshot_load">Не вдалося завантажити конфігурацію активного профілю</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Елементи</string>
     <string name="nfqws2_items_empty">У цій конфігурації немає елементів. Спочатку застосуйте пресет із бібліотеки.</string>

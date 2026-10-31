@@ -2129,8 +2129,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="blockcheck_error_no_strategies">このプログラムの戦略が見つかりません</string>
     <string name="blockcheck_error_config_not_found">戦略設定ファイルが見つかりません</string>
     <string name="blockcheck_error_hosts_required">このプロトコルにはホストリストが必要です</string>
-    <string name="blockcheck_error_snapshot_load">アクティブなプロファイル設定を読み込めませんでした</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">アイテム</string>
     <string name="nfqws2_items_empty">この設定にはアイテムがありません。先にライブラリからプリセットを適用してください。</string>

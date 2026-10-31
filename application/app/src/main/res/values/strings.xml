@@ -2241,7 +2241,6 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_error_no_strategies">No strategies found for this program</string>
 <string name="blockcheck_error_config_not_found">Strategy config file not found</string>
 <string name="blockcheck_error_hosts_required">A host list is required for this protocol</string>
-<string name="blockcheck_error_snapshot_load">Could not load the active profile config</string>
 <string name="blockcheck_udp_targets_fmt">Targets: %1$s</string>
 <string name="blockcheck_skipped">Skipped</string>
 <string name="blockcheck_queued">Queued</string>

@@ -2130,8 +2130,6 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="blockcheck_error_no_strategies">Nenhuma estratégia encontrada para este programa</string>
     <string name="blockcheck_error_config_not_found">Arquivo de configuração de estratégia não encontrado</string>
     <string name="blockcheck_error_hosts_required">Uma lista de hosts é necessária para este protocolo</string>
-    <string name="blockcheck_error_snapshot_load">Falha ao carregar a configuração do perfil ativo</string>
-
     <!-- NFQWS2 per-item editor (config.txt items) -->
     <string name="nfqws2_items_tab">Itens</string>
     <string name="nfqws2_items_empty">Nenhum item nesta configuração. Aplique um preset da biblioteca primeiro.</string>
