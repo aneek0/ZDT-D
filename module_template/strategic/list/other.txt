@@ -1,5 +1,4 @@
 # Свои сайты: обход через пункт "Мои сайты" пресетов nfqws2
-aneeko.qzz.io
 lrclib.net
 # DoH-резолверы: тоже должны проходить через десинк (Firefox DoH ходит по 443)
 cloudflare-dns.com
