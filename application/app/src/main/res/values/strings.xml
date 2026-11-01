@@ -2226,6 +2226,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_skip_tested">Skip tested</string>
 <string name="blockcheck_stop_first">Stop on first hit</string>
 <string name="blockcheck_http2">HTTP/2 probe</string>
+<string name="blockcheck_browser_verify">Browser check</string>
+<string name="blockcheck_browser_ok">Browser: site opens</string>
+<string name="blockcheck_browser_fail">Browser: site does not open</string>
+<string name="blockcheck_browser_skip">Browser check skipped (no host)</string>
 <string name="blockcheck_phase_network">Checking internet…</string>
 <string name="blockcheck_phase_pass_control">Control check…</string>
 <string name="blockcheck_confirm_baseline_open">This connection has no DPI block right now — nothing is blocked without a bypass. The scan will still run, but results will be informational only and not saved to history. Continue?</string>

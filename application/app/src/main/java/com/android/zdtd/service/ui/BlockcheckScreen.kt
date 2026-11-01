@@ -538,6 +538,50 @@ fun BlockcheckScreen(
                                                 onClick = { applyStrategy(s) },
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                             ) { Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelSmall) }
+                                            var verifying by remember(s) { mutableStateOf(false) }
+                                            var browserOk by remember(s) { mutableStateOf<Boolean?>(null) }
+                                            TextButton(
+                                                enabled = !verifying,
+                                                onClick = {
+                                                    verifying = true
+                                                    coroutineScope.launch {
+                                                        // Real-browser check: apply first
+                                                        // (WebView rides the live engine), then
+                                                        // load the first scanned host headless.
+                                                        applyStrategy(s)
+                                                        val host = state.hosts.firstOrNull() ?: ""
+                                                        browserOk = if (host.isBlank()) {
+                                                            null
+                                                        } else {
+                                                            BlockcheckBrowserVerify.verify(context, host, s).ok
+                                                        }
+                                                        verifying = false
+                                                        snackHost?.showSnackbar(
+                                                            when (browserOk) {
+                                                                true -> context.getString(R.string.blockcheck_browser_ok)
+                                                                false -> context.getString(R.string.blockcheck_browser_fail)
+                                                                null -> context.getString(R.string.blockcheck_browser_skip)
+                                                            }
+                                                        )
+                                                    }
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                            ) {
+                                                if (verifying) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                                } else {
+                                                    Text(
+                                                        context.getString(
+                                                            when (browserOk) {
+                                                                true -> R.string.blockcheck_browser_ok
+                                                                false -> R.string.blockcheck_browser_fail
+                                                                else -> R.string.blockcheck_browser_verify
+                                                            }
+                                                        ),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                    )
+                                                }
+                                            }
                                         }
                                         if (status.isNotEmpty() && status != "queued" && status != "testing") {
                                             Spacer(Modifier.width(8.dp))

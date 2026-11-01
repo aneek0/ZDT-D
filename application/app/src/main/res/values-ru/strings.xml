@@ -2142,6 +2142,10 @@ APatch: 10700+</string>
     <string name="blockcheck_skip_tested">Пропустить проверенные</string>
     <string name="blockcheck_stop_first">Остановить на первой удачной</string>
     <string name="blockcheck_http2">Проба по HTTP/2</string>
+    <string name="blockcheck_browser_verify">Проверить в браузере</string>
+    <string name="blockcheck_browser_ok">Браузер: сайт открывается</string>
+    <string name="blockcheck_browser_fail">Браузер: сайт не открывается</string>
+    <string name="blockcheck_browser_skip">Проверка в браузере пропущена (нет хоста)</string>
     <string name="blockcheck_short_desc">Автоматически проверить стратегии обхода и выбрать лучшую</string>
     <string name="analysis_tools_badge_recommended">Рекомендуется</string>
     <string name="blockcheck_unstable">Нестабильно</string>
