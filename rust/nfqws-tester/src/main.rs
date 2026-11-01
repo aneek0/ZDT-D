@@ -101,7 +101,8 @@ fn entry() -> Result<()> {
             let _program = parse_named_value(&args[1..], "--program")?;
             let protocol = parse_named_value(&args[1..], "--protocol")?;
             let id = parse_named_value(&args[1..], "--id")?;
-            export_strategy(&protocol, &id)
+            let hosts = parse_named_value(&args[1..], "--hosts").ok().filter(|s| !s.is_empty());
+            export_strategy(&protocol, &id, hosts.as_deref())
         }
         "start" => {
             let options = parse_start_options(&args[1..])?;
@@ -132,6 +133,8 @@ fn entry() -> Result<()> {
             }
             let history_path = parse_named_value(&args[1..], "--history").ok();
             let skip_confirmed = args[1..].iter().any(|it| it == "--skip-confirmed");
+            let stop_on_first = args[1..].iter().any(|it| it == "--stop-on-first");
+            let http2 = args[1..].iter().any(|it| it == "--http2");
             let qnum = match parse_named_value(&args[1..], "--qnum") {
                 Ok(v) => v.parse::<u16>().context("invalid --qnum")?,
                 Err(_) => DEFAULT_QNUM,
@@ -148,6 +151,8 @@ fn entry() -> Result<()> {
                 mode,
                 history_path,
                 skip_confirmed,
+                stop_on_first,
+                http2,
                 qnum,
                 timeout_secs,
             };
@@ -265,9 +270,44 @@ fn list_catalog(protocol: &str) -> Result<()> {
     Ok(())
 }
 
+/// Blob names a strategy references, in stable order (builtin names are
+/// never declared by nfqws2 presets and are excluded).
+fn strategy_blob_names(
+    lines: &[String],
+    registry: &std::collections::HashMap<String, String>,
+) -> Result<Vec<String>> {
+    let plan = plan_blobs(lines, registry);
+    if !plan.unresolved.is_empty() {
+        bail!("unresolved blobs: {}", plan.unresolved.join(", "));
+    }
+    Ok(plan
+        .blob_lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("--blob=")?.split(':').next().map(str::to_string))
+        .collect())
+}
+
+/// One `--new` item body for a catalog strategy: the protocol filters
+/// optionally scoped to `hosts_list`, then the strategy lines. Blob
+/// declarations are NOT part of the item — nfqws2 keeps the blob table
+/// global, presets declare blobs in the preamble, and the daemon rejects
+/// unknown blob references; the caller checks the profile preamble first.
+fn catalog_item_lines(
+    protocol: &str,
+    entry: &CatalogEntry,
+    hosts_list: Option<&str>,
+) -> Vec<String> {
+    let mut out = catalog_filter_lines(protocol, hosts_list);
+    out.extend(entry.lines.iter().cloned());
+    out
+}
+
 /// Write one catalog entry as a preset the daemon can apply:
-/// no hostlist (the daemon injects the user's selection), full lua-init block.
-fn export_strategy(protocol: &str, id: &str) -> Result<()> {
+/// no hostlist unless `--hosts` was given (the daemon's legacy global apply
+/// injects the user's selection), full lua-init block. Also reports the
+/// strategy's blob names and a ready per-item body so the UI can add the
+/// scan result as a per-site profile item instead of a global injection.
+fn export_strategy(protocol: &str, id: &str, hosts_list: Option<&str>) -> Result<()> {
     let catalog = load_catalog(protocol)?;
     let entry = catalog
         .iter()
@@ -288,6 +328,8 @@ fn export_strategy(protocol: &str, id: &str) -> Result<()> {
         "name": entry.title,
         "file": name,
         "path": path.display().to_string(),
+        "blob_names": strategy_blob_names(&entry.lines, &registry)?,
+        "item_lines": catalog_item_lines(protocol, entry, hosts_list),
     }));
     Ok(())
 }
@@ -911,6 +953,20 @@ fn resolve_ip(host: &str) -> Option<String> {
     }
 }
 
+/// `--http2` for the whole run: set once in run_auto before any probe.
+static HTTP2_PROBE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Cached result of `curl --http2` capability check (HTTP/1.1-only builds
+/// reject the flag, so probe once, then reuse the answer).
+static HTTP2_OK: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    capture("curl --version 2>/dev/null | head -1")
+        .map(|v| v.contains("HTTP2"))
+        .unwrap_or(false)
+});
+
+fn curl_supports_http2() -> bool {
+    *HTTP2_OK
+}
+
 /// Returns (curl exit code, http status, location header, downloaded bytes).
 fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u32, String, u64)> {
     let url = format!("https://{host}/");
@@ -925,6 +981,12 @@ fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u
         "--max-time", &timeout_str,
         "--connect-timeout", &timeout_str,
     ];
+    // Browser-like ALPN: negotiate h2 on the same connection when curl (and
+    // its nghttp2) support it — DPI filters often treat h1 and h2 ClientHello
+    // differently, and real browsers speak h2.
+    if HTTP2_PROBE.load(std::sync::atomic::Ordering::Relaxed) && curl_supports_http2() {
+        args.push("--http2");
+    }
     if let Some(ct) = connect_to.as_deref() {
         // Pin to the pre-resolved IP (baseline reuse).
         args.extend(["--connect-to", ct, "-H", &host_header]);
@@ -1028,6 +1090,10 @@ const UDP_REPLY_TIMEOUT_MS: u64 = 1200;
 const FAILED_MEMORY_SECONDS: u64 = 14 * 24 * 3600;
 const FREEZE_MIN_BYTES: u64 = 14_000;
 const FREEZE_MAX_BYTES: u64 = 24_000;
+/// Minimum body a 2xx answer must carry to count as a real page (zapret22
+/// подбор: «работает» = сайт загрузился, а не просто ответил). Block/fake
+/// stubs answer 200 with an empty or tiny body; real site roots do not.
+const MIN_OK_BYTES: u64 = 128;
 const LUA_INIT_ZAPRET: &str = "--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-lib.lua";
 
 /// Directory of the strategy scan catalogs shipped with the module.
@@ -1076,6 +1142,11 @@ struct AutoOptions {
     // When set, strategies confirmed by history are excluded from the batch
     // instead of being scanned first: a re-scan explores fresh candidates.
     skip_confirmed: bool,
+    // Zapret22-style scan: stop on the first confirmed strategy, then probe
+    // its catalog neighbors (same-technique variants) before finishing.
+    stop_on_first: bool,
+    // Probe over HTTP/2 when the curl build supports it (browser-like ALPN).
+    http2: bool,
     qnum: u16,
     timeout_secs: u64,
 }
@@ -1108,6 +1179,12 @@ fn classify_https(rc: i32, http_code: u32, size_bytes: u64) -> ProbeVerdict {
     if rc == 0 {
         if http_code == 400 {
             return ProbeVerdict::Blocked("http_400");
+        }
+        // 200 with no body: a stub page, not a loaded site (zapret22 v22:
+        // a strategy works only when enough data actually passed through).
+        // 3xx carry no body by design; 204 is a legitimate empty answer.
+        if http_code >= 200 && http_code < 300 && http_code != 204 && size_bytes < MIN_OK_BYTES {
+            return ProbeVerdict::Blocked("empty_body");
         }
         if http_code > 0 {
             return ProbeVerdict::Ok;
@@ -1396,6 +1473,12 @@ impl Candidate {
     fn is_pass(&self) -> bool {
         is_pass_techniques(&self.techniques)
     }
+    /// Zapret22 "neighbors": catalog variants of the same desync technique
+    /// (fakemultisplit_* next to fakemultisplit_*, etc.).
+    fn shares_technique(&self, other: &Candidate) -> bool {
+        !self.techniques.is_disjoint(&other.techniques)
+    }
+
 
     /// Config file to spawn the engine with.
     fn config_path(&self, program: &str) -> std::path::PathBuf {
@@ -1955,6 +2038,8 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     let target_key = auto_target_key(opts);
     let history = load_history(opts.history_path.as_deref(), program, &opts.protocol, &target_key);
     let now = now_unix_ms() / 1000;
+    // One process-level decision: probe over h2 when asked and curl can.
+    HTTP2_PROBE.store(opts.http2, std::sync::atomic::Ordering::Relaxed);
 
     // A module without the scan catalogs (older install, failed copy) must not
     // abort the run: fall back to scanning the shipped presets.
@@ -1986,14 +2071,20 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     } else {
         order_candidates(&candidates, &history.confirmed, &history.failed, now, opts.skip_confirmed)
     };
+    let full = ordered.clone();
     let strategies = batch_for_mode(ordered, &opts.mode);
+    // Zapret22 stop-on-first: the batch is scanned in order; the first
+    // confirmed strategy ends the main loop and its untested same-technique
+    // neighbors get appended as a short follow-up batch.
+    let stop_on_first = opts.stop_on_first && !config_mode;
+    let mut remaining: Vec<Candidate> = Vec::new();
     if strategies.is_empty() {
         if config_mode {
             bail!("the active profile config carries no --lua-desync strategies (empty or failed to load)");
         }
         bail!("every candidate strategy is already confirmed for this target; nothing new to test");
     }
-    let total = strategies.len();
+    let mut total = strategies.len();
     let total_targets = targets.len();
 
     emit_event(&json!({
@@ -2439,6 +2530,128 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "ts": now_unix_ms(),
         }));
 
+        match verdict {
+            "works" => working.push(strategy.clone()),
+            _ => failed.push(strategy.clone()),
+        }
+
+        // Zapret22 stop-on-first: a confirmed strategy ends the main batch.
+        // Its untested same-technique neighbors become the follow-up batch so
+        // the user gets a couple of alternatives instead of a full grind;
+        // everything else stays unscanned (remembered as neither).
+        if stop_on_first && verdict == "works" {
+            let tested: std::collections::BTreeSet<&str> =
+                working.iter().chain(failed.iter()).map(String::as_str).collect();
+            remaining = full
+                .iter()
+                .filter(|c| !tested.contains(c.name.as_str()) && c.shares_technique(candidate))
+                .cloned()
+                .collect();
+            emit_event(&json!({
+                "type": "auto_stop_on_first",
+                "strategy": strategy,
+                "neighbors": remaining.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
+                "ts": now_unix_ms(),
+            }));
+            total = tested.len() + remaining.len();
+            break;
+        }
+    }
+
+    // Follow-up: scan the neighbors of the first confirmed strategy.
+    for candidate in &remaining {
+        if shutdown_requested() {
+            interrupted = true;
+            break;
+        }
+        let strategy = candidate.name.clone();
+        let title = candidate.title.clone();
+        let config_path = candidate.config_path(program);
+        if !config_path.is_file() {
+            continue;
+        }
+        emit_event(&json!({
+            "type": "auto_strategy_start",
+            "strategy": strategy,
+            "title": title,
+            "index": 0,
+            "total": remaining.len(),
+            "neighbor": true,
+            "ts": now_unix_ms(),
+        }));
+        let raw = fs::read_to_string(&config_path)
+            .with_context(|| format!("read {}", config_path.display()))?;
+        let config_args = normalize_config_args(&raw);
+        let filter = nfqueue_port_filter(&raw, &opts.protocol);
+        let bin = program_bin(program);
+        if !bin.is_file() {
+            break;
+        }
+        let mut per_target: Vec<(String, u32)> = Vec::new();
+        let mut confirm_times: Vec<u64> = Vec::new();
+        let mut crashed_out = false;
+        let spawned = spawn_program(program, &bin, config_path.parent().unwrap_or(Path::new("/")), opts.qnum, &config_args)
+            .ok()
+            .and_then(|mut child| match apply_nfqueue_rules(opts.qnum, &filter) {
+                Ok(()) => Some(child),
+                Err(_) => {
+                    stop_child(&mut child);
+                    let _ = cleanup_test_rules();
+                    None
+                }
+            });
+        match spawned {
+            Some(mut child) => {
+                thread::sleep(Duration::from_millis(500));
+                for target in &targets {
+                    let mut ok = 0u32;
+                    for attempt in 1..=CONFIRM_ATTEMPTS {
+                        if shutdown_requested() { break; }
+                        let ip = resolved_ips.get(&target.key).cloned().flatten();
+                        let outcome = probe_target(target, ip.as_ref(), opts.timeout_secs);
+                        emit_probe_event(&strategy, target, &outcome, attempt, ok);
+                        if outcome.verdict == ProbeVerdict::Ok { ok += 1; }
+                    }
+                    per_target.push((target.key.clone(), ok));
+                    if ok == CONFIRM_ATTEMPTS {
+                        confirm_times.push(0);
+                    }
+                }
+                stop_child(&mut child);
+                let _ = cleanup_test_rules();
+            }
+            None => {
+                crashed_out = true;
+                let _ = cleanup_test_rules();
+            }
+        }
+        if crashed_out {
+            failed.push(strategy.clone());
+            continue;
+        }
+        let confirmed_open = per_target.iter().filter(|(_, ok)| *ok == CONFIRM_ATTEMPTS).count() as u32;
+        let verdict = if confirmed_open == blocked_keys.len() as u32 && !blocked_keys.is_empty() {
+            "works"
+        } else if per_target.iter().any(|(_, ok)| *ok > 0) {
+            "unstable"
+        } else {
+            "failed"
+        };
+        emit_event(&json!({
+            "type": "auto_strategy_result",
+            "strategy": strategy,
+            "title": title,
+            "verdict": verdict,
+            "hosts_total": total_targets as u32,
+            "baseline_blocked": blocked_keys.len() as u32,
+            "hosts_opened": confirmed_open,
+            "hosts_unstable": per_target.iter().filter(|(_, ok)| *ok > 0 && *ok < CONFIRM_ATTEMPTS).count() as u32,
+            "hosts_still_blocked": per_target.iter().filter(|(_, ok)| *ok == 0).count() as u32,
+            "attempts_ok": per_target.iter().map(|(_, ok)| *ok).min().unwrap_or(0),
+            "attempts_total": CONFIRM_ATTEMPTS,
+            "neighbor": true,
+            "ts": now_unix_ms(),
+        }));
         match verdict {
             "works" => working.push(strategy.clone()),
             _ => failed.push(strategy.clone()),
