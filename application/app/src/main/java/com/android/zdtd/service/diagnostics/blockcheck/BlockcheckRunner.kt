@@ -14,6 +14,18 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 
+/**
+ * A catalog strategy exported by the tester: the preset file name (module
+ * strategicvar dir) plus what the UI needs to apply it as a per-site item.
+ */
+data class ExportedStrategy(
+    val file: String,
+    /** Blob names the strategy references; must exist in the profile preamble. */
+    val blobNames: List<String>,
+    /** Ready `--new` item body: filters (+ hostlist when exported with one) and strategy lines. */
+    val itemLines: List<String>,
+)
+
 class BlockcheckRunner(
     private val context: Context,
 ) {
@@ -82,17 +94,67 @@ class BlockcheckRunner(
      * Turn a catalog strategy into a preset file the daemon can apply, and
      * return that file's name (module strategicvar dir). Null on failure.
      */
-    suspend fun exportStrategy(program: String, protocol: String, id: String): String? = withContext(Dispatchers.IO) {
+    suspend fun exportStrategy(
+        program: String,
+        protocol: String,
+        id: String,
+        hostsFile: String? = null,
+    ): ExportedStrategy? = withContext(Dispatchers.IO) {
         runCatching {
             val binary = NfqwsTesterBinary(context).ensureInstalled()
-            val cmd = buildShellCommand(
-                binary.absolutePath,
-                listOf("export", "--program", program, "--protocol", protocol, "--id", id),
-            )
+            val args = buildList {
+                add("export"); add("--program"); add(program)
+                add("--protocol"); add(protocol); add("--id"); add(id)
+                if (hostsFile != null) {
+                    add("--hosts"); add(hostsFile)
+                }
+            }
+            val cmd = buildShellCommand(binary.absolutePath, args)
             val json = runCatching { JSONObject(runRoot(cmd)) }.getOrNull() ?: return@runCatching null
-            json.optString("file", "").ifBlank { null }
+            val file = json.optString("file", "").ifBlank { null } ?: return@runCatching null
+            ExportedStrategy(
+                file = file,
+                blobNames = json.optJSONArray("blob_names")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i -> arr.optString(i).ifBlank { null } }
+                } ?: emptyList(),
+                itemLines = json.optJSONArray("item_lines")?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i -> arr.optString(i).ifBlank { null } }
+                } ?: emptyList(),
+            )
         }.getOrNull()
     }
+
+    /**
+     * Persist a single-domain scan target as a module hostlist file and
+     * return its absolute path. The per-site item keeps referencing this
+     * file after the scan, so a cache temp file would not do.
+     */
+    suspend fun ensureDomainList(domain: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val safe = domain.trim().replace(Regex("[^A-Za-z0-9._-]"), "_")
+            if (safe.isEmpty()) return@runCatching null
+            val path = "$LIST_DIR/blockcheck_$safe.txt"
+            val q = "'" + domain.trim().replace("'", "'\\''") + "'"
+            val out = runRoot("printf '%s\\n' $q > '$path' 2>&1 && echo OK")
+            if (out.contains("OK")) path else null
+        }.getOrNull()
+    }
+
+    /**
+     * Whether the profile's working config declares all `blobNames` in its
+     * preamble. nfqws2 keeps the blob table global and the daemon's item
+     * editor cannot add preamble lines, so a strategy whose blobs are
+     * missing must not be applied as an item (nfqws2 would refuse to start).
+     */
+    suspend fun profileHasBlobs(profile: String, blobNames: List<String>): Boolean =
+        withContext(Dispatchers.IO) {
+            if (blobNames.isEmpty()) return@withContext true
+            runCatching {
+                val cfg = "$WORKING_DIR/nfqws2/$profile/config/config.txt"
+                val text = runRoot("sed '/^--new/q' '${cfg.replace("'", "'\\''")}' 2>/dev/null")
+                blobNames.all { name -> text.contains("--blob=$name:") }
+            }.getOrDefault(false)
+        }
 
     fun run(
         program: String,
@@ -103,6 +165,11 @@ class BlockcheckRunner(
         // When true the tester drops history-confirmed strategies from the
         // batch (--skip-confirmed): a re-scan explores fresh candidates.
         skipConfirmed: Boolean = false,
+        // Zapret22-style scan: stop at the first confirmed strategy and probe
+        // its same-technique neighbors (--stop-on-first).
+        stopOnFirst: Boolean = false,
+        // Probe over HTTP/2 when the device curl supports it (--http2).
+        http2: Boolean = false,
         // History file (app filesDir) the tester reads to order candidates.
         historyPath: String? = null,
         // Dedicated tester queue: the daemon's nfqws/nfqws2 profiles own 200
@@ -125,6 +192,8 @@ class BlockcheckRunner(
                 add("--history"); add(historyPath)
             }
             if (skipConfirmed) add("--skip-confirmed")
+            if (stopOnFirst) add("--stop-on-first")
+            if (http2) add("--http2")
             add("--qnum"); add(qnum.toString())
             add("--timeout"); add(timeoutSecs.toString())
         }
@@ -328,6 +397,8 @@ class BlockcheckRunner(
 
     companion object {
         private const val TAG = "BlockcheckRunner"
+        private const val LIST_DIR = "/data/adb/modules/ZDT-D/strategic/list"
+        private const val WORKING_DIR = "/data/adb/modules/ZDT-D/working_folder"
 
         suspend fun runRoot(cmd: String): String = withContext(Dispatchers.IO) {
             val process = ProcessBuilder("su")

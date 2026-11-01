@@ -78,6 +78,11 @@ fun BlockcheckScreen(
     var showCustom by remember { mutableStateOf(false) }
     // Re-scan mode: drop history-confirmed strategies from the batch.
     var skipTested by remember { mutableStateOf(false) }
+    // Zapret22-style scan knobs (opt-in; a full ranked batch stays the
+    // default): stop on the first confirmed strategy (its neighbors get
+    // probed, the rest stays fresh), browser-like HTTP/2 probe.
+    var stopFirst by remember { mutableStateOf(false) }
+    var http2 by remember { mutableStateOf(false) }
     // nfqws2 always scans the shipped strategy catalog; the tester runs
     // without --config, exactly like the reference (zapretgui) scan engine.
     val targetChanged = selectedProgram != entryProgram || selectedProtocol != entryProtocol
@@ -146,6 +151,8 @@ fun BlockcheckScreen(
                     allStrategies = allStrategies,
                     strategyTitles = catalogStrategies.associate { c -> c.id to c.name },
                     skipConfirmed = skipTested,
+                    stopOnFirst = stopFirst,
+                    http2 = http2,
                 ),
             )
         }
@@ -161,27 +168,82 @@ fun BlockcheckScreen(
             ?: catalogStrategies.firstOrNull { it.id == id }?.name
             ?: id
 
+    // Idempotent per-site apply on the existing daemon item API: find the
+    // item already bound to this hostlist and swap its strategy, or append a
+    // new item named after the site. Falls back to the global apply when the
+    // profile preamble is missing a blob the strategy needs (the daemon
+    // cannot add preamble blobs through the item editor).
+    suspend fun applyAsSiteItem(
+        a: ZdtdActions,
+        exported: ExportedStrategy,
+        hostsPath: String,
+    ): Boolean {
+        val profile = selectedProfile
+        val items = suspendCancellableCoroutine<List<com.android.zdtd.service.MainViewModel.Nfqws2Item>?> { cont ->
+            a.listNfqws2Items(profile) { cont.resume(it) }
+        } ?: return false
+        val listName = File(hostsPath).name
+        val existing = items.firstOrNull { item ->
+            item.lists.any { it.value == hostsPath || it.value == listName }
+        }
+        return if (existing != null) {
+            suspendCancellableCoroutine { cont ->
+                a.setNfqws2ItemStrategy(profile, existing.index, exported.itemLines, false) { cont.resume(it) }
+            }
+        } else {
+            val template = buildList {
+                // Zapret22 names the created profile after the site.
+                val siteName = File(hostsPath).name
+                    .removeSuffix(".txt").removePrefix("blockcheck_")
+                add("--name=$siteName")
+                addAll(exported.itemLines)
+            }
+            suspendCancellableCoroutine { cont ->
+                a.appendNfqws2Item(profile, template, null) { cont.resume(it) }
+            }
+        }
+    }
+
+    // Apply a scan result. For nfqws2 catalog strategies this creates or
+    // updates a per-site item in the active profile (zapret22 semantics:
+    // "Применить" builds a profile for this site; re-apply updates it, no
+    // copies). Other programs and preset-file candidates keep the global
+    // strategicvar apply.
     fun applyStrategy(strategy: String) {
         val a = actions ?: return
         coroutineScope.launch {
-            // Catalog runs: the scanned candidate is an atomic strategy id, not
-            // a preset file. Export it into the module's strategicvar dir first
-            // so the daemon can resolve it by name.
-            val fileName = if (catalogStrategies.any { it.id == strategy }) {
-                runner.exportStrategy(selectedProgram, selectedProtocol, strategy)
-            } else {
-                strategy
+            val isCatalog = catalogStrategies.any { it.id == strategy }
+            // Custom-domain scans run against a cache temp file; a per-site
+            // item must reference a persistent module list, so persist the
+            // domain first and apply against that file.
+            val customTarget =
+                showCustom && customDomain.isNotBlank() && selectedProtocol == "tcp_https"
+            var hostsPath =
+                if (selectedProtocol == "tcp_https") selectedHostFile else null
+            if (customTarget) {
+                hostsPath = runner.ensureDomainList(customDomain)
             }
-            if (fileName == null) {
+            val exported = if (isCatalog) {
+                runner.exportStrategy(selectedProgram, selectedProtocol, strategy, hostsPath)
+            } else {
+                null
+            }
+            if (isCatalog && exported == null) {
                 snackHost?.showSnackbar(context.getString(R.string.common_apply_failed))
                 return@launch
             }
-            // No hostlists passed: the daemon reuses the hostlists already
-            // selected on this profile's config, so applying from blockcheck
-            // keeps them intact.
-            val ok = suspendCancellableCoroutine<Boolean> { cont ->
-                a.applyStrategicVariant(selectedProgram, selectedProfile, fileName) { ok ->
-                    if (cont.isActive) cont.resumeWith(Result.success(ok))
+            val blobsOk = exported != null &&
+                runner.profileHasBlobs(selectedProfile, exported.blobNames)
+            val perItem = isCatalog && exported != null && blobsOk &&
+                selectedProgram == "nfqws2" && hostsPath != null
+            val ok = if (perItem && exported != null && hostsPath != null) {
+                applyAsSiteItem(a, exported, hostsPath)
+            } else {
+                val fileName = exported?.file ?: strategy
+                suspendCancellableCoroutine<Boolean> { cont ->
+                    a.applyStrategicVariant(selectedProgram, selectedProfile, fileName) { ok ->
+                        if (cont.isActive) cont.resumeWith(Result.success(ok))
+                    }
                 }
             }
             snackHost?.showSnackbar(
@@ -190,6 +252,7 @@ fun BlockcheckScreen(
             )
         }
     }
+
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -242,7 +305,8 @@ fun BlockcheckScreen(
                         FilterChip(selected = selectedMode == "standard", onClick = { selectedMode = "standard" }, label = { Text(context.getString(R.string.blockcheck_mode_standard)) })
                         FilterChip(selected = selectedMode == "full", onClick = { selectedMode = "full" }, label = { Text(context.getString(R.string.blockcheck_mode_full)) })
                         FilterChip(selected = skipTested, onClick = { skipTested = !skipTested }, label = { Text(context.getString(R.string.blockcheck_skip_tested)) })
-
+                        FilterChip(selected = stopFirst, onClick = { stopFirst = !stopFirst }, label = { Text(context.getString(R.string.blockcheck_stop_first)) })
+                        FilterChip(selected = http2, onClick = { http2 = !http2 }, label = { Text(context.getString(R.string.blockcheck_http2)) })
                     }
                     Text(
                         context.getString(R.string.blockcheck_target_profile, selectedProgram, selectedProfile),

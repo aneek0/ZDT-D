@@ -22,6 +22,10 @@ data class BlockcheckRequest(
     val strategyTitles: Map<String, String>,
     /** Drop history-confirmed strategies from the batch (re-scan explores fresh). */
     val skipConfirmed: Boolean = false,
+    /** Zapret22-style scan: stop on the first confirmed strategy and probe its neighbors. */
+    val stopOnFirst: Boolean = false,
+    /** Probe over HTTP/2 when the device curl supports it. */
+    val http2: Boolean = false,
 )
 
 /**
@@ -108,6 +112,8 @@ object BlockcheckController {
                     protocol = request.protocol,
                     mode = request.mode,
                     skipConfirmed = request.skipConfirmed,
+                    stopOnFirst = request.stopOnFirst,
+                    http2 = request.http2,
                     historyPath = BlockcheckHistory(appContext).path(),
                 ).collect { event -> apply(appContext, request, event) }
             } finally {

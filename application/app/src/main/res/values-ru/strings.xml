@@ -2140,6 +2140,8 @@ APatch: 10700+</string>
     <string name="blockcheck_failed_count_fmt">Не работает (%1$d)</string>
     <string name="blockcheck_title">Подбор стратегии</string>
     <string name="blockcheck_skip_tested">Пропустить проверенные</string>
+    <string name="blockcheck_stop_first">Остановить на первой удачной</string>
+    <string name="blockcheck_http2">Проба по HTTP/2</string>
     <string name="blockcheck_short_desc">Автоматически проверить стратегии обхода и выбрать лучшую</string>
     <string name="analysis_tools_badge_recommended">Рекомендуется</string>
     <string name="blockcheck_unstable">Нестабильно</string>
