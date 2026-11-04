@@ -1083,6 +1083,11 @@ fn emit_event(event: &serde_json::Value) {
 // ---------------------------------------------------------------------------
 
 const CONFIRM_ATTEMPTS: u32 = 3;
+/// zapretgui forgives one silent miss (timeout / unreachable) after the
+/// strategy has already opened the target: a single packet loss must not
+/// turn a working strategy into "unstable".
+const SILENT_FAILURES_ALLOWED: u32 = 1;
+const MAX_ATTEMPTS: u32 = CONFIRM_ATTEMPTS + SILENT_FAILURES_ALLOWED;
 const CRASH_RETRIES: u32 = 2;
 const NETWORK_WAIT_SECONDS: u64 = 30;
 const UDP_ATTEMPTS: u32 = 2;
@@ -1202,6 +1207,26 @@ fn classify_https(rc: i32, http_code: u32, size_bytes: u64) -> ProbeVerdict {
         7 => ProbeVerdict::Unreachable("connect_failed"),
         _ => ProbeVerdict::Blocked("reset"),
     }
+}
+
+/// Whether enough fresh-connection probes were made for a verdict.
+/// Mirrors zapretgui: the first failure ends the strategy, then it takes
+/// three successes, one explicit DPI failure stops, and two silent misses
+/// stop the confirmation.
+fn confirm_attempts_done(
+    ok_count: u32,
+    attempts: u32,
+    silent_failures: u32,
+    explicit_failure: bool,
+) -> bool {
+    explicit_failure ||
+        ok_count >= CONFIRM_ATTEMPTS ||
+        silent_failures > SILENT_FAILURES_ALLOWED ||
+        attempts >= MAX_ATTEMPTS
+}
+
+fn is_silent_failure(verdict: &ProbeVerdict) -> bool {
+    matches!(verdict, ProbeVerdict::Blocked("timeout") | ProbeVerdict::Unreachable(_))
 }
 
 // --- UDP probes -------------------------------------------------------------
@@ -2315,7 +2340,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
 
         let mut crash_retries: u32 = 0;
         let mut network_recovered = false;
-        let mut per_target: Vec<(String, u32)> = Vec::new(); // (target key, ok attempts)
+        let mut per_target: Vec<(String, u32, u32)> = Vec::new(); // (target key, ok attempts, attempts)
         let mut confirm_times: Vec<u64> = Vec::new();
         let mut crashed_out: bool;
 
@@ -2392,33 +2417,38 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                 let ip = resolved_ips.get(&target.key).cloned().flatten();
                 let first = probe_target(target, ip.as_ref(), opts.timeout_secs);
                 let mut ok_count: u32 = if first.verdict == ProbeVerdict::Ok { 1 } else { 0 };
+                let mut attempts: u32 = 1;
+                let mut silent_failures: u32 = 0;
+                let mut explicit_failure = false;
                 emit_probe_event(&strategy, target, &first, 1, ok_count);
                 if matches!(first.verdict, ProbeVerdict::Blocked(_)) {
                     all_unreachable = false;
                 }
                 if first.verdict == ProbeVerdict::Ok {
                     confirm_times.push(first.time_ms);
-                    // Confirm on fresh connections: 2 more probes, stop at the
-                    // first failure (zapretgui CONFIRM_ATTEMPTS).
-                    for attempt in 2..=CONFIRM_ATTEMPTS {
+                    // Confirm on fresh connections. After the first success one
+                    // silent miss is retried; an explicit DPI failure stops.
+                    while !confirm_attempts_done(ok_count, attempts, silent_failures, explicit_failure) {
                         if matches!(child.try_wait(), Ok(Some(_))) {
                             break;
                         }
+                        attempts += 1;
                         let extra = probe_target(target, ip.as_ref(), opts.timeout_secs);
                         if extra.verdict == ProbeVerdict::Ok {
                             ok_count += 1;
                             confirm_times.push(extra.time_ms);
+                        } else if is_silent_failure(&extra.verdict) {
+                            silent_failures += 1;
+                        } else {
+                            explicit_failure = true;
                         }
                         if matches!(extra.verdict, ProbeVerdict::Blocked(_)) {
                             all_unreachable = false;
                         }
-                        emit_probe_event(&strategy, target, &extra, attempt, ok_count);
-                        if extra.verdict != ProbeVerdict::Ok {
-                            break;
-                        }
+                        emit_probe_event(&strategy, target, &extra, attempts, ok_count);
                     }
                 }
-                per_target.push((target.key.clone(), ok_count));
+                per_target.push((target.key.clone(), ok_count, attempts));
             }
 
             stop_child(&mut child);
@@ -2470,8 +2500,8 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
 
         // Per-target results over baseline-blocked targets: 3/3 = confirmed
         // open, 1-2 = unstable, 0 = still blocked.
-        let confirmed_open = per_target.iter().filter(|(_, ok)| *ok == CONFIRM_ATTEMPTS).count() as u32;
-        let opened_any = per_target.iter().filter(|(_, ok)| *ok > 0).count() as u32;
+        let confirmed_open = per_target.iter().filter(|(_, ok, _)| *ok == CONFIRM_ATTEMPTS).count() as u32;
+        let opened_any = per_target.iter().filter(|(_, ok, _)| *ok > 0).count() as u32;
         let baseline_blocked_total = blocked_keys.len() as u32;
         let opened_pct: f64 = if baseline_blocked_total > 0 {
             opened_any as f64 / baseline_blocked_total as f64 * 100.0
@@ -2519,10 +2549,10 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "hosts_total": total_targets as u32,
             "baseline_blocked": baseline_blocked_total,
             "hosts_opened": confirmed_open,
-            "hosts_unstable": per_target.iter().filter(|(_, ok)| *ok > 0 && *ok < CONFIRM_ATTEMPTS).count() as u32,
-            "hosts_still_blocked": per_target.iter().filter(|(_, ok)| *ok == 0).count() as u32,
-            "attempts_ok": per_target.iter().map(|(_, ok)| *ok).min().unwrap_or(0),
-            "attempts_total": CONFIRM_ATTEMPTS,
+            "hosts_unstable": per_target.iter().filter(|(_, ok, _)| *ok > 0 && *ok < CONFIRM_ATTEMPTS).count() as u32,
+            "hosts_still_blocked": per_target.iter().filter(|(_, ok, _)| *ok == 0).count() as u32,
+            "attempts_ok": per_target.iter().map(|(_, ok, _)| *ok).min().unwrap_or(0),
+            "attempts_total": per_target.iter().map(|(_, _, attempts)| *attempts).max().unwrap_or(0),
             "opened_pct": opened_pct,
             "score": score,
             "time_ms": time_ms,
@@ -2707,6 +2737,18 @@ mod tests {
         assert_eq!(classify_https(6, 0, 0), ProbeVerdict::Unreachable("resolve_failed"));
         assert_eq!(classify_https(7, 0, 0), ProbeVerdict::Unreachable("connect_failed"));
         assert_eq!(classify_https(2, 0, 0), ProbeVerdict::Blocked("reset"));
+    }
+
+    #[test]
+    fn confirmation_forgives_one_silent_miss() {
+        assert!(!confirm_attempts_done(1, 1, 0, false));
+        assert!(!confirm_attempts_done(2, 3, 1, false));
+        assert!(confirm_attempts_done(3, 4, 1, false));
+        assert!(confirm_attempts_done(2, 3, 0, true));
+        assert!(confirm_attempts_done(1, 4, 2, false));
+        assert!(is_silent_failure(&ProbeVerdict::Blocked("timeout")));
+        assert!(is_silent_failure(&ProbeVerdict::Unreachable("connect_failed")));
+        assert!(!is_silent_failure(&ProbeVerdict::Blocked("reset")));
     }
 
     #[test]

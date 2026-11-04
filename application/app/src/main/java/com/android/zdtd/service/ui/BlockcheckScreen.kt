@@ -468,6 +468,9 @@ fun BlockcheckScreen(
             }
         }
 
+        // During a run this is live progress; after finish the summary below
+        // is the single result source (no repeated strategy list).
+        if (!state.isFinished || state.stoppedManually) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -482,7 +485,16 @@ fun BlockcheckScreen(
                     } else {
                         // During/after a run show the tester's actual order
                         // (history-ordered, mode-capped); idle shows all.
-                        val displayStrategies = if ((state.isRunning || state.isFinished) && state.allStrategies.isNotEmpty()) state.allStrategies else allStrategies
+                        val displayStrategies = if (state.isRunning) {
+                            state.allStrategies.filter { s ->
+                                s == state.currentStrategy ||
+                                    state.workingStrategies.contains(s) ||
+                                    state.unstableStrategies.contains(s) ||
+                                    state.skippedStrategies.contains(s)
+                            }
+                        } else {
+                            allStrategies
+                        }
                         displayStrategies.forEach { s ->
                             val res = state.results.firstOrNull { it.strategy == s }
                             val status = when {
@@ -621,6 +633,7 @@ fun BlockcheckScreen(
                 }
             }
         }
+        }
 
         if (state.isFinished && !state.stoppedManually) {
             item {
@@ -704,11 +717,6 @@ fun BlockcheckScreen(
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(context.getString(R.string.blockcheck_failed_count_fmt, state.failedStrategies.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
-                                state.failedStrategies.forEach { s ->
-                                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
-                                        Text(strategyLabel(s), modifier = Modifier.padding(12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
                             }
                         }
                     }
