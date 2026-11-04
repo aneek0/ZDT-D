@@ -2180,6 +2180,11 @@ APatch: 10700+</string>
     <string name="nfqws2_list_tab_final">نهایی</string>
     <string name="nfqws2_list_entries_hint">یک ورودی در هر خط</string>
     <string name="nfqws2_list_builtin_locked">ورودی‌های داخلی فقط‌خواندنی‌اند و از ماژول می‌آیند. ورودی‌های کاربر هنگام ساخت فهرست نهایی روی آنها افزوده می‌شوند.</string>
+    <string name="nfqws2_item_drag">برای تغییر ترتیب بکشید</string>
+    <string name="nfqws2_item_more">اقدامات مورد</string>
+    <string name="nfqws2_item_expand">باز کردن مورد</string>
+    <string name="nfqws2_item_collapse">بستن مورد</string>
+    <string name="nfqws2_search_no_matches">چیزی پیدا نشد</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

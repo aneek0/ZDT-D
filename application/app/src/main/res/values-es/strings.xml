@@ -2180,6 +2180,11 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="nfqws2_list_tab_final">Final</string>
     <string name="nfqws2_list_entries_hint">Una entrada por línea</string>
     <string name="nfqws2_list_builtin_locked">Las entradas integradas son de solo lectura y provienen del módulo. Las entradas del usuario se añaden encima cuando el demonio construye la lista final.</string>
+    <string name="nfqws2_item_drag">Arrastra para reordenar</string>
+    <string name="nfqws2_item_more">Acciones del elemento</string>
+    <string name="nfqws2_item_expand">Expandir elemento</string>
+    <string name="nfqws2_item_collapse">Contraer elemento</string>
+    <string name="nfqws2_search_no_matches">No se encontró nada</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

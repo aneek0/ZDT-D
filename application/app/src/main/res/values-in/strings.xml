@@ -2179,6 +2179,11 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="nfqws2_list_tab_final">Final</string>
     <string name="nfqws2_list_entries_hint">Satu entri per baris</string>
     <string name="nfqws2_list_builtin_locked">Entri bawaan hanya-baca dan berasal dari modul. Entri pengguna ditambahkan di atasnya saat daemon menyusun daftar final.</string>
+    <string name="nfqws2_item_drag">Seret untuk mengubah urutan</string>
+    <string name="nfqws2_item_more">Tindakan item</string>
+    <string name="nfqws2_item_expand">Bentangkan item</string>
+    <string name="nfqws2_item_collapse">Ringkas item</string>
+    <string name="nfqws2_search_no_matches">Tidak ada hasil</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

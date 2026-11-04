@@ -2179,6 +2179,11 @@ APatch：10700+</string>
     <string name="nfqws2_list_tab_final">最终</string>
     <string name="nfqws2_list_entries_hint">每行一个条目</string>
     <string name="nfqws2_list_builtin_locked">内置条目为只读，来自模块。守护进程构建最终列表时，用户条目会附加在上方。</string>
+    <string name="nfqws2_item_drag">拖动以重新排序</string>
+    <string name="nfqws2_item_more">条目操作</string>
+    <string name="nfqws2_item_expand">展开条目</string>
+    <string name="nfqws2_item_collapse">折叠条目</string>
+    <string name="nfqws2_search_no_matches">未找到结果</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

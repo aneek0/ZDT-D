@@ -1,25 +1,35 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,16 +41,28 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.android.zdtd.service.MainViewModel.Nfqws2Item
 import com.android.zdtd.service.MainViewModel.Nfqws2ListSummary
 import com.android.zdtd.service.MainViewModel.Nfqws2StrategyOption
@@ -60,6 +82,8 @@ fun Nfqws2ItemsEditor(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  screenScroll: ScrollState,
+  viewport: Rect,
 ) {
   val ctx = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -68,6 +92,7 @@ fun Nfqws2ItemsEditor(
   var strategies by remember { mutableStateOf<Map<String, List<Nfqws2StrategyOption>>>(emptyMap()) }
   var busy by remember(profile) { mutableStateOf(false) }
   var strategyPickerFor by remember { mutableStateOf<Nfqws2Item?>(null) }
+  var searchQuery by remember(profile) { mutableStateOf("") }
 
   fun reload() {
     actions.listNfqws2Items(profile) { list -> items = list }
@@ -106,6 +131,20 @@ fun Nfqws2ItemsEditor(
     return
   }
 
+  // One filter for the whole tab: it matches element names and hostlist/ipset
+  // names. A query that names the profile itself (e.g. "default") is not a
+  // section filter, so it keeps everything visible.
+  val query = searchQuery.trim()
+  val activeQuery =
+    if (query.isNotEmpty() && !profile.contains(query, ignoreCase = true)) query else ""
+  OutlinedTextField(
+    value = searchQuery,
+    onValueChange = { searchQuery = it },
+    modifier = Modifier.fillMaxWidth(),
+    singleLine = true,
+    label = { Text(stringResource(R.string.nfqws2_list_search)) },
+  )
+
   var cutoverPending by remember(profile) { mutableStateOf<Boolean?>(null) }
   LaunchedEffect(profile) {
     actions.getNfqws2CutoverStatus { st ->
@@ -120,7 +159,12 @@ fun Nfqws2ItemsEditor(
     )
   }
 
-  Nfqws2ListsSection(profile = profile, actions = actions, snackHost = snackHost)
+  Nfqws2ListsSection(
+    profile = profile,
+    actions = actions,
+    snackHost = snackHost,
+    query = activeQuery,
+  )
 
   // Plain Column: parent ProfileScreen already wraps content in
   // Column(verticalScroll); LazyColumn there crashes with infinite-height
@@ -131,24 +175,193 @@ fun Nfqws2ItemsEditor(
     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
   )
 
-  Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-    list.forEachIndexed { index, item ->
-      ItemEditorCard(
-        item = item,
-        index = index,
-        count = list.size,
-        busy = busy,
-        onToggle = { enabled -> mutate { done -> actions.setNfqws2ItemEnabled(profile, index, enabled, done) } },
-        onDuplicate = { mutate { done -> actions.duplicateNfqws2Item(profile, index, done) } },
-        onDelete = { mutate { done -> actions.deleteNfqws2Item(profile, index, done) } },
-        onMove = { delta -> mutate { done -> actions.moveNfqws2Item(profile, index, delta, done) } },
-        onPickStrategy = { strategyPickerFor = item },
-        onEditMatch = { matchEditorFor = item },
-        onEditRaw = { rawEditorFor = item },
+  val visibleItems = remember(list, activeQuery) {
+    if (activeQuery.isEmpty()) list
+    else list.filter { it.displayName.contains(activeQuery, ignoreCase = true) }
+  }
+
+  // ---- drag-to-reorder (handle only) --------------------------------------
+  val density = LocalDensity.current
+  val itemSpacing = 10.dp
+  val itemSpacingPx = with(density) { itemSpacing.toPx() }
+  val cardShape = RoundedCornerShape(if (rememberIsCompactWidth()) 20.dp else 24.dp)
+  // Autoscroll begins this close to a viewport edge and reaches full speed at
+  // the edge itself.
+  val edgeZonePx = with(density) { 96.dp.toPx() }
+  val autoScrollPxPerSec = with(density) { 700.dp.toPx() }
+
+  val cardHeights = remember { mutableStateMapOf<Nfqws2Item, Float>() }
+  // Window tops feed gesture math only; keeping them out of snapshot state
+  // avoids a recomposition on every scroll frame.
+  val cardWindowTops = remember { HashMap<Nfqws2Item, Float>() }
+
+  var dragItem by remember { mutableStateOf<Nfqws2Item?>(null) }
+  var dragTarget by remember { mutableStateOf(-1) }
+  var dragOffset by remember { mutableStateOf(0f) }
+  var dragPointerY by remember { mutableStateOf(0f) }
+
+  fun dragIndex(): Int =
+    dragItem?.let { dragged -> visibleItems.indexOfFirst { it === dragged } } ?: -1
+
+  fun slotTop(pos: Int): Float {
+    var y = 0f
+    for (i in 0 until pos) y += (cardHeights[visibleItems[i]] ?: 0f) + itemSpacingPx
+    return y
+  }
+
+  // The card floats over the list; the slot whose midpoint its centre passed
+  // becomes the drop target, and the cards in between step aside.
+  fun updateTarget() {
+    val from = dragIndex()
+    if (from < 0) return
+    val draggedCenter =
+      slotTop(from) + (cardHeights[visibleItems[from]] ?: 0f) / 2f + dragOffset
+    var target = from
+    for (t in from + 1 until visibleItems.size) {
+      val center = slotTop(t) + (cardHeights[visibleItems[t]] ?: 0f) / 2f
+      if (draggedCenter > center) target = t else break
+    }
+    for (t in from - 1 downTo 0) {
+      val center = slotTop(t) + (cardHeights[visibleItems[t]] ?: 0f) / 2f
+      if (draggedCenter < center) target = t else break
+    }
+    dragTarget = target
+  }
+
+  fun resetDrag() {
+    dragItem = null
+    dragTarget = -1
+    dragOffset = 0f
+  }
+
+  fun dropDrag() {
+    val from = dragIndex()
+    val to = dragTarget
+    resetDrag()
+    if (from < 0 || to < 0 || to == from || busy) return
+    val fromIndex = list.indexOfFirst { it === visibleItems[from] }
+    val toIndex = list.indexOfFirst { it === visibleItems[to] }
+    if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) return
+    // Optimistic local reorder, exactly one daemon call, rollback on failure.
+    val snapshot = list
+    items = list.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+    mutate { done ->
+      actions.moveNfqws2Item(profile, fromIndex, toIndex - fromIndex) { ok ->
+        if (!ok) {
+          items = snapshot
+          reload()
+        }
+        done(ok)
+      }
+    }
+  }
+
+  // Edge autoscroll: speed grows with how deep the pointer is inside the edge
+  // zone, and every scrolled pixel is folded into dragOffset so the card stays
+  // under the finger and the drop target keeps tracking it.
+  LaunchedEffect(dragItem) {
+    if (dragItem == null) return@LaunchedEffect
+    if (viewport.width <= 0f || viewport.height <= 0f) return@LaunchedEffect
+    var previousFrame = withFrameNanos { it }
+    while (true) {
+      val frame = withFrameNanos { it }
+      val dt = ((frame - previousFrame) / 1_000_000_000f).coerceIn(0f, 0.05f)
+      previousFrame = frame
+      val topEdge = viewport.top + edgeZonePx
+      val bottomEdge = viewport.bottom - edgeZonePx
+      val speed = when {
+        dragPointerY < topEdge ->
+          -autoScrollPxPerSec * ((topEdge - dragPointerY) / edgeZonePx).coerceIn(0f, 1f)
+        dragPointerY > bottomEdge ->
+          autoScrollPxPerSec * ((dragPointerY - bottomEdge) / edgeZonePx).coerceIn(0f, 1f)
+        else -> 0f
+      }
+      if (speed == 0f) continue
+      val scrolled = screenScroll.dispatchRawDelta(speed * dt)
+      if (scrolled != 0f) {
+        dragOffset += scrolled
+        updateTarget()
+      }
+    }
+  }
+
+  Column(
+    verticalArrangement = Arrangement.spacedBy(itemSpacing),
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    if (visibleItems.isEmpty()) {
+      Text(
+        stringResource(
+          if (list.isEmpty()) R.string.nfqws2_items_empty else R.string.nfqws2_search_no_matches
+        ),
+        style = MaterialTheme.typography.bodyMedium,
       )
     }
-    if (list.isEmpty()) {
-      Text(stringResource(R.string.nfqws2_items_empty), style = MaterialTheme.typography.bodyMedium)
+    visibleItems.forEachIndexed { pos, item ->
+      val index = list.indexOfFirst { it === item }
+      val dragging = dragItem === item
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .zIndex(if (dragging) 1f else 0f)
+            .onGloballyPositioned { coords ->
+              val height = coords.size.height.toFloat()
+              if (cardHeights[item] != height) cardHeights[item] = height
+              cardWindowTops[item] = coords.boundsInWindow().top
+            }
+            .graphicsLayer {
+              val from = visibleItems.indexOfFirst { it === dragItem }
+              translationY =
+                when {
+                  dragging -> dragOffset
+                  from < 0 -> 0f
+                  dragTarget > from && pos in (from + 1)..dragTarget ->
+                    -((cardHeights[visibleItems[from]] ?: 0f) + itemSpacingPx)
+                  dragTarget in 0 until from && pos in dragTarget until from ->
+                    (cardHeights[visibleItems[from]] ?: 0f) + itemSpacingPx
+                  else -> 0f
+                }
+              if (dragging) {
+                shape = cardShape
+                shadowElevation = 12.dp.toPx()
+              }
+            },
+      ) {
+        ItemEditorCard(
+          item = item,
+          index = index,
+          count = list.size,
+          busy = busy,
+          dragModifier =
+            Modifier.pointerInput(item, busy) {
+              if (busy) return@pointerInput
+              detectDragGestures(
+                onDragStart = { offset ->
+                  dragItem = item
+                  dragTarget = pos
+                  dragOffset = 0f
+                  dragPointerY = (cardWindowTops[item] ?: 0f) + offset.y
+                  updateTarget()
+                },
+                onDragEnd = { dropDrag() },
+                onDragCancel = { resetDrag() },
+              ) { change, dragAmount ->
+                change.consume()
+                dragOffset += dragAmount.y
+                dragPointerY += dragAmount.y
+                updateTarget()
+              }
+            },
+          onToggle = { enabled -> mutate { done -> actions.setNfqws2ItemEnabled(profile, index, enabled, done) } },
+          onDuplicate = { mutate { done -> actions.duplicateNfqws2Item(profile, index, done) } },
+          onDelete = { mutate { done -> actions.deleteNfqws2Item(profile, index, done) } },
+          onMove = { delta -> mutate { done -> actions.moveNfqws2Item(profile, index, delta, done) } },
+          onPickStrategy = { strategyPickerFor = item },
+          onEditMatch = { matchEditorFor = item },
+          onEditRaw = { rawEditorFor = item },
+        )
+      }
     }
   }
 
@@ -286,6 +499,7 @@ private fun ItemEditorCard(
   index: Int,
   count: Int,
   busy: Boolean,
+  dragModifier: Modifier,
   onToggle: (Boolean) -> Unit,
   onDuplicate: () -> Unit,
   onDelete: () -> Unit,
@@ -294,80 +508,157 @@ private fun ItemEditorCard(
   onEditMatch: () -> Unit,
   onEditRaw: () -> Unit,
 ) {
+  // Collapsed by default. Keyed on the element identity so the open/closed
+  // state survives recomposition and configuration changes.
+  var expanded by rememberSaveable(item.name ?: "item ${item.index}") { mutableStateOf(false) }
+  var menuOpen by remember { mutableStateOf(false) }
+  val accent = if (item.enabled) Color(0xFF22C55E) else MaterialTheme.colorScheme.outline
+
   SectionCard(
     title = item.displayName,
     desc = null,
-    accent = if (item.enabled) Color(0xFF22C55E) else MaterialTheme.colorScheme.outline,
+    accent = accent,
+    modifier = if (expanded) Modifier else Modifier.clickable(enabled = !busy) { expanded = true },
+    icon = {
+      // The only drag surface of the card: dragging anywhere else still
+      // scrolls the screen.
+      Box(
+        modifier = Modifier.fillMaxSize().then(if (busy) Modifier else dragModifier),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          Icons.Filled.DragHandle,
+          contentDescription = stringResource(R.string.nfqws2_item_drag),
+        )
+      }
+    },
     trailing = {
-      Row {
-        IconButton(enabled = !busy && index > 0, onClick = { onMove(-1) }) {
-          Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.nfqws2_item_move_up))
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+          stringResource(
+            if (item.enabled) R.string.nfqws2_item_enabled else R.string.nfqws2_item_disabled
+          ),
+          style = MaterialTheme.typography.labelSmall,
+          color = if (item.enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        )
+        IconButton(onClick = { expanded = !expanded }) {
+          Icon(
+            if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = stringResource(
+              if (expanded) R.string.nfqws2_item_collapse else R.string.nfqws2_item_expand
+            ),
+          )
         }
-        IconButton(enabled = !busy && index < count - 1, onClick = { onMove(1) }) {
-          Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.nfqws2_item_move_down))
-        }
-        IconButton(enabled = !busy, onClick = onDuplicate) {
-          Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.nfqws2_item_duplicate))
-        }
-        IconButton(enabled = !busy, onClick = onDelete) {
-          Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.nfqws2_item_delete))
+        Box {
+          IconButton(enabled = !busy, onClick = { menuOpen = true }) {
+            Icon(
+              Icons.Filled.MoreVert,
+              contentDescription = stringResource(R.string.nfqws2_item_more),
+            )
+          }
+          // Reordering is drag-first; these entries stay as an accessible
+          // fallback for the collapsed row.
+          DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.nfqws2_item_move_up)) },
+              leadingIcon = { Icon(Icons.Filled.ArrowUpward, contentDescription = null) },
+              enabled = !busy && index > 0,
+              onClick = {
+                menuOpen = false
+                onMove(-1)
+              },
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.nfqws2_item_move_down)) },
+              leadingIcon = { Icon(Icons.Filled.ArrowDownward, contentDescription = null) },
+              enabled = !busy && index < count - 1,
+              onClick = {
+                menuOpen = false
+                onMove(1)
+              },
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.nfqws2_item_duplicate)) },
+              leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+              enabled = !busy,
+              onClick = {
+                menuOpen = false
+                onDuplicate()
+              },
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.nfqws2_item_delete)) },
+              leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+              enabled = !busy,
+              onClick = {
+                menuOpen = false
+                onDelete()
+              },
+            )
+          }
         }
       }
     },
-  ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      // FlowRow: a wide ports chip ("50000-51000") must not squeeze the
-      // action chips into a sliver — they wrap to the next line instead.
-      FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        AssistChip(onClick = { onToggle(!item.enabled) }, label = { Text(if (item.enabled) stringResource(R.string.nfqws2_item_enabled) else stringResource(R.string.nfqws2_item_disabled)) })
-        AssistChip(onClick = {}, label = { Text(item.protocol) })
-        if (item.ports.isNotBlank()) AssistChip(onClick = {}, label = { Text(stringResource(R.string.nfqws2_item_ports_fmt, item.ports)) })
-        AssistChip(onClick = onPickStrategy, label = { Text(stringResource(R.string.nfqws2_item_strategy)) })
-        AssistChip(onClick = onEditMatch, label = { Text(stringResource(R.string.nfqws2_item_match_title)) })
-        AssistChip(onClick = onEditRaw, label = { Text(stringResource(R.string.nfqws2_item_raw_title)) })
-      }
-      if (item.lists.isNotEmpty()) {
-        Text(stringResource(R.string.nfqws2_item_lists_title), style = MaterialTheme.typography.labelMedium)
-        FlowRow(
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-          for (ref in item.lists) {
-            AssistChip(onClick = {}, label = { Text("${ref.kind}: ${ref.name}") })
+    content =
+      if (expanded) {
+        {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // FlowRow: a wide ports chip ("50000-51000") must not squeeze the
+            // action chips into a sliver — they wrap to the next line instead.
+            FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              AssistChip(onClick = { onToggle(!item.enabled) }, label = { Text(stringResource(if (item.enabled) R.string.nfqws2_item_enabled else R.string.nfqws2_item_disabled)) })
+              AssistChip(onClick = {}, label = { Text(item.protocol) })
+              if (item.ports.isNotBlank()) AssistChip(onClick = {}, label = { Text(stringResource(R.string.nfqws2_item_ports_fmt, item.ports)) })
+              AssistChip(onClick = onPickStrategy, label = { Text(stringResource(R.string.nfqws2_item_strategy)) })
+              AssistChip(onClick = onEditMatch, label = { Text(stringResource(R.string.nfqws2_item_match_title)) })
+              AssistChip(onClick = onEditRaw, label = { Text(stringResource(R.string.nfqws2_item_raw_title)) })
+            }
+            if (item.lists.isNotEmpty()) {
+              Text(stringResource(R.string.nfqws2_item_lists_title), style = MaterialTheme.typography.labelMedium)
+              FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                for (ref in item.lists) {
+                  AssistChip(onClick = {}, label = { Text("${ref.kind}: ${ref.name}") })
+                }
+              }
+            } else {
+              Text(stringResource(R.string.nfqws2_item_lists_none), style = MaterialTheme.typography.labelMedium)
+            }
+            if (item.strategy.isNotEmpty()) {
+              Text(
+                stringResource(R.string.nfqws2_item_strategy_lines),
+                style = MaterialTheme.typography.labelMedium,
+              )
+              Text(
+                item.strategy.joinToString("\n"),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+            Text(
+              stringResource(R.string.nfqws2_item_raw_lines),
+              style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+              item.raw,
+              style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.fillMaxWidth(),
+            )
           }
         }
       } else {
-        Text(stringResource(R.string.nfqws2_item_lists_none), style = MaterialTheme.typography.labelMedium)
-      }
-      if (item.strategy.isNotEmpty()) {
-        Text(
-          stringResource(R.string.nfqws2_item_strategy_lines),
-          style = MaterialTheme.typography.labelMedium,
-        )
-        Text(
-          item.strategy.joinToString("\n"),
-          style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-          maxLines = 3,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.fillMaxWidth(),
-        )
-      }
-      Text(
-        stringResource(R.string.nfqws2_item_raw_lines),
-        style = MaterialTheme.typography.labelMedium,
-      )
-      Text(
-        item.raw,
-        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        maxLines = 3,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth(),
-      )
-    }
-  }
+        null
+      },
+  )
 }
 
 @Composable
@@ -416,6 +707,7 @@ private fun Nfqws2ListsSection(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  query: String,
 ) {
   val ctx = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -442,19 +734,9 @@ private fun Nfqws2ListsSection(
     if (current == null) {
       return@SectionCard
     }
-    var searchQuery by remember(profile) { mutableStateOf("") }
-    val filtered = remember(current, searchQuery) {
-      if (searchQuery.isBlank()) current
-      else current.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
-    }
-    if (current.size > 8) {
-      OutlinedTextField(
-        value = searchQuery,
-        onValueChange = { searchQuery = it },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        label = { Text(stringResource(R.string.nfqws2_list_search)) },
-      )
+    val filtered = remember(current, query) {
+      if (query.isEmpty()) current
+      else current.filter { it.name.contains(query, ignoreCase = true) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
       for (l in filtered) {
@@ -478,6 +760,12 @@ private fun Nfqws2ListsSection(
             }
           }
         }
+      }
+      if (current.isNotEmpty() && filtered.isEmpty()) {
+        Text(
+          stringResource(R.string.nfqws2_search_no_matches),
+          style = MaterialTheme.typography.bodyMedium,
+        )
       }
       TextButton(onClick = { creating = true }) { Text(stringResource(R.string.nfqws2_list_create)) }
     }

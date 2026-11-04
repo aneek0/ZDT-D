@@ -2180,6 +2180,11 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="nfqws2_list_tab_final">Final</string>
     <string name="nfqws2_list_entries_hint">Uma entrada por linha</string>
     <string name="nfqws2_list_builtin_locked">Entradas embutidas são somente leitura e vêm do módulo. Entradas do usuário são adicionadas por cima quando o daemon monta a lista final.</string>
+    <string name="nfqws2_item_drag">Arraste para reordenar</string>
+    <string name="nfqws2_item_more">Ações do item</string>
+    <string name="nfqws2_item_expand">Expandir item</string>
+    <string name="nfqws2_item_collapse">Recolher item</string>
+    <string name="nfqws2_search_no_matches">Nada encontrado</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

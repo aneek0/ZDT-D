@@ -2179,6 +2179,11 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="nfqws2_list_tab_final">Cuối cùng</string>
     <string name="nfqws2_list_entries_hint">Mỗi dòng một mục</string>
     <string name="nfqws2_list_builtin_locked">Các mục tích hợp sẵn chỉ đọc và đến từ mô-đun. Mục của người dùng được thêm lên trên khi trình nền dựng danh sách cuối cùng.</string>
+    <string name="nfqws2_item_drag">Kéo để sắp xếp lại</string>
+    <string name="nfqws2_item_more">Thao tác mục</string>
+    <string name="nfqws2_item_expand">Mở rộng mục</string>
+    <string name="nfqws2_item_collapse">Thu gọn mục</string>
+    <string name="nfqws2_search_no_matches">Không tìm thấy</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

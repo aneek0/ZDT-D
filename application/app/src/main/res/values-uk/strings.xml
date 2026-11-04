@@ -2182,6 +2182,11 @@ APatch: 10700+</string>
     <string name="nfqws2_list_tab_final">Підсумковий</string>
     <string name="nfqws2_list_entries_hint">Один запис на рядок</string>
     <string name="nfqws2_list_builtin_locked">Вбудовані записи лише для читання й походять із модуля. Записи користувача додаються зверху, коли демон збирає підсумковий список.</string>
+    <string name="nfqws2_item_drag">Перетягніть, щоб змінити порядок</string>
+    <string name="nfqws2_item_more">Дії з елементом</string>
+    <string name="nfqws2_item_expand">Розгорнути елемент</string>
+    <string name="nfqws2_item_collapse">Згорнути елемент</string>
+    <string name="nfqws2_search_no_matches">Нічого не знайдено</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

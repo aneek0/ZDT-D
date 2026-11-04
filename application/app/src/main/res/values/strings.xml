@@ -2272,6 +2272,11 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="strategic_ipsets_applied">IP sets applied</string>
 <string name="strategic_ipsets_apply">Apply</string>
 <string name="strategic_ipsets_include">IP sets to include:</string>
+    <string name="nfqws2_item_drag">Drag to reorder</string>
+    <string name="nfqws2_item_more">Item actions</string>
+    <string name="nfqws2_item_expand">Expand element</string>
+    <string name="nfqws2_item_collapse">Collapse element</string>
+    <string name="nfqws2_search_no_matches">Nothing found</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

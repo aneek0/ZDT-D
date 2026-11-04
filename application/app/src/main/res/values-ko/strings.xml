@@ -2179,6 +2179,11 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="nfqws2_list_tab_final">최종</string>
     <string name="nfqws2_list_entries_hint">한 줄에 한 항목</string>
     <string name="nfqws2_list_builtin_locked">내장 항목은 읽기 전용이며 모듈에서 제공됩니다. 데몬이 최종 목록을 구성할 때 사용자 항목이 맨 위에 추가됩니다.</string>
+    <string name="nfqws2_item_drag">끌어서 순서 변경</string>
+    <string name="nfqws2_item_more">항목 작업</string>
+    <string name="nfqws2_item_expand">항목 펼치기</string>
+    <string name="nfqws2_item_collapse">항목 접기</string>
+    <string name="nfqws2_search_no_matches">결과 없음</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

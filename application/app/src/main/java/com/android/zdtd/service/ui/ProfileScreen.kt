@@ -17,7 +17,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,10 +53,14 @@ fun ProfileScreen(
   // Default open: Apps tab (Danil request).
   var tab by remember { mutableStateOf(0) }
   val screenScroll = rememberScrollState()
+  // Viewport edges of the scrolling container: the nfqws2 item editor needs
+  // them to auto-scroll while an element is dragged.
+  var screenViewport by remember { mutableStateOf(Rect.Zero) }
 
   Column(
     Modifier
       .fillMaxSize()
+      .onGloballyPositioned { screenViewport = it.boundsInWindow() }
       .verticalScroll(screenScroll)
       .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -116,7 +123,13 @@ fun ProfileScreen(
       }
       2 -> {
         if (programId == "nfqws2") {
-          Nfqws2ItemsEditor(profile = profile, actions = actions, snackHost = snackHost)
+          Nfqws2ItemsEditor(
+            profile = profile,
+            actions = actions,
+            snackHost = snackHost,
+            screenScroll = screenScroll,
+            viewport = screenViewport,
+          )
         } else if (programId == "operaproxy") {
           TextEditorCard(
             title = stringResource(R.string.profile_fake_sni_txt_title),

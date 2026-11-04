@@ -2180,6 +2180,11 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="nfqws2_list_tab_final">Final</string>
     <string name="nfqws2_list_entries_hint">Ein Eintrag pro Zeile</string>
     <string name="nfqws2_list_builtin_locked">Eingebaute Einträge sind schreibgeschützt und stammen vom Modul. Nutzereinträge werden obenauf gelegt, wenn der Daemon die Finalliste baut.</string>
+    <string name="nfqws2_item_drag">Zum Umsortieren ziehen</string>
+    <string name="nfqws2_item_more">Elementaktionen</string>
+    <string name="nfqws2_item_expand">Element ausklappen</string>
+    <string name="nfqws2_item_collapse">Element einklappen</string>
+    <string name="nfqws2_search_no_matches">Nichts gefunden</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

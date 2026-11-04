@@ -2179,6 +2179,11 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="nfqws2_list_tab_final">Nihai</string>
     <string name="nfqws2_list_entries_hint">Satır başına bir kayıt</string>
     <string name="nfqws2_list_builtin_locked">Yerleşik kayıtlar salt okunurdur ve modülden gelir. Arka plan programı nihai listeyi oluştururken kullanıcı kayıtları üste eklenir.</string>
+    <string name="nfqws2_item_drag">Sıralamak için sürükleyin</string>
+    <string name="nfqws2_item_more">Öğe işlemleri</string>
+    <string name="nfqws2_item_expand">Öğeyi genişlet</string>
+    <string name="nfqws2_item_collapse">Öğeyi daralt</string>
+    <string name="nfqws2_search_no_matches">Hiçbir şey bulunamadı</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

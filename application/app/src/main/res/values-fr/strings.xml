@@ -2180,6 +2180,11 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="nfqws2_list_tab_final">Finale</string>
     <string name="nfqws2_list_entries_hint">Une entrée par ligne</string>
     <string name="nfqws2_list_builtin_locked">Les entrées intégrées sont en lecture seule et proviennent du module. Les entrées utilisateur sont ajoutées au-dessus lorsque le démon construit la liste finale.</string>
+    <string name="nfqws2_item_drag">Glisser pour réordonner</string>
+    <string name="nfqws2_item_more">Actions de l’élément</string>
+    <string name="nfqws2_item_expand">Développer l’élément</string>
+    <string name="nfqws2_item_collapse">Réduire l’élément</string>
+    <string name="nfqws2_search_no_matches">Aucun résultat</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

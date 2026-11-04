@@ -2180,6 +2180,11 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="nfqws2_list_tab_final">अंतिम</string>
     <string name="nfqws2_list_entries_hint">प्रति पंक्ति एक प्रविष्टि</string>
     <string name="nfqws2_list_builtin_locked">बिल्ट-इन प्रविष्टियाँ केवल-पढ़ने के लिए हैं और मॉड्यूल से आती हैं। डेमन द्वारा अंतिम सूची बनाते समय उपयोगकर्ता प्रविष्टियाँ ऊपर जोड़ी जाती हैं।</string>
+    <string name="nfqws2_item_drag">क्रम बदलने के लिए खींचें</string>
+    <string name="nfqws2_item_more">आइटम क्रियाएँ</string>
+    <string name="nfqws2_item_expand">आइटम विस्तृत करें</string>
+    <string name="nfqws2_item_collapse">आइटम संक्षिप्त करें</string>
+    <string name="nfqws2_search_no_matches">कुछ नहीं मिला</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
