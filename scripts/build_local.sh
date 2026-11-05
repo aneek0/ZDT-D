@@ -14,7 +14,7 @@ GRADLE="${GRADLE:-$HOME/.local/opt/gradle-9.6.0/bin/gradle}"
 SDK_DIR="${ANDROID_HOME:-$HOME/Android/Sdk}"
 OUT_MODULE_DIR="out/module_build/module_root"
 OUT_MODULE="out/module/zdt_module.zip"
-GEN_ASSETS="application/app/build/generated/zdt-assets/main"
+GEN_ASSETS="application/app/build/generated/zdt-root-assets/main"
 
 DO_MODULE=1
 DO_APK=1

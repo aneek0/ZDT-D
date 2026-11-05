@@ -967,8 +967,11 @@ fn curl_supports_http2() -> bool {
     *HTTP2_OK
 }
 
-/// Returns (curl exit code, http status, location header, downloaded bytes).
-fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u32, String, u64)> {
+/// Returns (curl exit code, http status, downloaded bytes, response header
+/// bytes, transfer wall time in milliseconds). Header bytes are needed for the
+/// filter-window cut test; the time comes from curl's `time_total` (the
+/// transfer itself), not from process spawn overhead.
+fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u32, u64, u64, u64)> {
     let url = format!("https://{host}/");
     let connect_to = ip.map(|ip| format!("{host}:443:{ip}"));
     let timeout_str = timeout_secs.to_string();
@@ -977,7 +980,7 @@ fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u
 
     let mut args = vec![
         "-sS", "-o", "/dev/null",
-        "-w", "%{http_code}\\n%header{location}\\n%{size_download}",
+        "-w", "%{http_code}\\n%{size_download}\\n%{size_header}\\n%{time_total}",
         "--max-time", &timeout_str,
         "--connect-timeout", &timeout_str,
     ];
@@ -1009,10 +1012,15 @@ fn curl_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> Result<(i32, u
     )?;
     let lines: Vec<&str> = out.lines().collect();
     let http_code = lines.first().and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0);
-    let location = lines.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-    let size_bytes = lines.get(2).and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0);
+    let size_bytes = lines.get(1).and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0);
+    let size_header = lines.get(2).and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0);
+    let time_ms = lines
+        .get(3)
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .map(|secs| (secs * 1000.0).round().max(0.0) as u64)
+        .unwrap_or(0);
 
-    Ok((code, http_code, location, size_bytes))
+    Ok((code, http_code, size_bytes, size_header, time_ms))
 }
 
 /// Quick HEAD probe used for internet-control hosts. Returns (curl rc, http code).
@@ -1093,8 +1101,17 @@ const NETWORK_WAIT_SECONDS: u64 = 30;
 const UDP_ATTEMPTS: u32 = 2;
 const UDP_REPLY_TIMEOUT_MS: u64 = 1200;
 const FAILED_MEMORY_SECONDS: u64 = 14 * 24 * 3600;
-const FREEZE_MIN_BYTES: u64 = 14_000;
-const FREEZE_MAX_BYTES: u64 = 24_000;
+/// Observed-body lower bound for a cut: a window cut always carries at least
+/// this much body (a smaller abort is just a reset).
+const VOLUME_CUT_MIN_BODY_BYTES: u64 = 8_000;
+/// Filter bytes a single TLS handshake is expected to consume.
+const TLS_HANDSHAKE_ESTIMATE: u64 = 4_000;
+/// DPI cut window measured in filter bytes (TLS handshake + response headers
+/// + accumulated body): block rules abort the connection inside it.
+const VOLUME_CUT_MIN_FILTER_BYTES: u64 = 12_000;
+const VOLUME_CUT_MAX_FILTER_BYTES: u64 = 36_000;
+/// Transfers per volume probe, all on one curl process/connection.
+const VOLUME_TRANSFERS: usize = 16;
 /// Minimum body a 2xx answer must carry to count as a real page (zapret22
 /// подбор: «работает» = сайт загрузился, а не просто ответил). Block/fake
 /// stubs answer 200 with an empty or tiny body; real site roots do not.
@@ -1180,7 +1197,10 @@ fn verdict_reason(v: &ProbeVerdict) -> &'static str {
 
 /// Map a curl result onto a DPI verdict (zapretgui verdict.judge_https adapted
 /// to curl exit codes; raw-TLS exceptions have no curl equivalent).
-fn classify_https(rc: i32, http_code: u32, size_bytes: u64) -> ProbeVerdict {
+///
+/// `size_header` is the response header bytes: a cut is judged on the filter
+/// window (handshake + headers + body), never on body size alone.
+fn classify_https(rc: i32, http_code: u32, size_bytes: u64, size_header: u64) -> ProbeVerdict {
     if rc == 0 {
         if http_code == 400 {
             return ProbeVerdict::Blocked("http_400");
@@ -1199,9 +1219,16 @@ fn classify_https(rc: i32, http_code: u32, size_bytes: u64) -> ProbeVerdict {
     match rc {
         51 | 58 | 59 | 60 | 90 | 91 => ProbeVerdict::Blocked("cert_substitute"),
         35 => ProbeVerdict::Blocked("tls_error"),
+        // A partial transfer that stopped inside the filter window is the DPI
+        // cut, whether curl reported a truncated file (18), a stall (28) or a
+        // reset (52/56).
+        18 | 28 | 52 | 56
+            if is_window_cut(size_bytes, TLS_HANDSHAKE_ESTIMATE + size_bytes + size_header) =>
+        {
+            ProbeVerdict::Blocked("body_cut")
+        }
         52 | 56 => ProbeVerdict::Blocked("reset"),
         28 => ProbeVerdict::Blocked("timeout"),
-        18 if (FREEZE_MIN_BYTES..=FREEZE_MAX_BYTES).contains(&size_bytes) => ProbeVerdict::Blocked("body_cut"),
         18 => ProbeVerdict::Blocked("reset"),
         6 => ProbeVerdict::Unreachable("resolve_failed"),
         7 => ProbeVerdict::Unreachable("connect_failed"),
@@ -1227,6 +1254,21 @@ fn confirm_attempts_done(
 
 fn is_silent_failure(verdict: &ProbeVerdict) -> bool {
     matches!(verdict, ProbeVerdict::Blocked("timeout") | ProbeVerdict::Unreachable(_))
+}
+
+/// Median of a timing sample; `None` when nothing was measured. Even samples
+/// average the two middle values.
+fn median_ms(values: &mut [u64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    let mid = values.len() / 2;
+    Some(if values.len() % 2 == 1 {
+        values[mid] as f64
+    } else {
+        (values[mid - 1] as f64 + values[mid] as f64) / 2.0
+    })
 }
 
 // --- UDP probes -------------------------------------------------------------
@@ -1395,28 +1437,43 @@ struct ProbeOutcome {
     verdict: ProbeVerdict,
     http_code: u32,
     size_bytes: u64,
+    /// Response header bytes of the last page transfer (0 for UDP): the filter
+    /// window counts them alongside the body.
+    size_header: u64,
     time_ms: u64,
 }
 
 impl ProbeOutcome {
     fn failed_resolve() -> Self {
-        ProbeOutcome { verdict: ProbeVerdict::Unreachable("resolve_failed"), http_code: 0, size_bytes: 0, time_ms: 0 }
+        ProbeOutcome {
+            verdict: ProbeVerdict::Unreachable("resolve_failed"),
+            http_code: 0,
+            size_bytes: 0,
+            size_header: 0,
+            time_ms: 0,
+        }
     }
 }
 
 fn probe_target(target: &ProbeTarget, resolved_ip: Option<&String>, timeout_secs: u64) -> ProbeOutcome {
     let started = std::time::Instant::now();
-    let (verdict, http_code, size_bytes) = match target.kind {
+    // HTTPS timing comes from curl's own `time_total` (the transfer itself);
+    // UDP has no such counter and keeps the wall clock.
+    let mut transfer_ms: Option<u64> = None;
+    let (verdict, http_code, size_bytes, size_header) = match target.kind {
         ProbeKind::Https => {
             if resolved_ip.map(|ip| KNOWN_BLOCK_IPS.contains(&ip.as_str())).unwrap_or(false) {
                 // DNS stub: no point probing, the answer is a block page IP.
-                (ProbeVerdict::Blocked("dns_stub"), 0, 0)
+                (ProbeVerdict::Blocked("dns_stub"), 0, 0, 0)
             } else {
                 // No pre-resolved IP: let curl resolve itself (getent may be
                 // missing or broken on the device while curl resolves fine).
                 match curl_probe(&target.host, resolved_ip.map(|s| s.as_str()), timeout_secs) {
-                    Ok((rc, code, _location, size)) => (classify_https(rc, code, size), code, size),
-                    Err(_) => (ProbeVerdict::Unreachable("connect_failed"), 0, 0),
+                    Ok((rc, code, size, header, total_ms)) => {
+                        transfer_ms = Some(total_ms);
+                        (classify_https(rc, code, size, header), code, size, header)
+                    }
+                    Err(_) => (ProbeVerdict::Unreachable("connect_failed"), 0, 0, 0),
                 }
             }
         }
@@ -1430,10 +1487,265 @@ fn probe_target(target: &ProbeTarget, resolved_ip: Option<&String>, timeout_secs
                 ProbeKind::Bedrock => bedrock_request(),
                 ProbeKind::Https => unreachable!(),
             };
-            (udp_exchange(ip, target.port, &request), 0, 0)
+            (udp_exchange(ip, target.port, &request), 0, 0, 0)
         }
     };
-    ProbeOutcome { verdict, http_code, size_bytes, time_ms: started.elapsed().as_millis() as u64 }
+    ProbeOutcome {
+        verdict,
+        http_code,
+        size_bytes,
+        size_header,
+        time_ms: transfer_ms.unwrap_or_else(|| started.elapsed().as_millis() as u64),
+    }
+}
+
+// --- Volume probe -----------------------------------------------------------
+//
+// A page can answer 200 with a body well below the DPI cut window and still be
+// cut later, once the block rules have seen enough bytes. One page request can
+// never observe that. The volume probe asks the same URL repeatedly inside ONE
+// curl process (single connection, single TLS handshake) so the body
+// accumulates across the window: a cut then surfaces as a transport abort or a
+// truncated transfer.
+
+/// Counters curl reports for one transfer of a volume run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct VolumeSegment {
+    http_code: u32,
+    size_download: u64,
+    size_header: u64,
+    num_connects: u64,
+}
+
+/// Marker prefix so curl's stderr text is never parsed as transfer counters.
+const VOLUME_LINE_PREFIX: &str = "ZDTD-VOL";
+
+#[derive(Debug, Clone, Default)]
+struct VolumeRun {
+    /// Transfer lines in order. With `rc != 0` the last entry is the transfer
+    /// that was aborted.
+    segments: Vec<VolumeSegment>,
+    rc: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VolumeVerdict {
+    /// More than the cut window's body crossed on one connection.
+    Ok,
+    /// The transfer was aborted inside the filter window.
+    Cut,
+    /// No usable evidence either way.
+    Unknown,
+}
+
+/// Parse the prefixed curl write-out lines; everything else is error text.
+fn parse_volume_lines(out: &str) -> Vec<VolumeSegment> {
+    out.lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix(VOLUME_LINE_PREFIX)?;
+            let mut fields = rest.trim().split('\t');
+            Some(VolumeSegment {
+                http_code: fields.next()?.trim().parse().ok()?,
+                size_download: fields.next()?.trim().parse().ok()?,
+                size_header: fields.next()?.trim().parse().ok()?,
+                num_connects: fields.next()?.trim().parse().ok()?,
+            })
+        })
+        .collect()
+}
+
+fn volume_body(run: &VolumeRun) -> u64 {
+    run.segments.iter().map(|s| s.size_download).sum()
+}
+
+/// Filter bytes seen so far: one TLS handshake for the single connection plus
+/// every response's headers and body.
+fn volume_filter_bytes(run: &VolumeRun) -> u64 {
+    TLS_HANDSHAKE_ESTIMATE
+        + run
+            .segments
+            .iter()
+            .map(|s| s.size_header + s.size_download)
+            .sum::<u64>()
+}
+
+/// An abort inside the filter window: enough body to be a real transfer, and
+/// not yet past the window's upper bound (a later abort already crossed it and
+/// is not a window cut).
+fn is_window_cut(body: u64, filter_bytes: u64) -> bool {
+    body >= VOLUME_CUT_MIN_BODY_BYTES
+        && (VOLUME_CUT_MIN_FILTER_BYTES..=VOLUME_CUT_MAX_FILTER_BYTES).contains(&filter_bytes)
+}
+
+fn classify_volume(run: &VolumeRun) -> VolumeVerdict {
+    // Single-connection evidence: the first transfer opens the connection and
+    // every later one must reuse it, otherwise the byte counts are incomparable.
+    for (index, segment) in run.segments.iter().enumerate() {
+        let expected = if index == 0 { 1 } else { 0 };
+        if segment.num_connects != expected {
+            return VolumeVerdict::Unknown;
+        }
+    }
+    // A non-2xx answer says nothing about the block, whether the run then
+    // aborted or completed cleanly.
+    if run.segments.iter().any(|s| !(200..300).contains(&s.http_code)) {
+        return VolumeVerdict::Unknown;
+    }
+    if run.rc != 0 {
+        // Transport abort (rc=18 partial file, timeout, RST, clean-FIN
+        // truncation): only an abort that stopped inside the window is a cut.
+        return if is_window_cut(volume_body(run), volume_filter_bytes(run)) {
+            VolumeVerdict::Cut
+        } else {
+            VolumeVerdict::Unknown
+        };
+    }
+    // Clean transfers: only a filter volume past the window proves the path
+    // carries data; anything short of it stays inconclusive.
+    if volume_filter_bytes(run) > VOLUME_CUT_MAX_FILTER_BYTES {
+        VolumeVerdict::Ok
+    } else {
+        VolumeVerdict::Unknown
+    }
+}
+
+/// Run one volume probe: [`VOLUME_TRANSFERS`] transfers of the same URL in a
+/// single curl process, pinned to the same IP/headers/options as the page
+/// probe so both see the same DPI treatment.
+fn volume_probe(host: &str, ip: Option<&str>, timeout_secs: u64) -> VolumeRun {
+    let url = format!("https://{host}/");
+    let connect_to = ip.map(|ip| format!("{host}:443:{ip}"));
+    let timeout_str = timeout_secs.to_string();
+    let host_header = format!("Host: {host}");
+    let user_agent = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+    let write_out =
+        format!("{VOLUME_LINE_PREFIX}\\t%{{http_code}}\\t%{{size_download}}\\t%{{size_header}}\\t%{{num_connects}}\\n");
+
+    let mut args: Vec<String> = vec![
+        "-sS".into(),
+        // Fail and stop on the first transfer error: a later transfer would
+        // reconnect and the counters would no longer describe one connection.
+        "--fail-early".into(),
+        "-w".into(),
+        write_out,
+        "--max-time".into(),
+        timeout_str.clone(),
+        "--connect-timeout".into(),
+        timeout_str,
+    ];
+    if HTTP2_PROBE.load(std::sync::atomic::Ordering::Relaxed) && curl_supports_http2() {
+        args.push("--http2".into());
+    }
+    if let Some(ct) = connect_to {
+        args.extend(["--connect-to".into(), ct, "-H".into(), host_header]);
+    }
+    args.extend([
+        "-A".into(),
+        user_agent.into(),
+        "--compressed".into(),
+        "-L".into(),
+        "--max-redirs".into(),
+        "3".into(),
+    ]);
+    // One discarded output per transfer; `-w` stays global and fires per URL.
+    for _ in 0..VOLUME_TRANSFERS {
+        args.extend(["-o".into(), "/dev/null".into(), url.clone()]);
+    }
+
+    let command = format!(
+        "curl {}",
+        args.iter().map(|a| sh_quote(a)).collect::<Vec<_>>().join(" ")
+    );
+    // An unrunnable curl is not a cut: report it as an empty (Unknown) run.
+    let (rc, out) = run("sh", &["-c", &command]).unwrap_or((1, String::new()));
+    VolumeRun { segments: parse_volume_lines(&out), rc }
+}
+
+/// Volume evidence for a short-bodied page. A cut must reproduce on a second
+/// independent run: a single abort can always be an accident.
+fn volume_gate(
+    host: &str,
+    ip: Option<&str>,
+    page_bytes: u64,
+    page_header: u64,
+    timeout_secs: u64,
+) -> VolumeVerdict {
+    // Conservative estimate: even sixteen transfers of the observed page, each
+    // contributing its body plus the same header size, plus the handshake could
+    // not reach the cut window — so no run could prove anything.
+    let per_transfer = page_bytes.saturating_add(page_header);
+    if TLS_HANDSHAKE_ESTIMATE + per_transfer.saturating_mul(VOLUME_TRANSFERS as u64)
+        < VOLUME_CUT_MIN_FILTER_BYTES
+    {
+        return VolumeVerdict::Unknown;
+    }
+    let first = classify_volume(&volume_probe(host, ip, timeout_secs));
+    if first != VolumeVerdict::Cut {
+        return first;
+    }
+    if classify_volume(&volume_probe(host, ip, timeout_secs)) == VolumeVerdict::Cut {
+        VolumeVerdict::Cut
+    } else {
+        VolumeVerdict::Unknown
+    }
+}
+
+/// Page probe plus the volume evidence a single short page cannot give.
+///
+/// `require_volume` marks a target whose baseline already confirmed a volume
+/// cut: an Unknown volume there can no longer be treated as harmless, but it
+/// is not a newly confirmed cut either.
+fn probe_with_volume(
+    target: &ProbeTarget,
+    resolved_ip: Option<&String>,
+    timeout_secs: u64,
+    require_volume: bool,
+) -> ProbeOutcome {
+    let mut outcome = probe_target(target, resolved_ip, timeout_secs);
+    if target.kind != ProbeKind::Https {
+        return outcome;
+    }
+    // One aborted transfer is not a proven cut: an initial page cut must
+    // reproduce, and a retry that opens the page is judged on its own.
+    if outcome.verdict == ProbeVerdict::Blocked("body_cut") {
+        let retry = probe_target(target, resolved_ip, timeout_secs);
+        match retry.verdict {
+            // Reproduced: the confirmed cut stands.
+            ProbeVerdict::Blocked("body_cut") => return outcome,
+            // Opened: the volume gate judges that transfer.
+            ProbeVerdict::Ok => outcome = retry,
+            // Any other verdict replaces the one-shot cut.
+            _ => return retry,
+        }
+    }
+    if outcome.verdict != ProbeVerdict::Ok {
+        return outcome;
+    }
+    // A page whose handshake, headers and body already passed the window needs
+    // no further evidence; equality is still inside the window.
+    if TLS_HANDSHAKE_ESTIMATE + outcome.size_bytes + outcome.size_header
+        > VOLUME_CUT_MAX_FILTER_BYTES
+    {
+        return outcome;
+    }
+    let ip = resolved_ip.map(|s| s.as_str());
+    let volume = volume_gate(
+        &target.host,
+        ip,
+        outcome.size_bytes,
+        outcome.size_header,
+        timeout_secs,
+    );
+    match volume {
+        VolumeVerdict::Cut => outcome.verdict = ProbeVerdict::Blocked("body_cut"),
+        // A known-cut baseline cannot be passed on inconclusive evidence, but
+        // this is not a newly confirmed cut.
+        VolumeVerdict::Unknown if require_volume => {
+            outcome.verdict = ProbeVerdict::Blocked("volume_inconclusive")
+        }
+        VolumeVerdict::Ok | VolumeVerdict::Unknown => {}
+    }
+    outcome
 }
 
 /// Internet reachability control: any of the control hosts answering HTTPS.
@@ -1906,9 +2218,9 @@ fn build_candidates(
         return Ok((candidates, Vec::new()));
     }
 
-    // Absolute hostlist path for host-scoped protocols; empty for protocols
-    // whose targets are fixed (voice/udp use protocol-level filters).
-    let hosts_list = if opts.protocol == "tcp_https" {
+    // nfqws2 cannot read app-private hostlists even though the root tester can.
+    // Give the engine a root-owned copy in the same workdir as its configs.
+    let mut hosts_list = if opts.protocol == "tcp_https" {
         opts.hosts_file
             .as_deref()
             .map(|p| p.trim().to_string())
@@ -1929,6 +2241,15 @@ fn build_candidates(
     ensure_work_dir()?;
     let mut candidates = Vec::new();
     let mut generated = Vec::new();
+    if !hosts_list.is_empty() {
+        let contents = fs::read_to_string(&hosts_list)
+            .with_context(|| format!("read hostlist for engine: {hosts_list}"))?;
+        let probe_path = Path::new(WORK_DIR).join("probe_hosts.txt");
+        fs::write(&probe_path, contents)
+            .with_context(|| format!("write {}", probe_path.display()))?;
+        generated.push(probe_path.clone());
+        hosts_list = probe_path.display().to_string();
+    }
     let mut skipped: Vec<String> = Vec::new();
     for entry in catalog {
         let techniques = technique_set(&entry.lines.join("\n"));
@@ -2101,7 +2422,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     // Zapret22 stop-on-first: the batch is scanned in order; the first
     // confirmed strategy ends the main loop and its untested same-technique
     // neighbors get appended as a short follow-up batch.
-    let stop_on_first = opts.stop_on_first && !config_mode;
+    let mut stop_on_first = opts.stop_on_first && !config_mode;
     let mut remaining: Vec<Candidate> = Vec::new();
     if strategies.is_empty() {
         if config_mode {
@@ -2153,13 +2474,14 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         }
         let ip = resolve_ip(&target.host);
         resolved_ips.insert(target.key.clone(), ip.clone());
-        let outcome = probe_target(target, ip.as_ref(), opts.timeout_secs);
+        let outcome = probe_with_volume(target, ip.as_ref(), opts.timeout_secs, false);
         baseline.insert(target.key.clone(), outcome.verdict);
         let mut event = json!({
             "type": "auto_baseline_probe",
             "host": target.key,
             "verdict": verdict_class(&outcome.verdict),
             "reason": verdict_reason(&outcome.verdict),
+            "time_ms": outcome.time_ms,
             "ts": now_unix_ms(),
         });
         if target.kind == ProbeKind::Https {
@@ -2172,6 +2494,13 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     let blocked_keys: Vec<String> = targets
         .iter()
         .filter(|t| matches!(baseline.get(&t.key), Some(ProbeVerdict::Blocked(_))))
+        .map(|t| t.key.clone())
+        .collect();
+    // Targets whose baseline proved the block cuts volume: a strategy's
+    // Unknown volume there is still a cut, not harmless.
+    let baseline_volume_cut: std::collections::HashSet<String> = targets
+        .iter()
+        .filter(|t| matches!(baseline.get(&t.key), Some(ProbeVerdict::Blocked("body_cut"))))
         .map(|t| t.key.clone())
         .collect();
 
@@ -2214,6 +2543,18 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         forced = true;
     }
 
+    // Open baseline (nothing blocked): every selected target is still probed
+    // so the run can report informational results; a partial profile stays
+    // unstable and never counts as working.
+    let probe_keys: Vec<String> = if blocked_keys.is_empty() {
+        targets.iter().map(|t| t.key.clone()).collect()
+    } else {
+        blocked_keys.clone()
+    };
+    // Nothing is blocked, so there is nothing to stop on: an informational run
+    // scans every selected candidate across every target.
+    stop_on_first &= !blocked_keys.is_empty();
+
     // Phase: pass control — a do-nothing strategy must NOT open the targets.
     // If it does, traffic is not really going through the engine.
     if !blocked_keys.is_empty() {
@@ -2249,7 +2590,12 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                         break;
                     }
                     let ip = resolved_ips.get(&target.key).cloned().flatten();
-                    let outcome = probe_target(target, ip.as_ref(), opts.timeout_secs);
+                    let outcome = probe_with_volume(
+                        target,
+                        ip.as_ref(),
+                        opts.timeout_secs,
+                        baseline_volume_cut.contains(&target.key),
+                    );
                     let mut event = json!({
                         "type": "auto_pass_probe",
                         "host": target.key,
@@ -2342,6 +2688,9 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         let mut network_recovered = false;
         let mut per_target: Vec<(String, u32, u32)> = Vec::new(); // (target key, ok attempts, attempts)
         let mut confirm_times: Vec<u64> = Vec::new();
+        // Only a series where every target reached its full confirmation
+        // carries comparable timings (a forgiven miss does not).
+        let mut complete_series: bool;
         let mut crashed_out: bool;
 
         'strategy: loop {
@@ -2387,14 +2736,15 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
 
             per_target.clear();
             confirm_times.clear();
+            complete_series = true;
             crashed_out = false;
-            let mut all_unreachable = !blocked_keys.is_empty();
+            let mut all_unreachable = !probe_keys.is_empty();
 
             for target in &targets {
                 if shutdown_requested() {
                     break;
                 }
-                if !blocked_keys.contains(&target.key) {
+                if !probe_keys.contains(&target.key) {
                     continue;
                 }
                 // Engine died mid-probe: respawn and redo this strategy.
@@ -2415,13 +2765,22 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                     continue 'strategy;
                 }
                 let ip = resolved_ips.get(&target.key).cloned().flatten();
-                let first = probe_target(target, ip.as_ref(), opts.timeout_secs);
+                // First attempt carries the volume check; confirmations only
+                // need the page (volume already passed or stayed Unknown).
+                let first = probe_with_volume(
+                    target,
+                    ip.as_ref(),
+                    opts.timeout_secs,
+                    baseline_volume_cut.contains(&target.key),
+                );
                 let mut ok_count: u32 = if first.verdict == ProbeVerdict::Ok { 1 } else { 0 };
                 let mut attempts: u32 = 1;
                 let mut silent_failures: u32 = 0;
                 let mut explicit_failure = false;
                 emit_probe_event(&strategy, target, &first, 1, ok_count);
-                if matches!(first.verdict, ProbeVerdict::Blocked(_)) {
+                // Any definitive answer (open or blocked) proves the path is
+                // alive: only all-Unreachable runs may mean we went offline.
+                if !matches!(first.verdict, ProbeVerdict::Unreachable(_)) {
                     all_unreachable = false;
                 }
                 if first.verdict == ProbeVerdict::Ok {
@@ -2442,12 +2801,13 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                         } else {
                             explicit_failure = true;
                         }
-                        if matches!(extra.verdict, ProbeVerdict::Blocked(_)) {
+                        if !matches!(extra.verdict, ProbeVerdict::Unreachable(_)) {
                             all_unreachable = false;
                         }
                         emit_probe_event(&strategy, target, &extra, attempts, ok_count);
                     }
                 }
+                complete_series &= ok_count == CONFIRM_ATTEMPTS && attempts == CONFIRM_ATTEMPTS;
                 per_target.push((target.key.clone(), ok_count, attempts));
             }
 
@@ -2498,29 +2858,35 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             break;
         }
 
-        // Per-target results over baseline-blocked targets: 3/3 = confirmed
-        // open, 1-2 = unstable, 0 = still blocked.
+        // Per-target results over the probed targets: 3/3 = confirmed open,
+        // 1-2 = unstable, 0 = still blocked.
         let confirmed_open = per_target.iter().filter(|(_, ok, _)| *ok == CONFIRM_ATTEMPTS).count() as u32;
         let opened_any = per_target.iter().filter(|(_, ok, _)| *ok > 0).count() as u32;
         let baseline_blocked_total = blocked_keys.len() as u32;
+        let probe_total = probe_keys.len() as u32;
+        let full_success = probe_total > 0 && confirmed_open == probe_total;
         let opened_pct: f64 = if baseline_blocked_total > 0 {
             opened_any as f64 / baseline_blocked_total as f64 * 100.0
         } else {
             0.0
         };
         let score: Option<f64> = if baseline_blocked_total > 0 { Some(opened_pct) } else { None };
-        let time_ms: Option<f64> = if confirm_times.is_empty() {
-            None
-        } else {
-            Some(confirm_times.iter().sum::<u64>() as f64 / confirm_times.len() as f64)
-        };
+        // Only a complete series has comparable timings: one forgiven miss and
+        // the sample no longer describes the same request shape.
+        let time_ms: Option<f64> = if complete_series { median_ms(&mut confirm_times) } else { None };
 
-        let mut verdict: &str = if baseline_blocked_total == 0 {
-            "no_baseline_block"
-        } else if confirmed_open == baseline_blocked_total {
-            "works"
+        let mut verdict: &str = if full_success {
+            if blocked_keys.is_empty() {
+                // Informational: the baseline is open, a full pass is the only
+                // thing worth reporting and it never reaches history.
+                "no_baseline_block"
+            } else {
+                "works"
+            }
         } else if opened_any > 0 {
             "unstable"
+        } else if blocked_keys.is_empty() {
+            "not_works"
         } else {
             "failed"
         };
@@ -2531,7 +2897,15 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             let mut reopened = false;
             for target in targets.iter().filter(|t| blocked_keys.contains(&t.key)) {
                 let ip = resolved_ips.get(&target.key).cloned().flatten();
-                if probe_target(target, ip.as_ref(), opts.timeout_secs).verdict == ProbeVerdict::Ok {
+                // Same gate as the strategy probes: a short page that still
+                // hits the known volume cut must not read as "reopened".
+                let control = probe_with_volume(
+                    target,
+                    ip.as_ref(),
+                    opts.timeout_secs,
+                    baseline_volume_cut.contains(&target.key),
+                );
+                if control.verdict == ProbeVerdict::Ok {
                     reopened = true;
                     break;
                 }
@@ -2561,7 +2935,8 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         }));
 
         match verdict {
-            "works" => working.push(strategy.clone()),
+            "works" | "no_baseline_block" => working.push(strategy.clone()),
+            "unstable" | "not_counted" => {}
             _ => failed.push(strategy.clone()),
         }
 
@@ -2633,12 +3008,21 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         match spawned {
             Some(mut child) => {
                 thread::sleep(Duration::from_millis(500));
-                for target in &targets {
+                for target in targets.iter().filter(|t| probe_keys.contains(&t.key)) {
                     let mut ok = 0u32;
                     for attempt in 1..=CONFIRM_ATTEMPTS {
                         if shutdown_requested() { break; }
                         let ip = resolved_ips.get(&target.key).cloned().flatten();
-                        let outcome = probe_target(target, ip.as_ref(), opts.timeout_secs);
+                        let outcome = if attempt == 1 {
+                            probe_with_volume(
+                                target,
+                                ip.as_ref(),
+                                opts.timeout_secs,
+                                baseline_volume_cut.contains(&target.key),
+                            )
+                        } else {
+                            probe_target(target, ip.as_ref(), opts.timeout_secs)
+                        };
                         emit_probe_event(&strategy, target, &outcome, attempt, ok);
                         if outcome.verdict == ProbeVerdict::Ok { ok += 1; }
                     }
@@ -2683,7 +3067,8 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "ts": now_unix_ms(),
         }));
         match verdict {
-            "works" => working.push(strategy.clone()),
+            "works" | "no_baseline_block" => working.push(strategy.clone()),
+            "unstable" | "not_counted" => {}
             _ => failed.push(strategy.clone()),
         }
     }
@@ -2720,23 +3105,51 @@ mod tests {
 
     #[test]
     fn classify_https_table() {
-        assert_eq!(classify_https(0, 200, 5000), ProbeVerdict::Ok);
-        assert_eq!(classify_https(0, 301, 0), ProbeVerdict::Ok);
-        assert_eq!(classify_https(0, 400, 0), ProbeVerdict::Blocked("http_400"));
-        assert_eq!(classify_https(0, 0, 0), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(60, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
-        assert_eq!(classify_https(51, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
-        assert_eq!(classify_https(91, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
-        assert_eq!(classify_https(35, 0, 0), ProbeVerdict::Blocked("tls_error"));
-        assert_eq!(classify_https(52, 0, 0), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(56, 0, 0), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(28, 0, 0), ProbeVerdict::Blocked("timeout"));
-        assert_eq!(classify_https(18, 0, 16_000), ProbeVerdict::Blocked("body_cut"));
-        assert_eq!(classify_https(18, 0, 13_999), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(18, 0, 24_001), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(6, 0, 0), ProbeVerdict::Unreachable("resolve_failed"));
-        assert_eq!(classify_https(7, 0, 0), ProbeVerdict::Unreachable("connect_failed"));
-        assert_eq!(classify_https(2, 0, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(0, 200, 5000, 0), ProbeVerdict::Ok);
+        assert_eq!(classify_https(0, 301, 0, 0), ProbeVerdict::Ok);
+        assert_eq!(classify_https(0, 400, 0, 0), ProbeVerdict::Blocked("http_400"));
+        assert_eq!(classify_https(0, 0, 0, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(60, 0, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
+        assert_eq!(classify_https(51, 0, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
+        assert_eq!(classify_https(91, 0, 0, 0), ProbeVerdict::Blocked("cert_substitute"));
+        assert_eq!(classify_https(35, 0, 0, 0), ProbeVerdict::Blocked("tls_error"));
+        assert_eq!(classify_https(52, 0, 0, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(56, 0, 0, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(28, 0, 0, 0), ProbeVerdict::Blocked("timeout"));
+        // rc=18: a cut is a filter-window verdict (4000 handshake + headers +
+        // body), not a body-size one.
+        assert_eq!(classify_https(18, 0, 16_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Lower edge: 8000 body + 0 headers = 12_000 filter bytes.
+        assert_eq!(classify_https(18, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // A body below 8000 is a reset even with huge headers.
+        assert_eq!(classify_https(18, 0, 7_999, 20_000), ProbeVerdict::Blocked("reset"));
+        // Upper edge: 32_000 body + 0 headers = 36_000 filter bytes is in ...
+        assert_eq!(classify_https(18, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // ... one byte more is past the window.
+        assert_eq!(classify_https(18, 0, 32_001, 0), ProbeVerdict::Blocked("reset"));
+        // Filter past 36_000 is out even when the body alone would fit.
+        assert_eq!(classify_https(18, 0, 33_000, 1_000), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(6, 0, 0, 0), ProbeVerdict::Unreachable("resolve_failed"));
+        assert_eq!(classify_https(7, 0, 0, 0), ProbeVerdict::Unreachable("connect_failed"));
+        assert_eq!(classify_https(2, 0, 0, 0), ProbeVerdict::Blocked("reset"));
+    }
+
+    #[test]
+    fn classify_https_stall_and_reset_partials_use_the_window() {
+        // Lower edge: 8000 body + 0 headers = 12_000 filter bytes.
+        assert_eq!(classify_https(28, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(56, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(52, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Upper edge: 32_000 body + 0 headers = 36_000 filter bytes.
+        assert_eq!(classify_https(28, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(56, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Below the body floor or past the filter ceiling keeps the fallback.
+        assert_eq!(classify_https(28, 0, 7_999, 0), ProbeVerdict::Blocked("timeout"));
+        assert_eq!(classify_https(56, 0, 7_999, 20_000), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(52, 0, 7_999, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(28, 0, 40_000, 0), ProbeVerdict::Blocked("timeout"));
+        assert_eq!(classify_https(52, 0, 33_000, 1_000), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(56, 0, 32_001, 0), ProbeVerdict::Blocked("reset"));
     }
 
     #[test]
@@ -3020,5 +3433,126 @@ mod tests {
                 assert!(unexpected.is_empty(), "{} [{}] unresolved: {unexpected:?}", file, entry.id);
             }
         }
+    }
+
+    /// Build a volume run from (http_code, size_download, size_header,
+    /// num_connects) tuples.
+    fn volume_run(rc: i32, transfers: &[(u32, u64, u64, u64)]) -> VolumeRun {
+        VolumeRun {
+            segments: transfers
+                .iter()
+                .map(|(http_code, size_download, size_header, num_connects)| VolumeSegment {
+                    http_code: *http_code,
+                    size_download: *size_download,
+                    size_header: *size_header,
+                    num_connects: *num_connects,
+                })
+                .collect(),
+            rc,
+        }
+    }
+
+    /// `repeats` clean 2xx transfers reusing one connection.
+    fn clean_run(repeats: usize, body: u64, header: u64) -> VolumeRun {
+        let transfers: Vec<(u32, u64, u64, u64)> = (0..repeats)
+            .map(|i| (200, body, header, if i == 0 { 1 } else { 0 }))
+            .collect();
+        volume_run(0, &transfers)
+    }
+
+    #[test]
+    fn classify_volume_rc18_in_window_is_cut() {
+        // filter = 4000 + 500 header + 16000 body = 20500, inside 12k..=36k.
+        let run = volume_run(18, &[(200, 16_000, 500, 1)]);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
+    }
+
+    #[test]
+    fn classify_volume_partial_timeout_is_cut() {
+        // A timeout after a partial body inside the window is a cut too.
+        let run = volume_run(28, &[(200, 10_000, 400, 1)]);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
+    }
+
+    #[test]
+    fn classify_volume_partial_reset_is_cut() {
+        let run = volume_run(56, &[(200, 9_000, 300, 1)]);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
+    }
+
+    #[test]
+    fn classify_volume_valid_short_page_is_never_cut() {
+        // A complete, short 200 is just short: no cut, no positive evidence.
+        let run = clean_run(1, 200, 200);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Unknown);
+    }
+
+    #[test]
+    fn classify_volume_repeated_short_pages_accumulate_to_ok() {
+        // 16 * (2500 body + 200 header) + 4000 handshake = 47200 filter bytes.
+        assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 2_500, 200)), VolumeVerdict::Ok);
+        // 16 * (2200 + 200) + 4000 = 42400: the body alone stays under the old
+        // window, the filter volume crosses it.
+        assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 2_200, 200)), VolumeVerdict::Ok);
+        // 16 * (1000 + 200) + 4000 = 23200 never reaches the window.
+        assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 1_000, 200)), VolumeVerdict::Unknown);
+    }
+
+    #[test]
+    fn classify_volume_clean_fin_truncation_is_cut() {
+        // curl reports a clean-FIN truncation as rc=18 with the partial bytes.
+        let run = volume_run(18, &[(200, 20_000, 800, 1)]);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
+    }
+
+    #[test]
+    fn classify_volume_transport_error_outside_window_is_not_cut() {
+        // Below the window: too little body to be a window cut.
+        assert_eq!(classify_volume(&volume_run(56, &[(200, 3_000, 200, 1)])), VolumeVerdict::Unknown);
+        // Above the window: the transfer already crossed it, so not a cut.
+        assert_eq!(classify_volume(&volume_run(56, &[(200, 40_000, 900, 1)])), VolumeVerdict::Unknown);
+    }
+
+    #[test]
+    fn classify_volume_requires_a_single_connection() {
+        // A second segment that reconnected makes the counters incomparable.
+        let run = volume_run(0, &[(200, 2_500, 200, 1), (200, 2_500, 200, 1)]);
+        assert_eq!(classify_volume(&run), VolumeVerdict::Unknown);
+        // And without the first transfer opening a connection there is nothing.
+        assert_eq!(classify_volume(&volume_run(0, &[(0, 0, 0, 0)])), VolumeVerdict::Unknown);
+    }
+
+    #[test]
+    fn classify_volume_non_success_status_is_unknown() {
+        let transfers: Vec<(u32, u64, u64, u64)> = (0..VOLUME_TRANSFERS)
+            .map(|i| (403, 3_000, 200, if i == 0 { 1 } else { 0 }))
+            .collect();
+        assert_eq!(classify_volume(&volume_run(0, &transfers)), VolumeVerdict::Unknown);
+        // An abort inside the window is no cut when the answer was 403: the
+        // transfer never proved the block, so it stays inconclusive.
+        assert_eq!(classify_volume(&volume_run(18, &[(403, 16_000, 500, 1)])), VolumeVerdict::Unknown);
+    }
+
+    #[test]
+    fn parse_volume_lines_ignores_error_text() {
+        let out = "curl: (18) transfer closed with outstanding read data remaining\n\
+                   ZDTD-VOL\t200\t16000\t500\t1\n\
+                   ZDTD-VOL\t200\t2000\t300\t0";
+        let segments = parse_volume_lines(out);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(
+            segments[0],
+            VolumeSegment { http_code: 200, size_download: 16_000, size_header: 500, num_connects: 1 }
+        );
+        assert_eq!(segments[1].num_connects, 0);
+    }
+
+    #[test]
+    fn median_timing_odd_and_even() {
+        let mut empty: Vec<u64> = Vec::new();
+        assert_eq!(median_ms(&mut empty), None);
+        assert_eq!(median_ms(&mut [30]), Some(30.0));
+        assert_eq!(median_ms(&mut [30, 10, 20]), Some(20.0));
+        assert_eq!(median_ms(&mut [40, 10, 20, 30]), Some(25.0));
     }
 }

@@ -148,10 +148,12 @@ object BlockcheckController {
             }
             is BlockcheckEvent.StrategyResult -> store.update {
                 val r = event.result
+                // Informational successes (no_baseline_block) are working too,
+                // but never unstable/failed as well.
                 val w = if (r.isWorking) it.workingStrategies + r.strategy else it.workingStrategies
-                val u = if (r.isUnstable || r.noBaselineBlock || r.verdict == "not_counted")
+                val u = if (r.isUnstable || r.verdict == "not_counted")
                     it.unstableStrategies + r.strategy else it.unstableStrategies
-                val f = if (!r.isWorking && !r.isUnstable && !r.noBaselineBlock && r.verdict != "not_counted")
+                val f = if (!r.isWorking && !r.isUnstable && r.verdict != "not_counted")
                     it.failedStrategies + r.strategy else it.failedStrategies
                 it.copy(
                     workingStrategies = w,
@@ -179,13 +181,18 @@ object BlockcheckController {
                 store.update { it.copy(isError = true, errorMessage = msg, isRunning = false) }
             }
             is BlockcheckEvent.Finished -> {
-                val unstableNow = store.state.value.results
-                    .filter { it.isUnstable || it.noBaselineBlock || it.verdict == "not_counted" }
+                val results = store.state.value.results
+                val unstableNow = results
+                    .filter { it.isUnstable || it.verdict == "not_counted" }
                     .map { it.strategy }
+                // Informational successes count as working even when the
+                // tester's summary lists them separately.
+                val informationalNow = results.filter { it.noBaselineBlock }.map { it.strategy }
                 store.update {
+                    val working = event.working + informationalNow.filter { s -> s !in event.working }
                     it.copy(
-                        workingStrategies = event.working,
-                        failedStrategies = event.failed.filter { s -> s !in unstableNow },
+                        workingStrategies = working,
+                        failedStrategies = event.failed.filter { s -> s !in unstableNow && s !in working },
                         unstableStrategies = unstableNow,
                         isFinished = true,
                         isRunning = false,

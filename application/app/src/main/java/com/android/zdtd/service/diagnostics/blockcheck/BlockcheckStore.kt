@@ -76,16 +76,19 @@ data class BlockcheckStrategyResult(
     // once. null when nothing was blocked at baseline.
     val openedPct: Double? = null,
     val score: Double? = null,
-    // Mean wall time of successful confirm probes; null when nothing opened.
+    // Median wall time of successful confirm probes; only supplied for a
+    // complete successful attempt series, so null means not rankable.
     val timeMs: Double? = null,
     // Worst-case confirm count over probed targets (0..attemptsTotal).
     val attemptsOk: Int = 0,
     val attemptsTotal: Int = 0,
 ) {
-    val isWorking: Boolean get() = verdict == "works"
+    // Informational successes count as working and use their complete-series
+    // median for ranking, just like ordinary working results.
+    val isWorking: Boolean get() = verdict == "works" || verdict == "no_baseline_block"
     val isUnstable: Boolean get() = verdict == "unstable"
-    // "no_baseline_block" means every target already worked without a strategy,
-    // so the strategy cannot be judged against a blocked baseline.
+    // "no_baseline_block": the full run proved targets open without a bypass,
+    // so no strategy can be credited against a blocked baseline.
     val noBaselineBlock: Boolean get() = verdict == "no_baseline_block"
 }
 

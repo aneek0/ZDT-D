@@ -63,19 +63,27 @@ nfqws-tester usage --pid 1234
 ## auto
 
 Runs a full sweep used by the in-app blockcheck UI. It first probes every host
-in `<hosts.txt>` with **no** strategy (baseline), then scans the atomic catalog
-(`strategic/scan/*.txt`), re-testing each generated config, and emits streamed
-JSON events:
+in `<hosts.txt>` with **no** strategy (baseline), then scans the selected
+atomic-catalog batch (`strategic/scan/*.txt`), re-testing each generated config.
+HTTPS checks include a same-connection volume probe so a short HTTP response
+cannot hide a repeated 12–36 KB filter-byte cut. A cut must reproduce before it
+is confirmed; a legitimately short response is not a cut by itself.
+
+The tester emits streamed JSON events:
 
 - `auto_started` — strategy/host totals;
 - `auto_phase` — `baseline` then `strategy`;
-- `auto_baseline_probe` — per-host baseline HTTP code/size;
+- `auto_baseline_probe` — per-host baseline HTTP code/size/`time_ms`;
 - `auto_strategy_start` / `auto_strategy_skip` / `auto_strategy_error`;
 - `auto_strategy_probe` — per-host result vs baseline;
 - `auto_strategy_result` — gradient verdict:
-  - `verdict`: `works` (all baseline-blocked hosts opened), `partial` (some
-    opened), `failed` (none opened), or `no_baseline_block` (nothing was
-    blocked at baseline, so the strategy cannot be judged);
+  - `verdict`: `works` (all baseline-blocked hosts opened), `unstable` (some
+    progress without a full pass), `failed` / `not_works` (none opened), or
+    `no_baseline_block` (a full informational pass while every baseline target
+    was already open). Informational runs still test every selected strategy
+    and do not write strategy history;
+  - `time_ms`: median `curl time_total` of successful page requests, present
+    only when every confirmation series completed without a forgiven miss;
   - `opened_pct` / `score`: share (0..100) of baseline-blocked hosts this
     strategy opened; `score` is `null` when there was no baseline block;
   - `hosts_total`, `baseline_blocked`, `hosts_opened`, `hosts_still_blocked`.
@@ -84,8 +92,10 @@ JSON events:
 `strategic/strategicvar/nfqws2/` so the daemon can start it.
 
 Hosts are DNS-resolved once and reused for both the baseline and every
-per-strategy probe (single resolve + dedupe). `ipset-*` files are not valid
-host lists for this sweep.
+per-strategy probe (single resolve + dedupe). Before engine configs are
+generated, the hostlist is copied into the root-owned tester workdir because
+nfqws2 cannot read app-private cache files; the copy is removed with the other
+generated files. `ipset-*` files are not valid host lists for this sweep.
 
 ## list
 

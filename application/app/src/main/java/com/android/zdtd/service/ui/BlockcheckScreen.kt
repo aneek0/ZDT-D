@@ -648,10 +648,12 @@ fun BlockcheckScreen(
                             )
                         }
                     }
-                    // Fastest confirmed strategy first.
+                    // Fastest ranked strategy first; unranked successful
+                    // results stay visible after them.
                     val workingResults = state.results
                         .filter { it.isWorking }
                         .sortedBy { it.timeMs ?: Double.MAX_VALUE }
+                    val bestResult = workingResults.firstOrNull { it.timeMs != null }
                     if (workingResults.isNotEmpty()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -660,10 +662,14 @@ fun BlockcheckScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(context.getString(R.string.blockcheck_working_count_fmt, workingResults.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E))
-                                if (actions != null) {
+                                Text(
+                                    if (bestResult != null) context.getString(R.string.blockcheck_working_count_fmt, workingResults.size)
+                                    else context.getString(R.string.blockcheck_works),
+                                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF22C55E),
+                                )
+                                if (actions != null && bestResult != null) {
                                     Button(
-                                        onClick = { applyStrategy(workingResults.first().strategy) },
+                                        onClick = { applyStrategy(bestResult.strategy) },
                                         modifier = Modifier.fillMaxWidth(),
                                     ) { Text(context.getString(R.string.blockcheck_apply_best)) }
                                 }
