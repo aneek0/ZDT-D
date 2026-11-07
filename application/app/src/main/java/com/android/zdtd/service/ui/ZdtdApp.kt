@@ -461,6 +461,12 @@ private fun StartupFullscreenContent(
                   Text(stringResource(R.string.common_retry))
                 }
                 OutlinedButton(
+                  onClick = onRetry,
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Text(stringResource(R.string.startup_restart_daemon))
+                }
+                OutlinedButton(
                   onClick = onReinstall,
                   modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -695,7 +701,7 @@ private fun DaemonUnavailableDialogHost(
         )
         CircularProgressIndicator()
         TextButton(onClick = onStartDaemon) {
-          Text(stringResource(R.string.settings_daemon_start))
+          Text(stringResource(R.string.startup_restart_daemon))
         }
         TextButton(onClick = onOpenSettings) {
           Text(stringResource(R.string.settings_screen_title))

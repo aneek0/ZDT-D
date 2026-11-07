@@ -2199,6 +2199,7 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="settings_daemon_start_failed">Falha ao iniciar o daemon</string>
     <string name="settings_daemon_killall_failed">Falha ao interromper todos os processos do daemon</string>
     <string name="analysis_tools_entry_desc">Teste de estratégias, detecção de DPI e diagnóstico de rede</string>
+    <string name="startup_restart_daemon">Reiniciar daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

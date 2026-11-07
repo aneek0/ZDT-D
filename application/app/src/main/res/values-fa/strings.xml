@@ -2199,6 +2199,7 @@ APatch: 10700+</string>
     <string name="settings_daemon_start_failed">راه‌اندازی daemon ناموفق بود</string>
     <string name="settings_daemon_killall_failed">توقف همه فرآیندهای daemon ناموفق بود</string>
     <string name="analysis_tools_entry_desc">آزمایش استراتژی‌ها، تشخیص DPI و عیب‌یابی شبکه</string>
+    <string name="startup_restart_daemon">راه‌اندازی مجدد daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

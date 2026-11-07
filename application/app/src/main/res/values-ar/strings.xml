@@ -2203,6 +2203,7 @@ APatch: ‏10700+</string>
     <string name="settings_daemon_start_failed">تعذّر تشغيل daemon</string>
     <string name="settings_daemon_killall_failed">تعذّر إيقاف جميع عمليات daemon</string>
     <string name="analysis_tools_entry_desc">اختبار الاستراتيجيات وكشف DPI وتشخيص الشبكة</string>
+    <string name="startup_restart_daemon">إعادة تشغيل daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

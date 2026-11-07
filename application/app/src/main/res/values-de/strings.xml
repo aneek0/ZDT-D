@@ -2199,6 +2199,7 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="settings_daemon_start_failed">Daemon konnte nicht gestartet werden</string>
     <string name="settings_daemon_killall_failed">Alle Daemon-Prozesse konnten nicht beendet werden</string>
     <string name="analysis_tools_entry_desc">Strategietests, DPI-Erkennung und Netzwerkdiagnose</string>
+    <string name="startup_restart_daemon">Daemon neu starten</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

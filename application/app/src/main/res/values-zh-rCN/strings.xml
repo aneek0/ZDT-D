@@ -2198,6 +2198,7 @@ APatch：10700+</string>
     <string name="settings_daemon_start_failed">无法启动 daemon</string>
     <string name="settings_daemon_killall_failed">无法停止所有 daemon 进程</string>
     <string name="analysis_tools_entry_desc">策略测试、DPI 检测和网络诊断</string>
+    <string name="startup_restart_daemon">重启 daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

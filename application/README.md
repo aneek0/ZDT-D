@@ -156,6 +156,9 @@ or hotspot-related settings. Daemon process controls include the app-owned
 auto-restart toggle (enabled by default), manual Start, and a confirmed Kill all
 action that also disables auto-restart until a later manual start.
 
+The service-unavailable startup and runtime screens also expose an explicit
+daemon restart action.
+
 ### Support
 
 Shows project support links and related user information.

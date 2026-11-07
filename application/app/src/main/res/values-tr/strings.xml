@@ -2198,6 +2198,7 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="settings_daemon_start_failed">daemon başlatılamadı</string>
     <string name="settings_daemon_killall_failed">Tüm daemon süreçleri durdurulamadı</string>
     <string name="analysis_tools_entry_desc">Strateji testi, DPI algılama ve ağ tanılama</string>
+    <string name="startup_restart_daemon">daemon’u yeniden başlat</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

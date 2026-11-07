@@ -2198,6 +2198,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="settings_daemon_start_failed">daemon を起動できませんでした</string>
     <string name="settings_daemon_killall_failed">すべての daemon プロセスを停止できませんでした</string>
     <string name="analysis_tools_entry_desc">戦略テスト、DPI 検出、ネットワーク診断</string>
+    <string name="startup_restart_daemon">daemon を再起動</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

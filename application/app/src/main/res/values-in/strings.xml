@@ -2198,6 +2198,7 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="settings_daemon_start_failed">Gagal menjalankan daemon</string>
     <string name="settings_daemon_killall_failed">Gagal menghentikan semua proses daemon</string>
     <string name="analysis_tools_entry_desc">Pengujian strategi, deteksi DPI, dan diagnostik jaringan</string>
+    <string name="startup_restart_daemon">Mulai ulang daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

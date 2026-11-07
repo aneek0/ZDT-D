@@ -2199,6 +2199,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="settings_daemon_start_failed">daemon शुरू करने में विफल</string>
     <string name="settings_daemon_killall_failed">सभी daemon प्रक्रियाएँ बंद करने में विफल</string>
     <string name="analysis_tools_entry_desc">रणनीति परीक्षण, DPI डिटेक्शन और नेटवर्क डायग्नोस्टिक्स</string>
+    <string name="startup_restart_daemon">daemon पुनः प्रारंभ करें</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

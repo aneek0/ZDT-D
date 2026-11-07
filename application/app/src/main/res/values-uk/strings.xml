@@ -2201,6 +2201,7 @@ APatch: 10700+</string>
     <string name="settings_daemon_start_failed">Не вдалося запустити демон</string>
     <string name="settings_daemon_killall_failed">Не вдалося зупинити всі процеси демона</string>
     <string name="analysis_tools_entry_desc">Підбір стратегій, DPI Detector і діагностика мережі</string>
+    <string name="startup_restart_daemon">Перезапустити демон</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
