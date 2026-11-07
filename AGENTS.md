@@ -120,6 +120,11 @@ bails with an explicit error. Baseline/pass-open confirm dialogs mark the run
 `forced` (informational: history not saved).
 
 ## Build
+For local builds, use `bash scripts/build_local.sh`: it builds the module zip and
+release APK, rebuilds stale Rust binaries, prepares generated assets, uses the
+isolated `out/gradle-home`, and verifies that the APK embeds the exact module zip.
+Use `--module` for a module-only build or `--install` to also install through adb.
+The manual Gradle flow below is for custom builds.
 
 This machine has a full local build env (JDK 17 at `~/.local/opt/jdk17`, Gradle 9.6.0 at `~/.local/opt/gradle-9.6.0`, Android SDK 37 at `~/Android/Sdk`, debug keystore at `application/.tools/signing/`). Local APK build: create `out/module/zdt_module.zip` + `out/module/module.prop` from `module_template/` + `prebuilt/` (with `verify_sum` sha256 files), copy `prebuilt/bin/arm64-v8a/{dpi-detector,nfqws-tester}` into `application/app/build/generated/zdt-root-assets/main/{dpi-detector,nfqws-tester}/arm64-v8a/` (asset names: `dpi-detector`, `nfqws_tester`), then `cd application && JAVA_HOME=~/.local/opt/jdk17 GRADLE_USER_HOME=<isolated home> ~/.local/opt/gradle-9.6.0/bin/gradle assembleRelease` → `app/build/outputs/apk/release/app-release.apk` (use an isolated `GRADLE_USER_HOME`; the global `~/.gradle/init.d/maven-mirror.gradle` conflicts with settings repositories). Prefer local builds for iteration; GitHub Actions remains the release pipeline (push artifacts: APK `zdt-apk`, module zip `zdt-module-final`).
 
