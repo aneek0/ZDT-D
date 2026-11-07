@@ -2216,23 +2216,6 @@ fn ensure_profile_layout(id: &str, profile: &str) -> Result<()> {
     Ok(())
 }
 
-fn detect_iface(prefixes: &[&str]) -> Option<String> {
-    // Prefer sysfs existence checks (fast, no shell).
-    if let Ok(entries) = fs::read_dir("/sys/class/net") {
-        let mut names: Vec<String> = entries
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
-            .collect();
-        names.sort();
-        for pref in prefixes {
-            if let Some(x) = names.iter().find(|n| n.starts_with(pref)) {
-                return Some(x.clone());
-            }
-        }
-    }
-    None
-}
-
 
 fn write_default_port_json(id: &str, profile: &str) -> Result<()> {
     let root = profile_root(id, profile);
@@ -2244,8 +2227,8 @@ fn write_default_port_json(id: &str, profile: &str) -> Result<()> {
     match id {
         "nfqws2" => {
             let port = crate::ports::suggest_port_for_new_profile(id)?;
-            let wifi = detect_iface(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_string());
-            let mobile = detect_iface(&["rmnet", "ccmni", "pdp"]).unwrap_or_else(|| "rmnet_data0".to_string());
+            let wifi = crate::programs::common::normalize_wifi_iface("");
+            let mobile = crate::programs::common::normalize_mobile_iface("");
             let v = json!({
                 "port": port,
                 "iface_mobile": mobile,

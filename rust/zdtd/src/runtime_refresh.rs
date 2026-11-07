@@ -224,6 +224,9 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
         match snapshot {
             RoutingSnapshot::NfqV1 { uid_file, mode, queue, iface, filter } => {
                 let filter = filter_from_snapshot(filter);
+                // Snapshots outlive daemon restarts, so a pre-wildcard snapshot
+                // can still pin one bearer (rmnet_data0). Re-normalize on replay.
+                let iface = iface.map(|i| crate::programs::common::normalize_mobile_iface(&i));
                 crate::iptables::iptables_v1::apply(&mode, queue, iface.as_deref(), Some(Path::new(&uid_file)), filter.as_ref())?;
             }
             RoutingSnapshot::NfqV2 { uid_file, port, filter } => {

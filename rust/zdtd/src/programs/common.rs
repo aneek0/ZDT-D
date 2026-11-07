@@ -95,6 +95,65 @@ pub fn default_iface() -> String {
     "auto".to_string()
 }
 
+/// Modem packet-data bearer prefixes, most specific first.
+const MOBILE_IFACE_PREFIXES: &[&str] = &["rmnet_data", "ccmni", "pdp", "rmnet"];
+
+/// First /sys/class/net entry matching one of `prefixes`, without shelling out.
+pub fn detect_iface_by_prefix(prefixes: &[&str]) -> Option<String> {
+    let mut names: Vec<String> = fs::read_dir("/sys/class/net")
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+        .collect();
+    names.sort();
+    prefixes
+        .iter()
+        .find_map(|p| names.iter().find(|n| n.starts_with(p)).cloned())
+}
+
+/// `rmnet_data2` -> `rmnet_data`, but only for a numbered bearer name.
+fn mobile_iface_prefix(name: &str) -> Option<&'static str> {
+    MOBILE_IFACE_PREFIXES.iter().copied().find(|p| {
+        name.strip_prefix(p)
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
+
+/// Mobile data moves between numbered bearers on every reconnect, so a single
+/// captured name silently stops matching and the per-app slot looks dead
+/// (observed: LTE on rmnet_data2 while port.json pinned rmnet_data0, zero
+/// packets matched). Match the whole family with an iptables `+` wildcard.
+/// `auto`/`detect`/empty select the wildcard too; anything else (`usb0`,
+/// `eth0`, an explicit `foo+`) is a manual override and passes through.
+pub fn normalize_mobile_iface(raw: &str) -> String {
+    let s = raw.trim();
+    if s.ends_with('+') {
+        return s.to_owned();
+    }
+    if let Some(prefix) = mobile_iface_prefix(s) {
+        return format!("{prefix}+");
+    }
+    if s.is_empty() || s.eq_ignore_ascii_case("auto") || s.eq_ignore_ascii_case("detect") {
+        return detect_iface_by_prefix(MOBILE_IFACE_PREFIXES)
+            .as_deref()
+            .and_then(mobile_iface_prefix)
+            .map(|prefix| format!("{prefix}+"))
+            .unwrap_or_else(|| "rmnet_data+".to_owned());
+    }
+    s.to_owned()
+}
+
+/// `auto`/`detect`/empty for the Wi-Fi slot means the wireless interface, not
+/// "whatever the default route is" — resolving both slots through the default
+/// route made them identical. Explicit names pass through.
+pub fn normalize_wifi_iface(raw: &str) -> String {
+    let s = raw.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("auto") || s.eq_ignore_ascii_case("detect") {
+        return detect_iface_by_prefix(&["wlan", "wifi"]).unwrap_or_else(|| "wlan0".to_owned());
+    }
+    s.to_owned()
+}
+
 // from programs/mihomo.rs
 pub fn validate_loglevel(v: &str, field: &str) -> Result<()> {
     match v {
@@ -662,4 +721,39 @@ pub fn apply_t2s_routing_ext(
         ifaces_raw,
         opt,
     )
+}
+
+#[cfg(test)]
+mod iface_tests {
+    use super::*;
+
+    #[test]
+    fn numbered_mobile_bearer_becomes_family_wildcard() {
+        // The on-device failure: LTE came up on rmnet_data2 while port.json
+        // pinned rmnet_data0, so the mobile slot matched zero packets.
+        assert_eq!(normalize_mobile_iface("rmnet_data0"), "rmnet_data+");
+        assert_eq!(normalize_mobile_iface("rmnet_data2"), "rmnet_data+");
+        assert_eq!(normalize_mobile_iface("ccmni1"), "ccmni+");
+        assert_eq!(normalize_mobile_iface("pdp0"), "pdp+");
+        assert_eq!(normalize_mobile_iface(" rmnet_data3 "), "rmnet_data+");
+    }
+
+    #[test]
+    fn manual_iface_overrides_pass_through() {
+        assert_eq!(normalize_mobile_iface("usb0"), "usb0");
+        assert_eq!(normalize_mobile_iface("wlan0"), "wlan0");
+        // Not a numbered bearer: rmnet_ipa0 is the IPA offload link.
+        assert_eq!(normalize_mobile_iface("rmnet_ipa0"), "rmnet_ipa0");
+        assert_eq!(normalize_mobile_iface("rmnet_data+"), "rmnet_data+");
+        assert_eq!(normalize_wifi_iface("wlan0"), "wlan0");
+        assert_eq!(normalize_wifi_iface("wlan+"), "wlan+");
+    }
+
+    #[test]
+    fn auto_mobile_always_resolves_to_a_wildcard() {
+        // Never the single bearer name that used to break on reconnect.
+        assert!(normalize_mobile_iface("").ends_with('+'));
+        assert!(normalize_mobile_iface("auto").ends_with('+'));
+        assert!(normalize_mobile_iface("DETECT").ends_with('+'));
+    }
 }

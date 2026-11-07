@@ -150,9 +150,12 @@ let resolved_mobile = count_valid_uid_pairs(&out_mobile)?;
     crate::logging::user_info(&format!("zapret2[{profile_name}]: iptables"));
     // v2 (no iface) for USER
     iptables_v2::apply(port_cfg.port, Some(&out_user), port_filter_ref)?;
-    // v1 full for mobile + wifi with iface mapping
-    iptables_v1::apply("full", port_cfg.port, Some(port_cfg.iface_mobile.as_str()), Some(&out_mobile), port_filter_ref)?;
-    iptables_v1::apply("full", port_cfg.port, Some(port_cfg.iface_wifi.as_str()), Some(&out_wifi), port_filter_ref)?;
+    // v1 full for mobile + wifi with iface mapping; mobile resolves to a
+    // bearer-family wildcard so LTE bearer changes cannot break the slot.
+    let iface_mobile = normalize_mobile_iface(&port_cfg.iface_mobile);
+    let iface_wifi = normalize_wifi_iface(&port_cfg.iface_wifi);
+    iptables_v1::apply("full", port_cfg.port, Some(iface_mobile.as_str()), Some(&out_mobile), port_filter_ref)?;
+    iptables_v1::apply("full", port_cfg.port, Some(iface_wifi.as_str()), Some(&out_wifi), port_filter_ref)?;
 
     info!("nfqws profile started: {} port={}", profile_name, port_cfg.port);
     Ok(())
