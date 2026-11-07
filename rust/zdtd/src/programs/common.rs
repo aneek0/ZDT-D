@@ -154,6 +154,20 @@ pub fn normalize_wifi_iface(raw: &str) -> String {
     s.to_owned()
 }
 
+
+/// Replay helper for stored interface lists: numbered mobile bearers become
+/// family wildcards, everything else — including `auto`/`detect`, whose
+/// meaning is program-specific — is left exactly as it was.
+pub fn normalize_bearer_tokens(raw: &str) -> String {
+    raw.split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|tok| !tok.is_empty())
+        .map(|tok| match mobile_iface_prefix(tok) {
+            Some(prefix) => format!("{prefix}+"),
+            None => tok.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 // from programs/mihomo.rs
 pub fn validate_loglevel(v: &str, field: &str) -> Result<()> {
     match v {
@@ -755,5 +769,13 @@ mod iface_tests {
         assert!(normalize_mobile_iface("").ends_with('+'));
         assert!(normalize_mobile_iface("auto").ends_with('+'));
         assert!(normalize_mobile_iface("DETECT").ends_with('+'));
+    }
+
+    #[test]
+    fn bearer_list_replay_only_rewrites_numbered_mobile_names() {
+        assert_eq!(normalize_bearer_tokens("wlan0 rmnet_data0"), "wlan0 rmnet_data+");
+        assert_eq!(normalize_bearer_tokens("wlan0,rmnet_data2"), "wlan0 rmnet_data+");
+        assert_eq!(normalize_bearer_tokens("auto"), "auto");
+        assert_eq!(normalize_bearer_tokens("usb0"), "usb0");
     }
 }

@@ -286,6 +286,18 @@ fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Ve
 }
 
 fn iface_exists(name: &str) -> bool {
+    // `foo+` is the iptables interface wildcard: valid while at least one
+    // interface matches the prefix (mobile bearers appear and disappear).
+    if let Some(prefix) = name.strip_suffix('+') {
+        return fs::read_dir("/sys/class/net")
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+                    .any(|n| n.starts_with(prefix))
+            })
+            .unwrap_or(false);
+    }
     if shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     if shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     std::path::Path::new("/sys/class/net").join(name).is_dir()

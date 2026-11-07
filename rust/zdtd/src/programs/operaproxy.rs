@@ -595,18 +595,22 @@ pub fn start_if_enabled() -> Result<()> {
         None,
         opt.clone(),
     )?;
+    // Interface-scoped slots; mobile resolves to a bearer-family wildcard and
+    // `auto` no longer collapses both slots onto the same default interface.
+    let iface_mobile = normalize_mobile_iface(&port_cfg.iface_mobile);
+    let iface_wifi = normalize_wifi_iface(&port_cfg.iface_wifi);
     apply_t2s_routing(
         Path::new(APP_OUT_MOBILE),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
-        Some(port_cfg.iface_mobile.as_str()),
+        Some(iface_mobile.as_str()),
         opt.clone(),
     )?;
     apply_t2s_routing(
         Path::new(APP_OUT_WIFI),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
-        Some(port_cfg.iface_wifi.as_str()),
+        Some(iface_wifi.as_str()),
         opt,
     )?;
 

@@ -236,6 +236,7 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
             RoutingSnapshot::Nat { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
                 let opt = crate::iptables::iptables_port::IptablesDpiOptions { port_preference, dpi_ports };
+                let ifaces_raw = ifaces_raw.map(|s| crate::programs::common::normalize_bearer_tokens(&s));
                 crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;
             }
             RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
@@ -249,7 +250,7 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
                     dest_port,
                     proto_choice,
                     proto_choice,
-                    ifaces_raw.as_deref(),
+                    ifaces_raw.map(|s| crate::programs::common::normalize_bearer_tokens(&s)).as_deref(),
                     opt,
                 )?;
             }
