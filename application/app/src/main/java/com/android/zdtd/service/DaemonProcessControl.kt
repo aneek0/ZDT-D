@@ -403,8 +403,9 @@ class DaemonProcessControl(
 
   /**
    * Scan-only: prints the PID of every process whose `/proc/<pid>/exe` exactly
-   * matches a ZDT-D owned path. With [onlyDaemon] the match is narrowed to the
-   * daemon binary under `/data/adb/modules` roots.
+   * matches a ZDT-D owned path. One `ls` reads all symlinks; the shell parses
+   * them without spawning a separate `readlink` for every process.
+   * With [onlyDaemon] the match is narrowed to daemon binaries under module roots.
    */
   private fun pidsScript(onlyDaemon: Boolean): String {
     val daemonPaths = listOf(
@@ -415,9 +416,12 @@ class DaemonProcessControl(
     val casePatterns = if (onlyDaemon) daemonPaths else ownedExePatterns()
     return buildString {
       append(rootGuard)
-      append("for p in /proc/[0-9]*; do ")
-      append("pid=\${p#/proc/}; ")
-      append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; ")
+      append("ls -l /proc/[0-9]*/exe 2>/dev/null | while IFS= read -r line; do ")
+      append("exe=\${line#* -> }; ")
+      append("[ \"\$exe\" != \"\$line\" ] || continue; ")
+      append("source=\${line%% -> *}; ")
+      append("pid=\${source%/exe}; ")
+      append("pid=\${pid##*/}; ")
       append("exe=\${exe% (deleted)}; ")
       append("case \"\$exe\" in ")
       append(casePatterns.joinToString("|"))
