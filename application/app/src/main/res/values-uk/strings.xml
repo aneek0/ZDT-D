@@ -2187,6 +2187,20 @@ APatch: 10700+</string>
     <string name="nfqws2_item_expand">Розгорнути елемент</string>
     <string name="nfqws2_item_collapse">Згорнути елемент</string>
     <string name="nfqws2_search_no_matches">Нічого не знайдено</string>
+    <string name="nfqws2_lists_show_all">Показати всі %1$d списків</string>
+    <string name="nfqws2_lists_show_less">Згорнути список</string>
+    <string name="settings_daemon_autorestart_title">Авто-перезапуск демона</string>
+    <string name="settings_daemon_autorestart_body">Автоматично перезапускати демон після повторних помилок підключення, поки застосунок відкритий.</string>
+    <string name="settings_daemon_control_title">Процеси демона</string>
+    <string name="settings_daemon_start">Запустити демон</string>
+    <string name="settings_daemon_start_body">Запустити або перезапустити API-демон, не вмикаючи обхід.</string>
+    <string name="settings_daemon_killall">Зупинити всі</string>
+    <string name="settings_daemon_killall_body">Зупинити демон, обхід і тестові інструменти; вимкнути авто-перезапуск.</string>
+    <string name="settings_daemon_killall_confirm_title">Зупинити всі процеси демона?</string>
+    <string name="settings_daemon_killall_confirm_body">Обхід, демон і породжені застосунком процеси буде зупинено. Авто-перезапуск вимкнеться. Повторний запуск — лише вручну.</string>
+    <string name="settings_daemon_start_failed">Не вдалося запустити демон</string>
+    <string name="settings_daemon_killall_failed">Не вдалося зупинити всі процеси демона</string>
+    <string name="analysis_tools_entry_desc">Підбір стратегій, DPI Detector і діагностика мережі</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

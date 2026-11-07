@@ -2185,6 +2185,20 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="nfqws2_item_expand">Expandir elemento</string>
     <string name="nfqws2_item_collapse">Contraer elemento</string>
     <string name="nfqws2_search_no_matches">No se encontró nada</string>
+    <string name="nfqws2_lists_show_all">Mostrar las %1$d listas</string>
+    <string name="nfqws2_lists_show_less">Mostrar menos listas</string>
+    <string name="settings_daemon_autorestart_title">Reinicio automático del daemon</string>
+    <string name="settings_daemon_autorestart_body">Reinicia el daemon tras fallos de conexión repetidos mientras la app está abierta.</string>
+    <string name="settings_daemon_control_title">Procesos del daemon</string>
+    <string name="settings_daemon_start">Iniciar daemon</string>
+    <string name="settings_daemon_start_body">Inicia o reinicia el daemon de la API sin activar la evasión.</string>
+    <string name="settings_daemon_killall">Detener todos</string>
+    <string name="settings_daemon_killall_body">Detiene el daemon, la evasión y las herramientas de prueba; desactiva el reinicio automático.</string>
+    <string name="settings_daemon_killall_confirm_title">¿Detener todos los procesos del daemon?</string>
+    <string name="settings_daemon_killall_confirm_body">Se detendrán la evasión, el daemon y los procesos iniciados por la app o el daemon. El reinicio automático se desactivará. Inicia el daemon manualmente más tarde.</string>
+    <string name="settings_daemon_start_failed">No se pudo iniciar el daemon</string>
+    <string name="settings_daemon_killall_failed">No se pudieron detener todos los procesos del daemon</string>
+    <string name="analysis_tools_entry_desc">Prueba de estrategias, detección de DPI y diagnóstico de red</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

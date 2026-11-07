@@ -106,8 +106,10 @@ pub fn run(_cfg: &Config) -> Result<()> {
     api_status::write_off();
     energy_saver::unfreeze_all_best_effort();
 
-    // Start API server immediately, and perform autostart in background if enabled=true.
-    if start.enabled {
+    // Start API server immediately, and perform autostart in background only
+    // when requested by the saved setting and not suppressed for an app-owned
+    // API-only daemon launch. Normal Magisk service.sh startup is unchanged.
+    if start.enabled && std::env::var_os("ZDTD_NO_AUTOSTART").is_none() {
         let st = state.clone();
         std::thread::spawn(move || {
             let _ = handle_start_async(&st);

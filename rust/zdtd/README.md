@@ -92,6 +92,11 @@ Without arguments the daemon uses built-in defaults for the ZDT-D module.
 `--config` currently provides optional JSON configuration mainly for logging and
 runtime-level settings.
 
+The Android app's process controls launch `zdtd` with `ZDTD_NO_AUTOSTART=1`.
+This starts the authenticated API without auto-starting bypass programs from
+`setting/start.json`. Normal Magisk `service.sh` boot does not set this variable
+and keeps the saved autostart behavior.
+
 Example config shape:
 
 ```json

@@ -2184,6 +2184,20 @@ APatch：10700+</string>
     <string name="nfqws2_item_expand">展开条目</string>
     <string name="nfqws2_item_collapse">折叠条目</string>
     <string name="nfqws2_search_no_matches">未找到结果</string>
+    <string name="nfqws2_lists_show_all">显示全部 %1$d 个列表</string>
+    <string name="nfqws2_lists_show_less">收起列表</string>
+    <string name="settings_daemon_autorestart_title">daemon 自动重启</string>
+    <string name="settings_daemon_autorestart_body">应用打开时，连接多次失败后自动重启 daemon。</string>
+    <string name="settings_daemon_control_title">daemon 进程</string>
+    <string name="settings_daemon_start">启动 daemon</string>
+    <string name="settings_daemon_start_body">在不开启绕过的情况下启动或重启 API daemon。</string>
+    <string name="settings_daemon_killall">全部结束</string>
+    <string name="settings_daemon_killall_body">停止 daemon、绕过和测试工具，并关闭自动重启。</string>
+    <string name="settings_daemon_killall_confirm_title">结束所有 daemon 进程？</string>
+    <string name="settings_daemon_killall_confirm_body">这将停止绕过、daemon 以及应用或 daemon 启动的进程。自动重启将被关闭。请稍后手动启动 daemon。</string>
+    <string name="settings_daemon_start_failed">无法启动 daemon</string>
+    <string name="settings_daemon_killall_failed">无法停止所有 daemon 进程</string>
+    <string name="analysis_tools_entry_desc">策略测试、DPI 检测和网络诊断</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

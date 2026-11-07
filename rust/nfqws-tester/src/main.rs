@@ -737,9 +737,36 @@ fn capture(script: &str) -> Result<String> {
     Ok(out)
 }
 
+/// Ask the kernel to SIGTERM this process when its parent dies.
+///
+/// The parent is the `su` client the app starts for blockcheck: on Stop the
+/// app destroys it while the tester may be blocked in `readLine`-side output,
+/// and the su side would otherwise leave the scan and its engine running.
+/// PDEATHSIG turns that into the SIGTERM the handler below already cleans up.
+fn adopt_parent_death() -> Result<()> {
+    // Cleared on fork, kept across exec: only this tester is affected, its
+    // engine children (spawned with setsid + null stdio) are not.
+    let rc = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM as libc::c_ulong, 0, 0, 0) };
+    if rc != 0 {
+        let err = io::Error::last_os_error();
+        bail!("prctl(PR_SET_PDEATHSIG) failed: {err}");
+    }
+    // Parent may have exited between exec and the prctl above; the signal then
+    // never arrives, so treat an init-reparented tester as an already-stopped run.
+    if unsafe { libc::getppid() } == 1 {
+        SHUTDOWN_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    Ok(())
+}
+
 fn command_exists(cmd: &str) -> bool {
+    // Never inherit fd0: stdin is the confirm channel from the app's `su`, and
+    // a probe shell holding the pipe would steal answers and outlive a stop.
     Command::new("sh")
         .args(["-c", &format!("command -v {cmd} >/dev/null 2>&1")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -1073,7 +1100,15 @@ fn run_auto_guarded(opts: AutoOptions) -> Result<()> {
         libc::signal(libc::SIGTERM, tester_signal_handler as libc::sighandler_t);
         libc::signal(libc::SIGINT, tester_signal_handler as libc::sighandler_t);
     }
-    let result = run_auto(&opts);
+    // Installed before any scan work or engine spawn: from here on a dead `su`
+    // parent becomes a SIGTERM that the handler turns into a normal cleanup.
+    let started = adopt_parent_death().and_then(|()| {
+        if shutdown_requested() {
+            bail!("parent exited before startup");
+        }
+        Ok(())
+    });
+    let result = started.and_then(|()| run_auto(&opts));
     // run_auto already cleaned up; ensure nothing is left even on error.
     let _ = cleanup_all();
     result

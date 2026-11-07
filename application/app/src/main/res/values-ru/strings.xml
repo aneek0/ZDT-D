@@ -2233,6 +2233,20 @@ APatch: 10700+</string>
     <string name="nfqws2_item_expand">Развернуть элемент</string>
     <string name="nfqws2_item_collapse">Свернуть элемент</string>
     <string name="nfqws2_search_no_matches">Ничего не найдено</string>
+    <string name="nfqws2_lists_show_all">Показать все %1$d списков</string>
+    <string name="nfqws2_lists_show_less">Свернуть список</string>
+    <string name="settings_daemon_autorestart_title">Авто-рестарт демона</string>
+    <string name="settings_daemon_autorestart_body">Автоматически перезапускать демон после повторных ошибок подключения, пока приложение открыто.</string>
+    <string name="settings_daemon_control_title">Процессы демона</string>
+    <string name="settings_daemon_start">Запустить демон</string>
+    <string name="settings_daemon_start_body">Запустить или перезапустить API-демон, не включая обход.</string>
+    <string name="settings_daemon_killall">Убить все процессы</string>
+    <string name="settings_daemon_killall_body">Остановить демон, обход и тестовые инструменты; отключить авто-рестарт.</string>
+    <string name="settings_daemon_killall_confirm_title">Убить все процессы демона?</string>
+    <string name="settings_daemon_killall_confirm_body">Обход, демон и порождённые приложением процессы будут остановлены. Авто-рестарт отключится. Повторный запуск — только вручную.</string>
+    <string name="settings_daemon_start_failed">Не удалось запустить демон</string>
+    <string name="settings_daemon_killall_failed">Не удалось остановить все процессы демона</string>
+    <string name="analysis_tools_entry_desc">Подбор стратегий, DPI Detector и диагностика сети</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

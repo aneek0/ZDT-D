@@ -2277,6 +2277,20 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="nfqws2_item_expand">Expand element</string>
     <string name="nfqws2_item_collapse">Collapse element</string>
     <string name="nfqws2_search_no_matches">Nothing found</string>
+    <string name="nfqws2_lists_show_all">Show all %1$d lists</string>
+    <string name="nfqws2_lists_show_less">Show fewer lists</string>
+    <string name="settings_daemon_autorestart_title">Daemon auto-restart</string>
+    <string name="settings_daemon_autorestart_body">Restart the daemon after repeated connection failures while the app is open.</string>
+    <string name="settings_daemon_control_title">Daemon processes</string>
+    <string name="settings_daemon_start">Start daemon</string>
+    <string name="settings_daemon_start_body">Start or restart the API daemon without enabling bypass.</string>
+    <string name="settings_daemon_killall">Kill all</string>
+    <string name="settings_daemon_killall_body">Stop the daemon, bypass and testing tools; disable auto-restart.</string>
+    <string name="settings_daemon_killall_confirm_title">Kill all daemon processes?</string>
+    <string name="settings_daemon_killall_confirm_body">This stops bypass, the daemon and processes spawned by the app or daemon. Auto-restart will be disabled. Start the daemon manually later.</string>
+    <string name="settings_daemon_start_failed">Failed to start daemon</string>
+    <string name="settings_daemon_killall_failed">Failed to stop all daemon processes</string>
+    <string name="analysis_tools_entry_desc">Strategy testing, DPI detection and network diagnostics</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

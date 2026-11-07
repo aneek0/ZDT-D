@@ -80,6 +80,10 @@ data class AppUpdateUiState(
   val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).
   val daemonStatusNotificationEnabled: Boolean = false,
+  /** App-owned: restart the daemon automatically while it stays offline. */
+  val daemonAutoRestartEnabled: Boolean = true,
+  /** True while a manual daemon start / kill-all action is running. */
+  val daemonActionInProgress: Boolean = false,
   val checking: Boolean = false,
   val githubApiOnline: Boolean? = null,
   val bannerVisible: Boolean = false,

@@ -239,6 +239,7 @@ private fun StartupDialogHost(
   setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onOpenSettings: () -> Unit,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
   onSkipUpdate: () -> Unit,
@@ -288,6 +289,7 @@ private fun StartupDialogHost(
     setup = setup,
     onRetry = onRetry,
     onReinstall = onReinstall,
+    onOpenSettings = onOpenSettings,
     onExpandUpdate = onExpandUpdate,
     onUpdate = onUpdate,
     onSkipUpdate = onSkipUpdate,
@@ -303,6 +305,7 @@ private fun StartupFullscreenContent(
   setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onOpenSettings: () -> Unit,
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
   onSkipUpdate: () -> Unit,
@@ -462,6 +465,12 @@ private fun StartupFullscreenContent(
                   modifier = Modifier.fillMaxWidth(),
                 ) {
                   Text(stringResource(R.string.startup_reinstall_module))
+                }
+                TextButton(
+                  onClick = onOpenSettings,
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Text(stringResource(R.string.settings_screen_title))
                 }
               }
             }
@@ -638,7 +647,11 @@ private fun StartupStagePill(text: String, active: Boolean, done: Boolean) {
 }
 
 @Composable
-private fun DaemonUnavailableDialogHost(uiState: UiState) {
+private fun DaemonUnavailableDialogHost(
+  uiState: UiState,
+  onStartDaemon: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
   if (!uiState.daemonUnavailableVisible) return
 
   Dialog(
@@ -681,6 +694,12 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         CircularProgressIndicator()
+        TextButton(onClick = onStartDaemon) {
+          Text(stringResource(R.string.settings_daemon_start))
+        }
+        TextButton(onClick = onOpenSettings) {
+          Text(stringResource(R.string.settings_screen_title))
+        }
       }
     }
   }
@@ -1239,7 +1258,13 @@ private fun MainShell(
     !showDeleteModuleNext &&
     programLogsTarget == null
 
-  DaemonUnavailableDialogHost(uiState = uiState)
+  if (!showSettings) {
+    DaemonUnavailableDialogHost(
+      uiState = uiState,
+      onStartDaemon = actions::startDaemonManually,
+      onOpenSettings = { showSettings = true },
+    )
+  }
 
   if (backup.externalRestorePromptVisible) {
     AlertDialog(
@@ -1450,6 +1475,12 @@ private fun MainShell(
                 onCheckNow = actions::checkAppUpdateNow,
                 daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+                daemonOnline = uiState.daemonOnline,
+                daemonAutoRestartEnabled = appUpdate.daemonAutoRestartEnabled,
+                daemonActionInProgress = appUpdate.daemonActionInProgress,
+                onDaemonAutoRestartEnabledChange = actions::setDaemonAutoRestartEnabled,
+                onStartDaemon = actions::startDaemonManually,
+                onKillAllDaemons = actions::killAllDaemonProcesses,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
                 themeMode = appUpdate.themeMode,
@@ -1548,6 +1579,12 @@ private fun MainShell(
                 onCheckNow = actions::checkAppUpdateNow,
                 daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+                daemonOnline = uiState.daemonOnline,
+                daemonAutoRestartEnabled = appUpdate.daemonAutoRestartEnabled,
+                daemonActionInProgress = appUpdate.daemonActionInProgress,
+                onDaemonAutoRestartEnabledChange = actions::setDaemonAutoRestartEnabled,
+                onStartDaemon = actions::startDaemonManually,
+                onKillAllDaemons = actions::killAllDaemonProcesses,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
                 themeMode = appUpdate.themeMode,
@@ -2001,8 +2038,15 @@ private fun MainShell(
       StartupDialogHost(
         uiState = uiState,
         setup = setup,
-        onRetry = actions::retryDaemonStartup,
+        onRetry = {
+          actions.retryDaemonStartup()
+          actions.startDaemonManually()
+        },
         onReinstall = actions::openModuleInstaller,
+        onOpenSettings = {
+          startupHostVisible = false
+          showSettings = true
+        },
         onExpandUpdate = actions::showUpdatePrompt,
         onUpdate = actions::openModuleInstaller,
         onSkipUpdate = actions::dismissUpdatePrompt,

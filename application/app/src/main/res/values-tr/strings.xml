@@ -2184,6 +2184,20 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="nfqws2_item_expand">Öğeyi genişlet</string>
     <string name="nfqws2_item_collapse">Öğeyi daralt</string>
     <string name="nfqws2_search_no_matches">Hiçbir şey bulunamadı</string>
+    <string name="nfqws2_lists_show_all">%1$d listenin tümünü göster</string>
+    <string name="nfqws2_lists_show_less">Daha az liste göster</string>
+    <string name="settings_daemon_autorestart_title">daemon otomatik yeniden başlatma</string>
+    <string name="settings_daemon_autorestart_body">Uygulama açıkken art arda bağlantı hatalarında daemon’u otomatik olarak yeniden başlatır.</string>
+    <string name="settings_daemon_control_title">daemon süreçleri</string>
+    <string name="settings_daemon_start">daemon’u başlat</string>
+    <string name="settings_daemon_start_body">atlatmayı etkinleştirmeden API daemon’unu başlatır veya yeniden başlatır.</string>
+    <string name="settings_daemon_killall">Tümünü sonlandır</string>
+    <string name="settings_daemon_killall_body">daemon’u, atlatmayı ve test araçlarını durdurur; otomatik yeniden başlatmayı kapatır.</string>
+    <string name="settings_daemon_killall_confirm_title">Tüm daemon süreçleri sonlandırılsın mı?</string>
+    <string name="settings_daemon_killall_confirm_body">Bu işlem atlatmayı, daemon’u ve uygulama veya daemon tarafından başlatılan süreçleri durdurur. Otomatik yeniden başlatma kapatılır. daemon’u daha sonra el ile başlatın.</string>
+    <string name="settings_daemon_start_failed">daemon başlatılamadı</string>
+    <string name="settings_daemon_killall_failed">Tüm daemon süreçleri durdurulamadı</string>
+    <string name="analysis_tools_entry_desc">Strateji testi, DPI algılama ve ağ tanılama</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

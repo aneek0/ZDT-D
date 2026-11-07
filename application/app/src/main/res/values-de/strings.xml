@@ -2185,6 +2185,20 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="nfqws2_item_expand">Element ausklappen</string>
     <string name="nfqws2_item_collapse">Element einklappen</string>
     <string name="nfqws2_search_no_matches">Nichts gefunden</string>
+    <string name="nfqws2_lists_show_all">Alle %1$d Listen anzeigen</string>
+    <string name="nfqws2_lists_show_less">Weniger Listen anzeigen</string>
+    <string name="settings_daemon_autorestart_title">Automatischer Daemon-Neustart</string>
+    <string name="settings_daemon_autorestart_body">Startet den Daemon bei wiederholten Verbindungsfehlern neu, solange die App geöffnet ist.</string>
+    <string name="settings_daemon_control_title">Daemon-Prozesse</string>
+    <string name="settings_daemon_start">Daemon starten</string>
+    <string name="settings_daemon_start_body">API-Daemon starten oder neu starten, ohne die Umgehung zu aktivieren.</string>
+    <string name="settings_daemon_killall">Alle beenden</string>
+    <string name="settings_daemon_killall_body">Beendet Daemon, Umgehung und Testwerkzeuge; deaktiviert den automatischen Neustart.</string>
+    <string name="settings_daemon_killall_confirm_title">Alle Daemon-Prozesse beenden?</string>
+    <string name="settings_daemon_killall_confirm_body">Damit werden Umgehung, Daemon und von der App oder dem Daemon gestartete Prozesse beendet. Der automatische Neustart wird deaktiviert. Starten Sie den Daemon später manuell.</string>
+    <string name="settings_daemon_start_failed">Daemon konnte nicht gestartet werden</string>
+    <string name="settings_daemon_killall_failed">Alle Daemon-Prozesse konnten nicht beendet werden</string>
+    <string name="analysis_tools_entry_desc">Strategietests, DPI-Erkennung und Netzwerkdiagnose</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

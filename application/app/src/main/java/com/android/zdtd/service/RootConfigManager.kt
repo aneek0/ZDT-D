@@ -15,6 +15,9 @@ class RootConfigManager(private val context: Context) {
     // ZDT-D API token file (Magisk module). The daemon generates this token and requires it for /api endpoints.
     private val defaultPath = "/data/adb/modules/ZDT-D/api/token"
 
+    /** Daemon-owned auto-start flag (`enabled`) plus `first_launch`, read by `service.sh`. */
+    private val startJsonPath = "/data/adb/modules/ZDT-D/setting/start.json"
+
     /**
      * Cached daemon state.
      *
@@ -48,6 +51,20 @@ class RootConfigManager(private val context: Context) {
 
     fun setDaemonStatusNotificationEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("daemon_status_notification_enabled", enabled).apply()
+    }
+
+    // ----- Daemon auto restart (app-owned) -----
+
+    /**
+     * App-owned "resurrect the daemon" choice. Kept in app prefs (not the
+     * daemon) so an offline choice survives a cold start, when the daemon
+     * cannot answer for itself.
+     */
+    fun isDaemonAutoRestartEnabled(): Boolean =
+        prefs.getBoolean("daemon_auto_restart_enabled", true)
+
+    fun setDaemonAutoRestartEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("daemon_auto_restart_enabled", enabled).apply()
     }
 
     // ----- App language -----
@@ -493,6 +510,33 @@ class RootConfigManager(private val context: Context) {
         val text = obj.toString()
         return writeTextFile(jsonPath, text)
     }
+
+    /**
+     * Root-only: clear the daemon's own auto-start flag without disturbing any
+     * other field (notably `first_launch`, whose meaning is owned by the Rust
+     * daemon). The new JSON is written to a temp file and renamed over the
+     * original, so `service.sh` can never read a half-written `start.json`.
+     * Returns false when the flag could not be persisted.
+     */
+    fun writeStartJsonAutoStartDisabled(): Boolean = runCatching {
+        // A file we cannot read must never be clobbered: `first_launch` drives the
+        // daemon's iptables backup, so an empty/partial read is a failure.
+        val exists = execRootSh("test -f ${shQuote(startJsonPath)}").isSuccess
+        val raw = if (exists) readFileAt(startJsonPath).trim() else ""
+        val obj = when {
+            !exists -> JSONObject()
+            raw.isBlank() -> return@runCatching false
+            else -> JSONObject(raw)
+        }
+        obj.put("enabled", false)
+        if (!obj.has("first_launch")) obj.put("first_launch", false)
+        val tmp = "$startJsonPath.tmp"
+        if (!writeTextFile(tmp, obj.toString())) {
+            execRootSh("rm -f ${shQuote(tmp)}")
+            return@runCatching false
+        }
+        execRootSh("mv -f ${shQuote(tmp)} ${shQuote(startJsonPath)}").isSuccess
+    }.getOrDefault(false)
 
     /**
      * Root-only helper: read last [lines] lines of a file (fallback to cat).

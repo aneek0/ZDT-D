@@ -3,6 +3,7 @@ package com.android.zdtd.service.diagnostics.dpi
 import android.content.Context
 import com.android.zdtd.service.RootConfigManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -146,18 +147,60 @@ class DpiDetectorRunner(
             }
         }
 
-        awaitClose {
+        try {
+            awaitClose { /* keep the producer alive; cleanup lives in finally */ }
+        } finally {
+            // Reached on normal end AND on cancel (Stop, screen disposal). A
+            // cancelled reader can be parked in readLine forever, so the su
+            // client and the detector it exec'd are killed here — cancelling
+            // readerJob alone would leave both of them running.
             heartbeatJob.cancel()
             readerJob.cancel()
-            if (process.isAlive) {
-                process.destroy()
+            // NonCancellable: this block must survive the very cancellation it is
+            // cleaning up. IO: execRootSh/ensureInstalled/waitFor block. The exact
+            // executable sweep is idempotent, so normal EOF and cancellation share
+            // the same ownership-safe teardown.
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { stopRunningProcess() }
+                if (process.isAlive) process.destroyForcibly()
+                runCatching { process.waitFor() }
             }
         }
     }
 
+    /**
+     * Stops the running detector: exact `/proc/<pid>/exe` match on this app's
+     * binary, then TERM with a bounded wait and KILL. `pkill -f <path>` is not
+     * usable here — the cleanup shell's own argv contains the path, so the
+     * pattern can match (and kill) that shell instead of the detector.
+     */
     suspend fun stopRunningProcess() = withContext(Dispatchers.IO) {
         val binary = DpiDetectorBinary(context).ensureInstalled()
-        rootConfigManager.execRootSh("pkill -f " + shQuote(binary.absolutePath) + " 2>/dev/null || true")
+        rootConfigManager.execRootSh(killExactDetectorScript(binary.absolutePath))
+    }
+
+    private fun killExactDetectorScript(path: String): String {
+        val matches = listOf(path, path.replace("/data/user/0/", "/data/data/"))
+            .distinct()
+            .joinToString(" || ") { candidate ->
+                val quoted = shQuote(candidate)
+                "[ \"\$exe\" = $quoted ] || [ \"\$exe\" = $quoted\" (deleted)\" ]"
+            }
+        return buildString {
+            append("for p in /proc/[0-9]*; do\n")
+            append("  exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue\n")
+            // A replaced/deleted binary still reports the same path with a
+            // " (deleted)" suffix; /data/user/0 and /data/data are aliases here.
+            append("  $matches || continue\n")
+            append("  pid=\${p#/proc/}\n")
+            append("  kill -TERM \"\$pid\" 2>/dev/null || true\n")
+            append("  for _ in 1 2 3 4 5 6 7 8 9 10; do\n")
+            append("    kill -0 \"\$pid\" 2>/dev/null || break\n")
+            append("    sleep 0.1\n")
+            append("  done\n")
+            append("  kill -KILL \"\$pid\" 2>/dev/null || true\n")
+            append("done\n")
+        }
     }
 
     suspend fun runRoot(args: List<String>): DpiDetectorRunResult = withContext(Dispatchers.IO) {

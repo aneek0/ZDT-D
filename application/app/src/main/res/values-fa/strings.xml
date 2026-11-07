@@ -2185,6 +2185,20 @@ APatch: 10700+</string>
     <string name="nfqws2_item_expand">باز کردن مورد</string>
     <string name="nfqws2_item_collapse">بستن مورد</string>
     <string name="nfqws2_search_no_matches">چیزی پیدا نشد</string>
+    <string name="nfqws2_lists_show_all">نمایش همه %1$d فهرست</string>
+    <string name="nfqws2_lists_show_less">نمایش فهرست‌های کمتر</string>
+    <string name="settings_daemon_autorestart_title">راه‌اندازی مجدد خودکار daemon</string>
+    <string name="settings_daemon_autorestart_body">در صورت تکرار خطاهای اتصال و باز بودن برنامه، daemon دوباره راه‌اندازی می‌شود.</string>
+    <string name="settings_daemon_control_title">فرآیندهای daemon</string>
+    <string name="settings_daemon_start">راه‌اندازی daemon</string>
+    <string name="settings_daemon_start_body">راه‌اندازی یا راه‌اندازی مجدد daemon API بدون فعال‌کردن دور زدن.</string>
+    <string name="settings_daemon_killall">بستن همه</string>
+    <string name="settings_daemon_killall_body">توقف daemon، دور زدن و ابزارهای آزمایش؛ غیرفعال‌کردن راه‌اندازی مجدد خودکار.</string>
+    <string name="settings_daemon_killall_confirm_title">همه فرآیندهای daemon بسته شوند؟</string>
+    <string name="settings_daemon_killall_confirm_body">با این کار دور زدن، daemon و فرآیندهای ایجادشده توسط برنامه یا daemon متوقف می‌شوند. راه‌اندازی مجدد خودکار غیرفعال می‌شود. daemon را بعداً به‌صورت دستی راه‌اندازی کنید.</string>
+    <string name="settings_daemon_start_failed">راه‌اندازی daemon ناموفق بود</string>
+    <string name="settings_daemon_killall_failed">توقف همه فرآیندهای daemon ناموفق بود</string>
+    <string name="analysis_tools_entry_desc">آزمایش استراتژی‌ها، تشخیص DPI و عیب‌یابی شبکه</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

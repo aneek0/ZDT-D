@@ -2189,6 +2189,20 @@ APatch: ‏10700+</string>
     <string name="nfqws2_item_expand">توسيع العنصر</string>
     <string name="nfqws2_item_collapse">طي العنصر</string>
     <string name="nfqws2_search_no_matches">لا توجد نتائج</string>
+    <string name="nfqws2_lists_show_all">إظهار كل القوائم (%1$d)</string>
+    <string name="nfqws2_lists_show_less">إظهار قوائم أقل</string>
+    <string name="settings_daemon_autorestart_title">إعادة تشغيل daemon تلقائيًا</string>
+    <string name="settings_daemon_autorestart_body">إعادة تشغيل daemon تلقائيًا بعد تكرار أخطاء الاتصال أثناء فتح التطبيق.</string>
+    <string name="settings_daemon_control_title">عمليات daemon</string>
+    <string name="settings_daemon_start">تشغيل daemon</string>
+    <string name="settings_daemon_start_body">تشغيل daemon الخاص بـ API أو إعادة تشغيله دون تفعيل التجاوز.</string>
+    <string name="settings_daemon_killall">إيقاف الكل</string>
+    <string name="settings_daemon_killall_body">إيقاف daemon والتجاوز وأدوات الاختبار؛ تعطيل إعادة التشغيل التلقائي.</string>
+    <string name="settings_daemon_killall_confirm_title">إيقاف جميع عمليات daemon؟</string>
+    <string name="settings_daemon_killall_confirm_body">سيؤدي هذا إلى إيقاف التجاوز وdaemon وكل عملية يشغّلها التطبيق أو daemon. ستُعطَّل إعادة التشغيل التلقائي. شغّل daemon يدويًا لاحقًا.</string>
+    <string name="settings_daemon_start_failed">تعذّر تشغيل daemon</string>
+    <string name="settings_daemon_killall_failed">تعذّر إيقاف جميع عمليات daemon</string>
+    <string name="analysis_tools_entry_desc">اختبار الاستراتيجيات وكشف DPI وتشخيص الشبكة</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

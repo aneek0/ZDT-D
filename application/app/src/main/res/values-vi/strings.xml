@@ -2184,6 +2184,20 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="nfqws2_item_expand">Mở rộng mục</string>
     <string name="nfqws2_item_collapse">Thu gọn mục</string>
     <string name="nfqws2_search_no_matches">Không tìm thấy</string>
+    <string name="nfqws2_lists_show_all">Hiện tất cả %1$d danh sách</string>
+    <string name="nfqws2_lists_show_less">Hiện ít danh sách hơn</string>
+    <string name="settings_daemon_autorestart_title">Tự khởi động lại daemon</string>
+    <string name="settings_daemon_autorestart_body">Tự khởi động lại daemon sau nhiều lần lỗi kết nối khi ứng dụng đang mở.</string>
+    <string name="settings_daemon_control_title">Tiến trình daemon</string>
+    <string name="settings_daemon_start">Khởi động daemon</string>
+    <string name="settings_daemon_start_body">Khởi động hoặc khởi động lại daemon API mà không bật tính năng vượt chặn.</string>
+    <string name="settings_daemon_killall">Dừng tất cả</string>
+    <string name="settings_daemon_killall_body">Dừng daemon, tính năng vượt chặn và công cụ kiểm thử; tắt tự khởi động lại.</string>
+    <string name="settings_daemon_killall_confirm_title">Dừng tất cả tiến trình daemon?</string>
+    <string name="settings_daemon_killall_confirm_body">Thao tác này sẽ dừng tính năng vượt chặn, daemon và các tiến trình do ứng dụng hoặc daemon khởi tạo. Tự khởi động lại sẽ bị tắt. Hãy khởi động daemon thủ công sau.</string>
+    <string name="settings_daemon_start_failed">Không thể khởi động daemon</string>
+    <string name="settings_daemon_killall_failed">Không thể dừng tất cả tiến trình daemon</string>
+    <string name="analysis_tools_entry_desc">Kiểm thử chiến lược, phát hiện DPI và chẩn đoán mạng</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

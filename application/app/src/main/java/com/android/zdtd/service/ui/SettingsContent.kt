@@ -74,6 +74,12 @@ fun AppUpdateSettings(
   onCheckNow: () -> Unit,
   daemonNotificationEnabled: Boolean,
   onToggleDaemonNotification: (Boolean) -> Unit,
+  daemonOnline: Boolean,
+  daemonAutoRestartEnabled: Boolean,
+  daemonActionInProgress: Boolean,
+  onDaemonAutoRestartEnabledChange: (Boolean) -> Unit,
+  onStartDaemon: () -> Unit,
+  onKillAllDaemons: () -> Unit,
   languageMode: String,
   onLanguageModeChange: (String) -> Unit,
   themeMode: String,
@@ -132,6 +138,7 @@ fun AppUpdateSettings(
   var showResetIdentifierConfirm by remember { mutableStateOf(false) }
   var showProxyInfoConfigure by remember { mutableStateOf(false) }
   var showBlockedQuicConfigure by remember { mutableStateOf(false) }
+  var showKillAllDaemonConfirm by remember { mutableStateOf(false) }
   var showAdvancedSettings by remember { mutableStateOf(false) }
   var showEnergySaverConfigure by remember { mutableStateOf(false) }
   if (landscapeColumns) {
@@ -169,6 +176,27 @@ fun AppUpdateSettings(
             body = stringResource(R.string.settings_notifications_body),
             checked = daemonNotificationEnabled,
             onCheckedChange = onToggleDaemonNotification,
+          )
+          SettingsSwitchSection(
+            title = stringResource(R.string.settings_daemon_autorestart_title),
+            body = stringResource(R.string.settings_daemon_autorestart_body),
+            checked = daemonAutoRestartEnabled,
+            onCheckedChange = onDaemonAutoRestartEnabledChange,
+          )
+          SettingsActionCard(
+            title = stringResource(R.string.settings_daemon_control_title),
+            body = stringResource(R.string.settings_daemon_start_body),
+            actionText = stringResource(R.string.settings_daemon_start),
+            enabled = !daemonOnline && !daemonActionInProgress,
+            onClick = onStartDaemon,
+          )
+          SettingsActionCard(
+            title = stringResource(R.string.settings_daemon_killall),
+            body = stringResource(R.string.settings_daemon_killall_body),
+            actionText = stringResource(R.string.settings_daemon_killall),
+            enabled = !daemonActionInProgress,
+            danger = true,
+            onClick = { showKillAllDaemonConfirm = true },
           )
           ProtectorModeSection(
             selectedMode = protectorMode,
@@ -293,6 +321,12 @@ fun AppUpdateSettings(
         showResetIdentifierConfirm = false
         onResetModuleIdentifier()
       },
+      showKillAllDaemonConfirm = showKillAllDaemonConfirm,
+      onDismissKillAllDaemonConfirm = { if (!daemonActionInProgress) showKillAllDaemonConfirm = false },
+      onConfirmKillAllDaemons = {
+        showKillAllDaemonConfirm = false
+        onKillAllDaemons()
+      },
       resettingModuleIdentifier = resettingModuleIdentifier,
       showProxyInfoConfigure = showProxyInfoConfigure,
       proxyInfoAppsContent = proxyInfoAppsContent,
@@ -351,6 +385,30 @@ fun AppUpdateSettings(
       body = stringResource(R.string.settings_notifications_body),
       checked = daemonNotificationEnabled,
       onCheckedChange = onToggleDaemonNotification,
+    )
+
+    SettingsSwitchSection(
+      title = stringResource(R.string.settings_daemon_autorestart_title),
+      body = stringResource(R.string.settings_daemon_autorestart_body),
+      checked = daemonAutoRestartEnabled,
+      onCheckedChange = onDaemonAutoRestartEnabledChange,
+    )
+
+    SettingsActionCard(
+      title = stringResource(R.string.settings_daemon_control_title),
+      body = stringResource(R.string.settings_daemon_start_body),
+      actionText = stringResource(R.string.settings_daemon_start),
+      enabled = !daemonOnline && !daemonActionInProgress,
+      onClick = onStartDaemon,
+    )
+
+    SettingsActionCard(
+      title = stringResource(R.string.settings_daemon_killall),
+      body = stringResource(R.string.settings_daemon_killall_body),
+      actionText = stringResource(R.string.settings_daemon_killall),
+      enabled = !daemonActionInProgress,
+      danger = true,
+      onClick = { showKillAllDaemonConfirm = true },
     )
 
     SettingsSectionCard {
@@ -468,6 +526,12 @@ fun AppUpdateSettings(
     onConfirmResetIdentifier = {
       showResetIdentifierConfirm = false
       onResetModuleIdentifier()
+    },
+    showKillAllDaemonConfirm = showKillAllDaemonConfirm,
+    onDismissKillAllDaemonConfirm = { if (!daemonActionInProgress) showKillAllDaemonConfirm = false },
+    onConfirmKillAllDaemons = {
+      showKillAllDaemonConfirm = false
+      onKillAllDaemons()
     },
     resettingModuleIdentifier = resettingModuleIdentifier,
     showProxyInfoConfigure = showProxyInfoConfigure,
@@ -883,6 +947,9 @@ private fun SettingsDialogsHost(
   showResetIdentifierConfirm: Boolean,
   onDismissResetIdentifierConfirm: () -> Unit,
   onConfirmResetIdentifier: () -> Unit,
+  showKillAllDaemonConfirm: Boolean,
+  onDismissKillAllDaemonConfirm: () -> Unit,
+  onConfirmKillAllDaemons: () -> Unit,
   resettingModuleIdentifier: Boolean,
   showProxyInfoConfigure: Boolean,
   proxyInfoAppsContent: String,
@@ -927,6 +994,17 @@ private fun SettingsDialogsHost(
     dismissText = stringResource(R.string.common_cancel),
     onDismiss = onDismissResetIdentifierConfirm,
     onConfirm = onConfirmResetIdentifier,
+  )
+
+  SettingsConfirmDialog(
+    visible = showKillAllDaemonConfirm,
+    title = stringResource(R.string.settings_daemon_killall_confirm_title),
+    body = stringResource(R.string.settings_daemon_killall_confirm_body),
+    confirmText = stringResource(R.string.settings_daemon_killall),
+    dismissText = stringResource(R.string.common_cancel),
+    danger = true,
+    onDismiss = onDismissKillAllDaemonConfirm,
+    onConfirm = onConfirmKillAllDaemons,
   )
 
   ModuleIdentifierResetProgressDialog(visible = resettingModuleIdentifier)

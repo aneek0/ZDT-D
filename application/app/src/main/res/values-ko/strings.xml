@@ -2184,6 +2184,20 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="nfqws2_item_expand">항목 펼치기</string>
     <string name="nfqws2_item_collapse">항목 접기</string>
     <string name="nfqws2_search_no_matches">결과 없음</string>
+    <string name="nfqws2_lists_show_all">목록 %1$d개 모두 표시</string>
+    <string name="nfqws2_lists_show_less">목록 줄이기</string>
+    <string name="settings_daemon_autorestart_title">daemon 자동 재시작</string>
+    <string name="settings_daemon_autorestart_body">앱이 열려 있는 동안 연결 오류가 반복되면 daemon을 자동으로 다시 시작합니다.</string>
+    <string name="settings_daemon_control_title">daemon 프로세스</string>
+    <string name="settings_daemon_start">daemon 시작</string>
+    <string name="settings_daemon_start_body">우회를 켜지 않고 API daemon을 시작하거나 다시 시작합니다.</string>
+    <string name="settings_daemon_killall">모두 종료</string>
+    <string name="settings_daemon_killall_body">daemon, 우회, 테스트 도구를 중지하고 자동 재시작을 끕니다.</string>
+    <string name="settings_daemon_killall_confirm_title">모든 daemon 프로세스를 종료할까요?</string>
+    <string name="settings_daemon_killall_confirm_body">우회, daemon, 앱 또는 daemon이 실행한 프로세스가 중지됩니다. 자동 재시작이 꺼집니다. 나중에 daemon을 직접 시작하세요.</string>
+    <string name="settings_daemon_start_failed">daemon을 시작하지 못했습니다</string>
+    <string name="settings_daemon_killall_failed">모든 daemon 프로세스를 중지하지 못했습니다</string>
+    <string name="analysis_tools_entry_desc">전략 테스트, DPI 감지 및 네트워크 진단</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

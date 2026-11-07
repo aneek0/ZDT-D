@@ -111,7 +111,15 @@ class NfqwsTesterOverlayService : Service() {
             ACTION_DECISION_WORKS -> decide("works")
             ACTION_DECISION_FAILED -> decide("failed")
             ACTION_DECISION_SKIP -> decide("skip")
-            ACTION_STOP -> serviceScope.launch { stopTesterSession(getString(R.string.nfqws_tester_status_stopped)) }
+            ACTION_STOP -> {
+                // This action arrives through startForegroundService(). Satisfy
+                // that contract before any root/process cleanup can suspend.
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(getString(R.string.nfqws_tester_status_stopped)),
+                )
+                serviceScope.launch { stopTesterSession(getString(R.string.nfqws_tester_status_stopped)) }
+            }
         }
         return START_NOT_STICKY
     }

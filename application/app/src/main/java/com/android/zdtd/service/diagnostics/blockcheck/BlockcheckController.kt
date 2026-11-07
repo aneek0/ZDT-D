@@ -55,10 +55,26 @@ object BlockcheckController {
     /** True while a scan is owned by this controller (survives UI detach). */
     val isActive: Boolean get() = runJob?.isActive == true
 
-    /** Stops a running scan (the tester cleans up its own engine and rules). */
+    /** Stops a running scan and its root process tree; safe to call repeatedly. */
     fun stop() {
-        runJob?.cancel()
+        val runner = impl
+        // Close confirmation input immediately. One root cleanup session then
+        // matches exact executables and su pipe IDs: KernelSU reparents tester
+        // and sh wrappers, so cancelling runJob must wait until cleanup finishes.
+        val job = runJob
         runJob = null
+        runner?.stopRunningProcess()
+        if (runner != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    runner.stopOwnedProcess()
+                } finally {
+                    job?.cancel()
+                }
+            }
+        } else {
+            job?.cancel()
+        }
         impl = null
         BlockcheckScanService.stop(appContext)
         BlockcheckStore.update {

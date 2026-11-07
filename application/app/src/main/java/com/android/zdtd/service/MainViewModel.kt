@@ -20,6 +20,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.diagnostics.blockcheck.BlockcheckController
+import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterOverlayService
+import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterRunner
 import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteRootClient
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
@@ -37,6 +40,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -305,8 +311,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     log("ERR", "uncaught: ${e::class.java.simpleName}: ${e.message ?: e}")
   }
 
-  private fun launchIO(block: suspend CoroutineScope.() -> Unit) =
-    viewModelScope.launch(Dispatchers.IO + ceh, block = block)
+  private fun launchIO(
+    start: CoroutineStart = CoroutineStart.DEFAULT,
+    block: suspend CoroutineScope.() -> Unit,
+  ) = viewModelScope.launch(Dispatchers.IO + ceh, start = start, block = block)
 
   private val _rootState = MutableStateFlow(RootState.DENIED)
   val rootState: StateFlow<RootState> = _rootState.asStateFlow()
@@ -359,6 +367,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
       ipForwardEnabled = false,
       tproxyEnabled = false,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
+      daemonAutoRestartEnabled = root.isDaemonAutoRestartEnabled(),
     )
   )
   val appUpdate: StateFlow<AppUpdateUiState> = _appUpdate.asStateFlow()
@@ -476,6 +485,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   @Volatile private var programsRefreshInFlight: Boolean = false
   @Volatile private var activeMainTabHint: String = "HOME"
 
+  // ----- Daemon process lifecycle (auto restart / manual start / kill all) -----
+  private val daemonProcessControl = DaemonProcessControl(ctx, root)
+  /** Serializes every daemon process operation: manual actions and auto-restart rounds. */
+  private val daemonLifecycleMutex = Mutex()
+  /** Manual start / kill-all only. Auto restarts are tracked separately. */
+  private var daemonActionJob: Job? = null
+  /**
+   * Guards all auto-restart bookkeeping: the supervisor identity
+   * ([daemonAutoRestartJob]), the attempt budget, the cooldown deadline and the
+   * wake signal. Bookkeeping only — root operations stay on [daemonLifecycleMutex].
+   */
+  private val daemonAutoRestartLock = Any()
+  /** The single auto-restart supervisor; reserved under [daemonAutoRestartLock]. */
+  private var daemonAutoRestartJob: Job? = null
+  /** Completed to cut a supervisor's cooldown short once a real connection lands. */
+  private var daemonAutoRestartWake: CompletableDeferred<Unit>? = null
+  private var daemonAutoRestartFailures: Int = 0
+  private var daemonAutoRestartCooldownUntilMs: Long = 0L
+  private val daemonAutoRestartMaxFailures: Int = 3
+  private val daemonAutoRestartCooldownMs: Long = 60_000L
+  private val daemonStopWaitTimeoutMs: Long = 15_000L
+  private val daemonStartWaitTimeoutMs: Long = 15_000L
+  /** Max `/api/stop` POSTs while the daemon keeps reporting a running start. */
+  private val daemonStopMaxPosts: Int = 2
+
+  /**
+   * Deliberate "kill all" state. While set, an unreachable daemon is the expected
+   * outcome: the unavailable overlay and the startup error dialog stay quiet
+   * until a manual Start or a genuine online answer clears it. In-memory only.
+   */
+  @Volatile private var deliberateDaemonStop: Boolean = false
+
   private var didInit: Boolean = false
   private var appUpdateBannerDismissedThisSession: Boolean = false
   private var startedFromLauncher: Boolean = true
@@ -497,6 +538,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
           if (activeMainTabHint == "STATS") startStatsPowerSampling()
         } else {
           stopStatsPowerSampling()
+          // Loopback ceased: a local supervisor has nothing to act on.
+          cancelDaemonAutoRestartSupervisor()
           startupJob?.cancel()
           startupCompleted = true
           statusPollFailureCount = 0
@@ -533,6 +576,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     startupJob?.cancel()
     startupCompleted = false
     _rootState.value = RootState.DENIED
+    cancelDaemonAutoRestartSupervisor()
     _setup.update { state ->
       state.copy(
         step = SetupStep.ROOT,
@@ -561,6 +605,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // kick off a root check automatically on app start.
     if (root.isWelcomeAccepted() || root.isSetupDone()) {
       _rootState.value = RootState.CHECKING
+      cancelDaemonAutoRestartSupervisor()
       ensureRootAndLoadToken()
     }
   }
@@ -1574,6 +1619,7 @@ private fun clearDownloadedUpdateApk() {
       val ok = runCatching { root.testRoot() }.getOrDefault(false)
       if (!ok) {
         _rootState.value = RootState.DENIED
+        cancelDaemonAutoRestartSupervisor()
         log("ERR", str(R.string.log_root_access_required))
         return@launchIO
       }
@@ -1782,6 +1828,9 @@ private fun clearDownloadedUpdateApk() {
       statusJob?.cancel(); statusJob = null
       stopStatsPowerSampling()
       daemonLogJob?.cancel(); daemonLogJob = null
+      // Auto restarts are foreground-only: never let a sleeping supervisor
+      // spawn a daemon while the app is in the background.
+      cancelDaemonAutoRestartSupervisor()
       return
     }
 
@@ -1803,8 +1852,14 @@ private fun clearDownloadedUpdateApk() {
       refreshPrograms()
       return
     }
-
     if (startupJob?.isActive == true) return
+    // A deliberate kill means "offline until I start it": re-running the
+    // handshake would only flash a connecting/error overlay. Resume polling
+    // keeps running above once the daemon had already been reached.
+    if (deliberateDaemonStop) {
+      _uiState.update { it.copy(daemonOnline = false, daemonUnavailableVisible = false) }
+      return
+    }
     startStartupHandshake()
   }
 
@@ -1875,6 +1930,10 @@ private fun clearDownloadedUpdateApk() {
   private fun finishStartupHandshake() {
     startupCompleted = true
     startupJob = null
+    // A completed handshake is a genuine online daemon: deliberate offline ends.
+    deliberateDaemonStop = false
+    resetDaemonRestartAttempts()
+    wakeDaemonAutoRestartSupervisor()
     _uiState.update { st ->
       st.copy(
         startup = st.startup.copy(
@@ -1899,17 +1958,28 @@ private fun clearDownloadedUpdateApk() {
       if (st.remoteTargetName.isNotBlank()) {
         st.copy(daemonOnline = false, daemonUnavailableVisible = false)
       } else {
-        val showOverlay = startupCompleted && appVisible
+        // A deliberate kill makes "unreachable" the expected state, so it must
+        // not reopen the overlay; the Start action stays available.
+        val showOverlay = startupCompleted && appVisible && !deliberateDaemonStop
         val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
         if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
         else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
       }
     }
+    maybeAutoRestartDaemon("status polling")
   }
 
+  /**
+   * A real connection zeroes the auto-restart budget and releases any pending
+   * supervisor: it either exits now or finds the daemon online after the wake.
+   */
   private fun noteStatusPollSuccess(now: Long = System.currentTimeMillis()) {
     statusPollFailureCount = 0
     lastStatusOkAtMs = now
+    // A genuine answer from the daemon ends any deliberate-offline state.
+    deliberateDaemonStop = false
+    resetDaemonRestartAttempts()
+    wakeDaemonAutoRestartSupervisor()
   }
 
   private fun handleStatusPollFailure(source: String, error: Throwable) {
@@ -1935,6 +2005,14 @@ private fun clearDownloadedUpdateApk() {
   private fun failStartupHandshake() {
     startupCompleted = false
     startupJob = null
+    _uiState.update { it.copy(daemonOnline = false, daemonUnavailableVisible = false) }
+    if (deliberateDaemonStop) {
+      // Deliberate offline: no error dialog, no auto restart, no overlay. The
+      // offline Start path stays reachable from Settings.
+      _uiState.update { it.copy(startup = StartupUiState.hidden()) }
+      log("WARN", "startup handshake failed while daemon was deliberately stopped")
+      return
+    }
     val moduleFound = moduleDirExists()
     val structureOk = if (moduleFound) moduleStructureLooksValid() else false
     val msg = if (moduleFound) {
@@ -1955,6 +2033,7 @@ private fun clearDownloadedUpdateApk() {
         )
       )
     }
+    maybeAutoRestartDaemon("startup handshake")
   }
 
 
@@ -1986,11 +2065,605 @@ private fun clearDownloadedUpdateApk() {
     startStartupHandshake()
   }
 
+  // ----- Daemon process lifecycle -----
+  //
+  // Two independent jobs share one mutex:
+  //  * daemonActionJob      — a manual start / kill all (UI busy flag: daemonActionInProgress)
+  //  * daemonAutoRestartJob — one supervised auto-restart loop (max 3 failed rounds, 60s apart)
+  // The mutex is what actually serializes process operations; the flags only drive the UI.
+
+  /** Runtime states the daemon reports while bypass is (partly) up. */
+  private val activeRuntimeStates = setOf("on", "partial", "starting", "stopping", "busy")
+
+  private fun resetDaemonRestartAttempts() {
+    synchronized(daemonAutoRestartLock) {
+      daemonAutoRestartFailures = 0
+      daemonAutoRestartCooldownUntilMs = 0L
+    }
+  }
+
+  /** Cuts a supervisor's cooldown short so it re-checks eligibility immediately. */
+  private fun wakeDaemonAutoRestartSupervisor() {
+    synchronized(daemonAutoRestartLock) {
+      daemonAutoRestartWake?.complete(Unit)
+    }
+  }
+
+  /** Drops the supervisor outright (auto disabled / kill all). Never called by the supervisor itself. */
+  private fun cancelDaemonAutoRestartSupervisor() {
+    val job = synchronized(daemonAutoRestartLock) {
+      val current = daemonAutoRestartJob
+      // Clear first: the supervisor's own compare-and-clear must not touch a
+      // newer reservation, and a wake must not linger.
+      daemonAutoRestartJob = null
+      daemonAutoRestartWake?.complete(Unit)
+      current
+    }
+    // Cancel outside the lock: cancellation runs completion handlers that may
+    // themselves take the same lock.
+    job?.cancel()
+  }
+
+  private fun daemonAutoRestartStateEligibleNow(): Boolean {
+    if (!_appUpdate.value.daemonAutoRestartEnabled) return false
+    if (_uiState.value.remoteTargetName.isNotBlank()) return false
+    if (!appVisible) return false
+    if (_rootState.value != RootState.GRANTED) return false
+    if (!isSetupDone()) return false
+    if (_uiState.value.daemonOnline) return false
+    // Only the manual reservation counts: a supervisor must not disqualify itself.
+    if (_appUpdate.value.daemonActionInProgress) return false
+    if (daemonActionJob?.isActive == true) return false
+    return true
+  }
+
+  private fun daemonAutoRestartEligibleNow(): Boolean {
+    if (!daemonAutoRestartStateEligibleNow()) return false
+    return synchronized(daemonAutoRestartLock) {
+      daemonAutoRestartFailures < daemonAutoRestartMaxFailures &&
+        System.currentTimeMillis() >= daemonAutoRestartCooldownUntilMs
+    }
+  }
+
+  /**
+   * Schedules the supervised auto restart. Eligibility, the active-supervisor
+   * check, the launch and the reservation happen under [daemonAutoRestartLock],
+   * and the job is created lazily so its slot is published before it can run —
+   * two callers can never observe "eligible" and both start a supervisor.
+   * Every spawn is additionally re-validated inside [daemonLifecycleMutex] (and
+   * again by `beforeStart`) so a culled or manual-superseded round cannot start
+   * a daemon late.
+   */
+  private fun maybeAutoRestartDaemon(reason: String) {
+    synchronized(daemonAutoRestartLock) {
+      if (!daemonAutoRestartEligibleNow()) return
+      if (daemonAutoRestartJob?.isActive == true) return
+      val job = launchIO(start = CoroutineStart.LAZY) { superviseDaemonAutoRestart(reason) }
+      daemonAutoRestartJob = job
+      job.start()
+    }
+  }
+
+  /**
+   * One round = launch under the mutex + bounded API verification. A failed
+   * launch or a failed verification counts as a failed round; then the 60s
+   * cooldown is awaited and the round repeats while still eligible, up to
+   * [daemonAutoRestartMaxFailures] failed rounds. A genuine connection
+   * ([noteStatusPollSuccess] / [finishStartupHandshake]) zeroes the budget and
+   * wakes this loop, which then sees the daemon online and exits.
+   */
+  private suspend fun superviseDaemonAutoRestart(reason: String) {
+    val self = currentCoroutineContext()[Job]
+    try {
+      while (currentCoroutineContext().isActive) {
+        if (!daemonAutoRestartEligibleNow()) return
+
+        val started = daemonLifecycleMutex.withLock {
+          // Re-check under the lock: a manual action, kill all or a fresh status
+          // poll may have changed everything while this round waited for it.
+          if (!daemonAutoRestartEligibleNow()) return
+          // Count the round now so a daemon that starts but never answers the
+          // API still stops after [daemonAutoRestartMaxFailures] rounds.
+          val attempt = synchronized(daemonAutoRestartLock) {
+            daemonAutoRestartFailures += 1
+            daemonAutoRestartCooldownUntilMs = System.currentTimeMillis() + daemonAutoRestartCooldownMs
+            daemonAutoRestartFailures
+          }
+          log(
+            "WARN",
+            "daemon auto restart ($reason): attempt $attempt/$daemonAutoRestartMaxFailures"
+          )
+          val launched = runCatching {
+            daemonProcessControl.restart(beforeStart = {
+              self?.isActive == true && daemonAutoRestartStateEligibleNow()
+            })
+          }
+            .onFailure { log("ERR", "daemon auto restart launch error ($reason): ${it.message ?: it}") }
+            .getOrDefault(false)
+          // runCatching would swallow cancellation; a culled round must not go on.
+          currentCoroutineContext().ensureActive()
+          launched
+        }
+
+        if (started) log("OK", "daemon auto restart launched ($reason)")
+        else log("ERR", "daemon auto restart launch failed ($reason)")
+
+        // The launch may have finished in the OS after this round was cancelled
+        // or the app went background; re-check the round before any side effect.
+        if (started) currentCoroutineContext().ensureActive()
+        val verified = started && verifyDaemonAfterLaunch()
+        if (verified) {
+          resetDaemonRestartAttempts()
+          log("OK", "daemon auto restart connected ($reason)")
+          return
+        }
+        if (started) log("ERR", "daemon auto restart: daemon did not answer the API ($reason)")
+
+        // Someone else connected (manual start, resumed poll) or owns the outcome:
+        // never report a stale failure over a healthier, newer state.
+        if (_uiState.value.daemonOnline) return
+        if (_appUpdate.value.daemonActionInProgress) return
+
+        val failures = synchronized(daemonAutoRestartLock) { daemonAutoRestartFailures }
+        if (failures >= daemonAutoRestartMaxFailures) {
+          log("ERR", "daemon auto restart gave up after $failures failed rounds ($reason)")
+          // Cold start never reached the app: show the same offline Start screen
+          // a failed handshake would. The budget check above stops further rounds.
+          if (!startupCompleted) failStartupHandshake()
+          return
+        }
+        awaitDaemonAutoRestartCooldown()
+      }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Throwable) {
+      log("ERR", "daemon auto restart supervisor error: ${e.message ?: e}")
+    } finally {
+      // Only this supervisor may clear its own slot, and only under the lock.
+      synchronized(daemonAutoRestartLock) {
+        if (daemonAutoRestartJob === self) daemonAutoRestartJob = null
+      }
+    }
+  }
+
+  /** Sleeps out the cooldown; a success signal ([wakeDaemonAutoRestartSupervisor]) ends it early. */
+  private suspend fun awaitDaemonAutoRestartCooldown() {
+    val wake = CompletableDeferred<Unit>()
+    synchronized(daemonAutoRestartLock) { daemonAutoRestartWake = wake }
+    try {
+      withTimeoutOrNull(daemonAutoRestartCooldownMs) { wake.await() }
+    } finally {
+      synchronized(daemonAutoRestartLock) {
+        if (daemonAutoRestartWake === wake) daemonAutoRestartWake = null
+      }
+    }
+  }
+
+  /**
+   * Bounded post-launch verification. Returns true only after the daemon
+   * answered `/api/status`; the caller decides what false means (supervisor:
+   * next cooldown round, manual start: failure toast). It never recurses into
+   * failure handling, so a restart cannot schedule a second supervisor.
+   */
+  private suspend fun verifyDaemonAfterLaunch(timeoutMs: Long = 10_000L): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (currentCoroutineContext().isActive) {
+      val rep = runCatching { withContext(Dispatchers.IO) { api.getStatus() } }.getOrNull()
+      if (rep != null) {
+        // The launch may have outlived the round (cancel, background, manual
+        // supersede): re-check before touching UI or starting pollers.
+        currentCoroutineContext().ensureActive()
+        val okAt = System.currentTimeMillis()
+        lastStatusFetchAtMs = okAt
+        noteStatusPollSuccess(okAt)
+        _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+        updateStatsPowerFromReport(rep)
+        runCatching { root.setCachedServiceOn(ApiModels.isServiceOn(rep)) }
+        // Background: never start pollers or flash the handshake; resume will
+        // pick the connection up from the daemon itself.
+        if (!appVisible) return true
+        if (startupCompleted) {
+          startStatusPolling()
+          startDaemonLogPolling()
+        } else {
+          finishStartupHandshake()
+        }
+        return true
+      }
+      if (System.currentTimeMillis() >= deadline) return false
+      delay(500L)
+    }
+    return false
+  }
+
+  /** Outcome of one `/api/stop` request, before any waiting. */
+  private enum class DaemonStopRequest { ACCEPTED, REJECTED, UNREACHABLE }
+
+  /** One `/api/stop` answer plus the daemon status read right after it. */
+  private data class DaemonStopProbe(
+    val request: DaemonStopRequest,
+    val stopInProgress: Boolean = false,
+    val startInProgress: Boolean = false,
+    /** The runtime is really down: no stop running and nothing left up. */
+    val teardownDone: Boolean = false,
+  )
+
+  /** Whether the daemon's own teardown really happened. */
+  private enum class CanonicalStopResult { CONFIRMED, UNREACHABLE, FAILED }
+
+  /**
+   * One `/api/stop` round trip plus a status snapshot. The answer alone cannot
+   * be trusted: an `accepted` stop may only be the internet-wait skip while a
+   * start is still running, and a rejection may mean another start/stop is in
+   * flight — only the status flags say what is really happening.
+   */
+  private suspend fun probeDaemonStop(): DaemonStopProbe {
+    val accepted = try {
+      withContext(Dispatchers.IO) { api.stopServiceAccepted() }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Throwable) {
+      log("WARN", "kill all: /api/stop unreachable: ${e.message ?: e}")
+      return DaemonStopProbe(DaemonStopRequest.UNREACHABLE)
+    }
+    val request = if (accepted) DaemonStopRequest.ACCEPTED else DaemonStopRequest.REJECTED
+    val rep = runCatching { withContext(Dispatchers.IO) { api.getStatus() } }.getOrNull()
+      ?: return DaemonStopProbe(request)
+    return DaemonStopProbe(
+      request = request,
+      stopInProgress = rep.stopInProgress,
+      startInProgress = rep.startInProgress,
+      teardownDone = daemonStopReported(rep),
+    )
+  }
+
+  /**
+   * Drives `/api/stop` until the daemon confirms a finished stop.
+   *
+   * CONFIRMED: teardown really ran (`stop_in_progress=false`, runtime stopped).
+   * UNREACHABLE: the daemon is gone, so a root kill is the only teardown left.
+   * FAILED: the request was rejected, never confirmed or timed out. The caller
+   * must NOT kill processes afterwards: the daemon's own iptables/program
+   * cleanup did not happen, so a kill would leave stale rules behind while
+   * pretending the canonical teardown succeeded.
+   */
+  private suspend fun stopDaemonCanonically(): CanonicalStopResult {
+    // Every stop answer is followed by a status check; a start that keeps
+    // running gets a bounded number of stop retries.
+    var stopPosts = 1
+    while (currentCoroutineContext().isActive) {
+      val probe = probeDaemonStop()
+      if (probe.request == DaemonStopRequest.UNREACHABLE) return CanonicalStopResult.UNREACHABLE
+
+      if (probe.startInProgress) {
+        // A start owns the daemon (and may have answered "accepted" only to
+        // skip its internet wait). Wait it out, then ask again.
+        if (stopPosts >= daemonStopMaxPosts) {
+          log("ERR", "kill all: daemon keeps starting; canonical stop not confirmed")
+          return CanonicalStopResult.FAILED
+        }
+        stopPosts += 1
+        log("WARN", "kill all: daemon is starting; waiting before stopping again")
+        if (!awaitDaemonStartFinished(daemonStartWaitTimeoutMs)) {
+          log("ERR", "kill all: start did not finish; canonical stop not attempted")
+          return CanonicalStopResult.FAILED
+        }
+        continue
+      }
+
+      if (probe.stopInProgress) {
+        log("WARN", "kill all: a stop is already running; waiting for it")
+      } else if (probe.request != DaemonStopRequest.ACCEPTED) {
+        // Idle daemon plus a rejected stop: nothing will tear the runtime down.
+        log("ERR", "kill all: daemon rejected the stop while idle")
+        return CanonicalStopResult.FAILED
+      } else if (probe.teardownDone) {
+        // Accepted and nothing is running or left up: teardown already happened.
+        return CanonicalStopResult.CONFIRMED
+      } else {
+        // "Accepted" with nothing stopping and the runtime still up means the
+        // start merely skipped its internet wait and then finished between the
+        // POST and this probe, so no teardown was ever scheduled. Re-post while
+        // the budget lasts instead of awaiting a stop that does not exist.
+        if (stopPosts >= daemonStopMaxPosts) {
+          log("ERR", "kill all: daemon accepted the stop but nothing is tearing down; runtime still active")
+          return CanonicalStopResult.FAILED
+        }
+        stopPosts += 1
+        continue
+      }
+
+      val confirmed = awaitDaemonStopReport(daemonStopWaitTimeoutMs)
+      if (confirmed == null) return CanonicalStopResult.UNREACHABLE
+      if (!confirmed) {
+        log("ERR", "kill all: daemon did not confirm a finished stop")
+        return CanonicalStopResult.FAILED
+      }
+      return CanonicalStopResult.CONFIRMED
+    }
+    return CanonicalStopResult.FAILED
+  }
+
+  /**
+   * Waits (bounded) for the daemon to report a finished stop: no stop in
+   * progress and the runtime reported stopped. true = confirmed, false =
+   * timed out, null = daemon became unreachable.
+   */
+  private suspend fun awaitDaemonStopReport(timeoutMs: Long = daemonStopWaitTimeoutMs): Boolean? {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (currentCoroutineContext().isActive && System.currentTimeMillis() < deadline) {
+      val rep = runCatching { withContext(Dispatchers.IO) { api.getStatus() } }.getOrNull()
+        ?: return null
+      if (daemonStopReported(rep)) return true
+      delay(300L)
+    }
+    return false
+  }
+
+  /** Waits (bounded) for a running start to release the daemon; false on timeout/unreachable. */
+  private suspend fun awaitDaemonStartFinished(timeoutMs: Long = daemonStartWaitTimeoutMs): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (currentCoroutineContext().isActive && System.currentTimeMillis() < deadline) {
+      val rep = runCatching { withContext(Dispatchers.IO) { api.getStatus() } }.getOrNull()
+        ?: return false
+      if (!rep.startInProgress) return true
+      delay(500L)
+    }
+    return false
+  }
+
+  /**
+   * After a kill that did not confirm (rejected stop, timeout, root scan error),
+   * read the daemon's real state instead of pretending it is offline. A
+   * reachable daemon restores the live status and clears the deliberate-offline
+   * state; polling is restarted only in the foreground.
+   */
+  private suspend fun restoreDaemonAfterFailedKill() {
+    val rep = runCatching { withContext(Dispatchers.IO) { api.getStatus() } }.getOrNull()
+    if (rep != null) {
+      val okAt = System.currentTimeMillis()
+      lastStatusFetchAtMs = okAt
+      noteStatusPollSuccess(okAt)
+      _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+      updateStatsPowerFromReport(rep)
+      runCatching { root.setCachedServiceOn(ApiModels.isServiceOn(rep)) }
+    } else {
+      // Still unreachable: report offline, but quietly (deliberate state stands).
+      _uiState.update { it.copy(daemonOnline = false, daemonUnavailableVisible = false) }
+    }
+    if (appVisible) {
+      startStatusPolling()
+      startDaemonLogPolling()
+    }
+  }
+
+  private fun daemonStopReported(rep: ApiModels.StatusReport): Boolean {
+    if (rep.stopInProgress) return false
+    if (!ApiModels.isServiceStopped(rep)) return false
+    return rep.runtimeState !in activeRuntimeStates && rep.actualRuntimeState !in activeRuntimeStates
+  }
+
+  private fun beginDaemonAction(): Boolean {
+    // Auto is deliberately NOT cancelled here: it re-checks eligibility under
+    // the mutex, and a successful manual start makes it bow out on its own.
+    if (_appUpdate.value.daemonActionInProgress) return false
+    if (daemonActionJob?.isActive == true) return false
+    _appUpdate.update { it.copy(daemonActionInProgress = true) }
+    return true
+  }
+
+  private fun endDaemonAction() {
+    _appUpdate.update { it.copy(daemonActionInProgress = false) }
+  }
+
+  fun setDaemonAutoRestartEnabled(enabled: Boolean) {
+    root.setDaemonAutoRestartEnabled(enabled)
+    _appUpdate.update { it.copy(daemonAutoRestartEnabled = enabled) }
+    // Toggling is an explicit user decision: give the next failure a fresh budget.
+    resetDaemonRestartAttempts()
+    if (!enabled) cancelDaemonAutoRestartSupervisor()
+    log("OK", "daemon auto restart ${if (enabled) "enabled" else "disabled"}")
+    if (enabled) maybeAutoRestartDaemon("toggled on")
+  }
+
+  /**
+   * Manual "start daemon": recovers a live-but-unreachable daemon (kills the
+   * stale instance by exact path, then starts exactly one), enables the
+   * auto-restart preference and reuses the same bounded verification as auto.
+   */
+  fun startDaemonManually() {
+    if (_rootState.value != RootState.GRANTED) {
+      toast(str(R.string.settings_daemon_start_failed))
+      return
+    }
+    if (!isSetupDone()) {
+      toast(str(R.string.settings_daemon_start_failed))
+      return
+    }
+    if (_uiState.value.remoteTargetName.isNotBlank()) {
+      // Remote targets have no local process to start.
+      toast(str(R.string.settings_daemon_start_failed))
+      return
+    }
+    if (!beginDaemonAction()) return
+    // A deliberate offline state ends here: the user explicitly asked to start.
+    deliberateDaemonStop = false
+
+    daemonActionJob = launchIO {
+      var failed = false
+      try {
+        daemonLifecycleMutex.withLock {
+          if (_uiState.value.daemonOnline) {
+            // Never restart a healthy daemon; just refresh its state.
+            runCatching { fetchAndUpdateStatus(force = true) }
+              .onFailure { handleStatusPollFailure("manual start refresh", it) }
+            return@withLock
+          }
+          val started = runCatching { daemonProcessControl.restart() }
+            .onFailure { log("ERR", "manual daemon start error: ${it.message ?: it}") }
+            .getOrDefault(false)
+          currentCoroutineContext().ensureActive()
+          if (!started) {
+            failed = true
+            log("ERR", "manual daemon start failed")
+            return@withLock
+          }
+          log("OK", "manual daemon start launched")
+          // A deliberate start implies "keep it alive".
+          runCatching { root.setDaemonAutoRestartEnabled(true) }
+          _appUpdate.update { it.copy(daemonAutoRestartEnabled = true) }
+          resetDaemonRestartAttempts()
+          if (!verifyDaemonAfterLaunch()) {
+            failed = true
+            log("ERR", "manual daemon start: daemon did not answer the API")
+          }
+        }
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Throwable) {
+        failed = true
+        log("ERR", "manual daemon start error: ${e.message ?: e}")
+      } finally {
+        endDaemonAction()
+      }
+      if (failed) {
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_daemon_start_failed))
+        }
+      }
+    }
+  }
+
+  /**
+   * Manual "kill all ZDT-D processes". Auto-restart is disabled FIRST — both the
+   * preference and the supervisor — so nothing resurrects the daemon. The
+   * daemon's own `start.json` flag is cleared before anything dies (an offline
+   * kill must still survive a reboot), then `/api/stop` is asked to stop, its
+   * asynchronous cleanup is awaited, testers are halted, and finally the exact
+   * executable paths are killed by root.
+   */
+  fun killAllDaemonProcesses() {
+    // Disable resurrection before reserving anything: this must also happen when
+    // another manual action still owns the busy flag.
+    root.setDaemonAutoRestartEnabled(false)
+    _appUpdate.update { it.copy(daemonAutoRestartEnabled = false) }
+    cancelDaemonAutoRestartSupervisor()
+    resetDaemonRestartAttempts()
+
+    if (!beginDaemonAction()) return
+    // Deliberate offline from here on: failed polls of the stopping daemon must
+    // stay quiet (no unavailable overlay) until a start or a real answer.
+    deliberateDaemonStop = true
+
+    daemonActionJob = launchIO {
+      var failed = false
+      var killConfirmed = false
+      try {
+        daemonLifecycleMutex.withLock {
+          // 1) Persist the daemon's own auto-start flag while it is still
+          // readable. If this cannot be written, do not kill: service.sh would
+          // simply bring the daemon back on the next boot.
+          if (!root.writeStartJsonAutoStartDisabled()) {
+            failed = true
+            log("ERR", "kill all aborted: could not persist start.json enabled=false")
+            return@withLock
+          }
+
+          // 2) Canonical stop. `/api/stop` only schedules teardown, can be
+          // rejected while a start/stop owns the daemon, and must be confirmed
+          // before anything is killed.
+          when (stopDaemonCanonically()) {
+            CanonicalStopResult.CONFIRMED ->
+              log("OK", "kill all: daemon confirmed teardown")
+            CanonicalStopResult.UNREACHABLE ->
+              log("WARN", "kill all: daemon unreachable; root fallback only")
+            CanonicalStopResult.FAILED -> {
+              // Rejected, timed out, or never confirmed: the daemon's own
+              // iptables/program cleanup did not run, so killing its processes
+              // would leave stale rules behind and lie about the teardown.
+              failed = true
+              log("ERR", "kill all: canonical teardown not confirmed; processes left running")
+              return@withLock
+            }
+          }
+
+          // 3) Stop app-owned scans/runners so they do not keep NFQUEUE/rules alive.
+          runCatching { BlockcheckController.stop() }
+            .onFailure { log("WARN", "kill all: blockcheck stop failed: ${it.message ?: it}") }
+          runCatching { NfqwsTesterOverlayService.stop(ctx) }
+            .onFailure { log("WARN", "kill all: tester overlay stop failed: ${it.message ?: it}") }
+          runCatching { NfqwsTesterRunner(ctx).stopTester() }
+            .onFailure { log("WARN", "kill all: nfqws runner stop failed: ${it.message ?: it}") }
+
+          // 4) Root kill on exact executable paths (daemon + testers + process groups).
+          // Only a confirmed kill may publish the offline state below.
+          if (daemonProcessControl.killAll()) {
+            killConfirmed = true
+          } else {
+            failed = true
+            log("ERR", "kill all: ZDT-D processes survived TERM/KILL")
+          }
+
+          // 5) Cleanup last: a stale tester session/NFQUEUE state after its process died.
+          runCatching { NfqwsTesterRunner(ctx).stopTester() }
+            .onFailure { log("WARN", "kill all: nfqws tester cleanup failed: ${it.message ?: it}") }
+        }
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Throwable) {
+        failed = true
+        log("ERR", "kill all error: ${e.message ?: e}")
+      } finally {
+        try {
+          if (killConfirmed) {
+            // The app itself is never killed. Confirmed kill: publish offline
+            // without the unavailable overlay and stop polling the dead daemon
+            // (a start / foreground resume restarts it). A cold-start handshake
+            // that was still running ends here, quietly. Polls that succeeded
+            // while the daemon was still stopping may have cleared the flag;
+            // re-assert it so later failures stay quiet too.
+            deliberateDaemonStop = true
+            startupJob?.cancel()
+            startupJob = null
+            _uiState.update {
+              it.copy(
+                daemonOnline = false,
+                daemonUnavailableVisible = false,
+                startup = StartupUiState.hidden(),
+              )
+            }
+            statusPollFailureCount = 0
+            runCatching { root.setCachedServiceOn(false) }
+            statusJob?.cancel()
+            statusJob = null
+            daemonLogJob?.cancel()
+            daemonLogJob = null
+            // Last app-owned process tree: the cached libsu root shell itself.
+            runCatching { root.resetRootShell() }
+              .onFailure { log("WARN", "kill all: root shell close failed: ${it.message ?: it}") }
+          } else if (currentCoroutineContext().isActive) {
+            // A failed kill (rejected stop, timeout, root scan error) must not
+            // look like a successful one: probe what is really running.
+            runCatching { restoreDaemonAfterFailedKill() }
+          }
+        } finally {
+          endDaemonAction()
+        }
+      }
+      if (failed) {
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_daemon_killall_failed))
+        }
+      }
+    }
+  }
+
   fun retryRoot() {
     // If the user denied the initial Magisk prompt, libsu may keep a non-root shell cached.
     // Reset it so Magisk can show the prompt again on retry.
     runCatching { root.resetRootShell() }
     _rootState.value = RootState.CHECKING
+    cancelDaemonAutoRestartSupervisor()
     ensureRootAndLoadToken()
   }
 

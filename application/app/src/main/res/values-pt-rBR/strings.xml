@@ -2185,6 +2185,20 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="nfqws2_item_expand">Expandir item</string>
     <string name="nfqws2_item_collapse">Recolher item</string>
     <string name="nfqws2_search_no_matches">Nada encontrado</string>
+    <string name="nfqws2_lists_show_all">Mostrar todas as %1$d listas</string>
+    <string name="nfqws2_lists_show_less">Mostrar menos listas</string>
+    <string name="settings_daemon_autorestart_title">Reinício automático do daemon</string>
+    <string name="settings_daemon_autorestart_body">Reinicia o daemon após falhas de conexão repetidas enquanto o app está aberto.</string>
+    <string name="settings_daemon_control_title">Processos do daemon</string>
+    <string name="settings_daemon_start">Iniciar daemon</string>
+    <string name="settings_daemon_start_body">Inicia ou reinicia o daemon da API sem ativar o bypass.</string>
+    <string name="settings_daemon_killall">Encerrar todos</string>
+    <string name="settings_daemon_killall_body">Interrompe o daemon, o bypass e as ferramentas de teste; desativa o reinício automático.</string>
+    <string name="settings_daemon_killall_confirm_title">Encerrar todos os processos do daemon?</string>
+    <string name="settings_daemon_killall_confirm_body">Isso interrompe o bypass, o daemon e os processos iniciados pelo app ou pelo daemon. O reinício automático será desativado. Inicie o daemon manualmente depois.</string>
+    <string name="settings_daemon_start_failed">Falha ao iniciar o daemon</string>
+    <string name="settings_daemon_killall_failed">Falha ao interromper todos os processos do daemon</string>
+    <string name="analysis_tools_entry_desc">Teste de estratégias, detecção de DPI e diagnóstico de rede</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

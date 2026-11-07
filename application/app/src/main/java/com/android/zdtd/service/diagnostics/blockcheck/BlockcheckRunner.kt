@@ -2,6 +2,7 @@ package com.android.zdtd.service.diagnostics.blockcheck
 
 import android.content.Context
 import android.util.Log
+import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterBinary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -32,6 +33,22 @@ class BlockcheckRunner(
     /** su stdin pipe while a run is active; the tester reads confirm answers from it. */
     @Volatile
     private var confirmWriter: java.io.OutputStream? = null
+
+    /** Live `su` client of the current run; see [stopRunningProcess]. */
+    @Volatile
+    private var activeProcess: Process? = null
+
+    @Volatile
+    private var stopping: Boolean = false
+
+    private val rootConfig = RootConfigManager(context)
+
+    /** Non-interactive root commands use the shared libsu lifecycle, not su wrappers. */
+    private suspend fun runRoot(cmd: String): String = withContext(Dispatchers.IO) {
+        val result = rootConfig.execRootSh(cmd)
+        if (!result.isSuccess) Log.w(TAG, "root command exited ${result.code}")
+        (result.out + result.err).joinToString("\n")
+    }
 
     suspend fun listStrategies(program: String): List<String> = withContext(Dispatchers.IO) {
         val fromBinary = runCatching {
@@ -201,6 +218,8 @@ class BlockcheckRunner(
 
         Log.d(TAG, "starting: ${binary.absolutePath} ${args.joinToString(" ")}")
 
+        stopping = false
+
         val process = try {
             ProcessBuilder("su")
                 .redirectErrorStream(true)
@@ -208,6 +227,9 @@ class BlockcheckRunner(
         } catch (e: Exception) {
             throw e
         }
+        // Published for [stopRunningProcess]: Stop can land while this coroutine
+        // is parked in readLine, where cancellation never reaches the finally.
+        activeProcess = process
 
         // Keep the su stdin pipe open: the shell consumes the command lines
         // before `exec`, and the tester later reads confirm answers from fd 0.
@@ -355,16 +377,22 @@ class BlockcheckRunner(
                     line = reader.readLine()
                 }
             }
+        } catch (e: java.io.IOException) {
+            if (isActive && !stopping) {
+                trySend(BlockcheckEvent.Error(e.message ?: "Blockcheck output failed"))
+                sentError = true
+            }
         } finally {
             runCatching { reader.close() }
             runCatching { writer.close() }
             confirmWriter = null
+            if (activeProcess === process) activeProcess = null
             process.destroy()
         }
 
         // Stub/missing binaries (0-byte APK asset) exit without emitting any JSON.
         // Surface that as an error instead of leaving the UI stuck on "starting".
-        if (session == null && !sentError) {
+        if (session == null && !sentError && !stopping) {
             trySend(BlockcheckEvent.Error(
                 "nfqws_tester binary failed to start (no output). The APK ships an empty stub; rebuild the APK with the real binary."
             ))
@@ -386,6 +414,70 @@ class BlockcheckRunner(
         }
     }
 
+    /** Closes the confirmation channel; [stopOwnedProcess] owns the rest. */
+    fun stopRunningProcess() {
+        stopping = true
+        runCatching { confirmWriter?.close() }
+        confirmWriter = null
+    }
+
+    /** One root session: pipe discovery, tester kill, wrapper reap and rule cleanup. */
+    suspend fun stopOwnedProcess() = withContext(Dispatchers.IO) {
+        val process = activeProcess
+        val suPid = process?.let { javaProcessPid(it) }
+        runCatching { process?.destroyForcibly() }
+        activeProcess = null
+
+        val binary = NfqwsTesterBinary(context).ensureInstalled().absolutePath
+        val paths = listOf(binary, binary.replace("/data/user/0/", "/data/data/")).distinct()
+        val match = paths.joinToString(" || ") { path ->
+            val quoted = "'" + path.replace("'", "'\\''") + "'"
+            "[ \"\$exe\" = $quoted ]"
+        }
+        val binQuoted = "'" + binary.replace("'", "'\\''") + "'"
+        val appPid = android.os.Process.myPid()
+        val command = buildString {
+            append("pipes=; cleanup_pipes=; for f in /proc/\$\$/fd/*; do link=\$(readlink \"\$f\" 2>/dev/null) || continue; case \"\$link\" in pipe:\\[*\\]) cleanup_pipes=\"\$cleanup_pipes \$link\";; esac; done; collect_pipes() { for f in \"\$1\"/fd/*; do ")
+            append("link=\$(readlink \"\$f\" 2>/dev/null) || continue; ")
+            append("case \"\$link\" in pipe:\\[*\\]) pipes=\"\$pipes \$link\";; esac; done; }; ")
+            if (suPid != null && suPid > 1L) append("collect_pipes /proc/$suPid; ")
+            append("collect_idle() { for p in /proc/[0-9]*; do [ -r \"\$p/wchan\" ] || continue; ")
+            append("[ \"\$(cat \"\$p/wchan\")\" = sigsuspend ] || continue; ")
+            append("set -- \$(cat \"\$p/stat\" 2>/dev/null); [ \"\$4\" = $appPid ] || continue; ")
+            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; ")
+            append("case \"\$exe\" in /system/bin/sh|/system/bin/mksh|/bin/sh) ;; *) continue;; esac; ")
+            append("collect_pipes \"\$p\"; done; }; collect_idle; ")
+            // Exact executable paths only; never pkill/pgrep by a substring.
+            append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
+            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
+            append("if $match; then kill -TERM \"\$pid\" 2>/dev/null || true; fi; done; sleep 0.7; ")
+            append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
+            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
+            append("if $match; then kill -KILL \"\$pid\" 2>/dev/null || true; fi; done; ")
+            append("collect_idle; ")
+            // Reap only shell wrappers holding this run's IPC pipes.
+            append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
+            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; ")
+            append("case \"\$exe\" in /system/bin/sh|/system/bin/mksh|/bin/sh) ;; *) continue;; esac; ")
+            append("for f in \"\$p\"/fd/*; do link=\$(readlink \"\$f\" 2>/dev/null) || continue; ")
+            append("case \" \$cleanup_pipes \" in *\" \$link \"*) continue;; esac; ")
+            append("case \" \$pipes \" in *\" \$link \"*) kill -KILL \"\$pid\" 2>/dev/null || true; break;; esac; done; done; ")
+            append("chmod 700 $binQuoted 2>/dev/null || true; $binQuoted stop >/dev/null 2>&1 || true")
+        }
+        runCatching { runRoot(command) }
+            .onFailure { Log.w(TAG, "stopOwnedProcess failed", it) }
+        Log.d(TAG, "stopOwnedProcess: done")
+    }
+
+    /** Android's ProcessImpl exposes `pid` only as a private field. */
+    private fun javaProcessPid(process: Process): Long? = runCatching {
+        process.javaClass.getDeclaredField("pid").run {
+            isAccessible = true
+            getInt(process).toLong()
+        }
+    }.getOrNull()
+
+
     /** Answer a pending auto_confirm_needed prompt. */
     fun answerConfirm(accept: Boolean) {
         val writer = confirmWriter ?: return
@@ -399,17 +491,6 @@ class BlockcheckRunner(
         private const val TAG = "BlockcheckRunner"
         private const val LIST_DIR = "/data/adb/modules/ZDT-D/strategic/list"
         private const val WORKING_DIR = "/data/adb/modules/ZDT-D/working_folder"
-
-        suspend fun runRoot(cmd: String): String = withContext(Dispatchers.IO) {
-            val process = ProcessBuilder("su")
-                .redirectErrorStream(true)
-                .start()
-            process.outputStream.write(cmd.toByteArray())
-            process.outputStream.close()
-            val text = process.inputStream.bufferedReader().readText()
-            process.waitFor()
-            text
-        }
     }
 
     private fun buildShellCommand(bin: String, args: List<String>): String {

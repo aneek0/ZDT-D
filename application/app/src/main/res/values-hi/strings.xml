@@ -2185,6 +2185,20 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="nfqws2_item_expand">आइटम विस्तृत करें</string>
     <string name="nfqws2_item_collapse">आइटम संक्षिप्त करें</string>
     <string name="nfqws2_search_no_matches">कुछ नहीं मिला</string>
+    <string name="nfqws2_lists_show_all">सभी %1$d सूचियाँ दिखाएँ</string>
+    <string name="nfqws2_lists_show_less">कम सूचियाँ दिखाएँ</string>
+    <string name="settings_daemon_autorestart_title">daemon ऑटो-रीस्टार्ट</string>
+    <string name="settings_daemon_autorestart_body">ऐप खुला रहने पर बार-बार कनेक्शन विफल होने पर daemon को फिर से शुरू करें।</string>
+    <string name="settings_daemon_control_title">daemon प्रक्रियाएँ</string>
+    <string name="settings_daemon_start">daemon शुरू करें</string>
+    <string name="settings_daemon_start_body">बायपास चालू किए बिना API daemon शुरू या फिर से शुरू करें।</string>
+    <string name="settings_daemon_killall">सभी बंद करें</string>
+    <string name="settings_daemon_killall_body">daemon, बायपास और परीक्षण टूल बंद करें; ऑटो-रीस्टार्ट बंद करें।</string>
+    <string name="settings_daemon_killall_confirm_title">सभी daemon प्रक्रियाएँ बंद करें?</string>
+    <string name="settings_daemon_killall_confirm_body">इससे बायपास, daemon और ऐप या daemon द्वारा शुरू की गई प्रक्रियाएँ रुक जाएँगी। ऑटो-रीस्टार्ट बंद हो जाएगा। daemon को बाद में मैन्युअल रूप से शुरू करें।</string>
+    <string name="settings_daemon_start_failed">daemon शुरू करने में विफल</string>
+    <string name="settings_daemon_killall_failed">सभी daemon प्रक्रियाएँ बंद करने में विफल</string>
+    <string name="analysis_tools_entry_desc">रणनीति परीक्षण, DPI डिटेक्शन और नेटवर्क डायग्नोस्टिक्स</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

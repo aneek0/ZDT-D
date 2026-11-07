@@ -52,6 +52,20 @@ class ApiClient(
 
   fun stopService(): Boolean = requestOk("POST", "/api/stop", null)
 
+  /**
+   * `/api/stop` answer for lifecycle callers: true only when the daemon both
+   * reported `ok` and accepted the request (`accepted`). A rejected request
+   * (`ok:true, accepted:false`) returns false and changes nothing — the caller
+   * can inspect `/api/status` to learn why (start/stop already running). A
+   * daemon too old to send `accepted` is treated as accepting, preserving the
+   * previous behaviour for legacy builds. Throws when the daemon is unreachable.
+   */
+  fun stopServiceAccepted(): Boolean {
+    val obj = requestJson("POST", "/api/stop", null) ?: return false
+    if (!jsonBool(obj, "ok", false)) return false
+    return jsonBool(obj, "accepted", true)
+  }
+
   fun getPrograms(): List<ApiModels.Program> {
     val obj = requestJson("GET", "/api/programs", null)
     return ApiModels.parsePrograms(obj)

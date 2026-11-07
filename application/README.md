@@ -11,7 +11,8 @@ performed by the module and daemon.
 
 The application provides:
 
-- start/stop controls for the daemon runtime;
+- start/stop controls for the daemon runtime, default-on automatic restart after
+  repeated connection failures, and an explicit Kill all cleanup action;
 - profile management for supported programs;
 - app selection and app-list editing;
 - logs and live status views;
@@ -145,12 +146,15 @@ by the daemon.
 
 ### Analysis tools
 
-Hosts diagnostics such as DPI detector and NFQWS strategy tester.
+Hosts diagnostics such as DPI detector and NFQWS strategy tester. A dedicated
+entry card appears immediately before the optional-utilities card in Programs.
 
 ### Settings
 
 Contains app/theme/language settings and daemon-level options such as protection
-or hotspot-related settings.
+or hotspot-related settings. Daemon process controls include the app-owned
+auto-restart toggle (enabled by default), manual Start, and a confirmed Kill all
+action that also disables auto-restart until a later manual start.
 
 ### Support
 

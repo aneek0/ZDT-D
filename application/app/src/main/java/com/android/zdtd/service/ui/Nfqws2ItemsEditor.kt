@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -367,6 +371,7 @@ fun Nfqws2ItemsEditor(
 
   if (strategyPickerFor != null) {
     val current = strategyPickerFor!!
+    val shortHeight = rememberIsShortHeight()
     var pickerQuery by remember(current) { mutableStateOf("") }
     val pickerFiltered = remember(strategies, pickerQuery) {
       if (pickerQuery.isBlank()) strategies
@@ -378,7 +383,7 @@ fun Nfqws2ItemsEditor(
       onDismissRequest = { strategyPickerFor = null },
       title = { Text(stringResource(R.string.nfqws2_item_strategy_pick)) },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = pickerQuery,
             onValueChange = { pickerQuery = it },
@@ -386,28 +391,44 @@ fun Nfqws2ItemsEditor(
             singleLine = true,
             label = { Text(stringResource(R.string.nfqws2_list_search)) },
           )
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          for ((family, options) in pickerFiltered) {
-            item {
-              Text(family, style = MaterialTheme.typography.titleSmall)
-            }
-            items(options.size) { i ->
-              val opt = options[i]
-              TextButton(onClick = {
-                strategyPickerFor = null
-                mutate { done -> actions.setNfqws2ItemStrategy(profile, current.index, opt.lines, false, done) }
-              }) {
-                Column {
-                  Text(opt.preset, style = MaterialTheme.typography.labelMedium)
-                  Text(opt.name, style = MaterialTheme.typography.bodyMedium)
-                }
+          // Bounded viewport: the list itself owns the vertical drag, so a
+          // fling started anywhere in the list scrolls it. Each option is a
+          // full-width clickable row, so the whole row is the tap target
+          // instead of only the text block.
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(
+                min = if (shortHeight) 200.dp else 240.dp,
+                max = if (shortHeight) 360.dp else 480.dp,
+              ),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(vertical = 2.dp),
+          ) {
+            for ((family, options) in pickerFiltered) {
+              item(key = "family:$family") {
+                Text(
+                  family,
+                  style = MaterialTheme.typography.titleSmall,
+                  color = MaterialTheme.colorScheme.onSurface,
+                )
+              }
+              items(options.size, key = { "option:$family/$it" }) { i ->
+                val opt = options[i]
+                StrategyPickRow(
+                  preset = opt.preset,
+                  name = opt.name,
+                  onClick = {
+                    strategyPickerFor = null
+                    mutate { done -> actions.setNfqws2ItemStrategy(profile, current.index, opt.lines, false, done) }
+                  },
+                )
               }
             }
+            if (pickerFiltered.isEmpty()) {
+              item(key = "none") { Text(stringResource(R.string.nfqws2_items_strategies_none)) }
+            }
           }
-          if (pickerFiltered.isEmpty()) {
-            item { Text(stringResource(R.string.nfqws2_items_strategies_none)) }
-          }
-        }
         }
       },
       confirmButton = {
@@ -489,6 +510,41 @@ fun Nfqws2ItemsEditor(
         TextButton(onClick = { rawEditorFor = null }) { Text(stringResource(R.string.common_cancel)) }
       },
     )
+  }
+}
+
+/**
+ * One strategy choice: a full-width row so the whole line — not only the two
+ * text lines — is the tap target and part of the list's drag surface.
+ * `name` is primary content and must read as normal on-surface text; only the
+ * preset caption is de-emphasised.
+ */
+@Composable
+private fun StrategyPickRow(
+  preset: String,
+  name: String,
+  onClick: () -> Unit,
+) {
+  Row(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .clickable(onClick = onClick)
+        .padding(horizontal = 10.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text(
+        preset,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Text(
+        name,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+    }
   }
 }
 
@@ -702,6 +758,13 @@ private fun Nfqws2CutoverCard(
   }
 }
 
+/**
+ * Lists shown in the Items screen block before it collapses. Counted over the
+ * whole block (hostlists and ipset lists together), because that is what the
+ * block renders.
+ */
+private const val NFQWS2_LISTS_COLLAPSE_THRESHOLD = 10
+
 @Composable
 private fun Nfqws2ListsSection(
   profile: String,
@@ -715,6 +778,9 @@ private fun Nfqws2ListsSection(
   var editing by remember(profile) { mutableStateOf<Nfqws2ListSummary?>(null) }
   var creating by remember(profile) { mutableStateOf(false) }
   var deleteConfirmFor by remember(profile) { mutableStateOf<Nfqws2ListSummary?>(null) }
+  // Long list blocks start collapsed; an explicit expand is remembered per
+  // profile so it survives tab switches and rotation.
+  var listsExpanded by rememberSaveable(profile) { mutableStateOf(false) }
 
   fun reload() {
     actions.listNfqws2Lists(profile) { l -> lists = l }
@@ -734,12 +800,24 @@ private fun Nfqws2ListsSection(
     if (current == null) {
       return@SectionCard
     }
-    val filtered = remember(current, query) {
-      if (query.isEmpty()) current
-      else current.filter { it.name.contains(query, ignoreCase = true) }
-    }
+    // Search runs over the whole block, never over the collapsed slice.
+    val filtered =
+      remember(current, query) {
+        if (query.isEmpty()) current
+        else current.filter { it.name.contains(query, ignoreCase = true) }
+      }
+    val searching = query.isNotEmpty()
+    val collapsible = current.size > NFQWS2_LISTS_COLLAPSE_THRESHOLD
+    // A search always looks at the whole block, so a match that sits below the
+    // collapse cut still shows up without expanding first.
+    val visible =
+      if (searching || !collapsible || listsExpanded) {
+        filtered
+      } else {
+        filtered.take(NFQWS2_LISTS_COLLAPSE_THRESHOLD)
+      }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      for (l in filtered) {
+      for (l in visible) {
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -766,6 +844,22 @@ private fun Nfqws2ListsSection(
           stringResource(R.string.nfqws2_search_no_matches),
           style = MaterialTheme.typography.bodyMedium,
         )
+      }
+      // No toggle while searching: matches are already shown in full, so the
+      // expand choice only makes sense over the unfiltered block.
+      if (collapsible && !searching) {
+        TextButton(onClick = { listsExpanded = !listsExpanded }) {
+          Icon(
+            if (listsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+          )
+          Spacer(Modifier.width(6.dp))
+          if (listsExpanded) {
+            Text(stringResource(R.string.nfqws2_lists_show_less))
+          } else {
+            Text(stringResource(R.string.nfqws2_lists_show_all, current.size))
+          }
+        }
       }
       TextButton(onClick = { creating = true }) { Text(stringResource(R.string.nfqws2_list_create)) }
     }

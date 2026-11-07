@@ -218,6 +218,14 @@ Stops the current tester session, removes temporary rules and prints:
 Cleanup should be called when the diagnostic screen is closed or when the user
 stops testing.
 
+Android `auto` runs also arm `PR_SET_PDEATHSIG` with `SIGTERM` as a backstop for
+owning-process death. UI Stop additionally destroys the `su` client, signals
+the exact app-owned tester executable plus shell wrappers holding the current
+`su` pipe inodes, and invokes `stop`: KernelSU may reparent both away from `su`,
+so pipe or parent-death alone is not sufficient.
+Short command-probe helpers use null stdin/stdout/stderr so they cannot hold
+the `su` pipe or steal interactive confirmation input.
+
 ## What nfqws-tester does not do
 
 - It does not manage normal ZDT-D profiles.

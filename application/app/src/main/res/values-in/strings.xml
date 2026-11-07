@@ -2184,6 +2184,20 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="nfqws2_item_expand">Bentangkan item</string>
     <string name="nfqws2_item_collapse">Ringkas item</string>
     <string name="nfqws2_search_no_matches">Tidak ada hasil</string>
+    <string name="nfqws2_lists_show_all">Tampilkan semua %1$d daftar</string>
+    <string name="nfqws2_lists_show_less">Tampilkan lebih sedikit</string>
+    <string name="settings_daemon_autorestart_title">Mulai ulang otomatis daemon</string>
+    <string name="settings_daemon_autorestart_body">Mulai ulang daemon setelah kegagalan koneksi berulang selama aplikasi terbuka.</string>
+    <string name="settings_daemon_control_title">Proses daemon</string>
+    <string name="settings_daemon_start">Jalankan daemon</string>
+    <string name="settings_daemon_start_body">Jalankan atau mulai ulang daemon API tanpa mengaktifkan bypass.</string>
+    <string name="settings_daemon_killall">Hentikan semua</string>
+    <string name="settings_daemon_killall_body">Hentikan daemon, bypass, dan alat pengujian; nonaktifkan mulai ulang otomatis.</string>
+    <string name="settings_daemon_killall_confirm_title">Hentikan semua proses daemon?</string>
+    <string name="settings_daemon_killall_confirm_body">Tindakan ini menghentikan bypass, daemon, dan proses yang dijalankan oleh aplikasi atau daemon. Mulai ulang otomatis akan dinonaktifkan. Jalankan daemon secara manual nanti.</string>
+    <string name="settings_daemon_start_failed">Gagal menjalankan daemon</string>
+    <string name="settings_daemon_killall_failed">Gagal menghentikan semua proses daemon</string>
+    <string name="analysis_tools_entry_desc">Pengujian strategi, deteksi DPI, dan diagnostik jaringan</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>

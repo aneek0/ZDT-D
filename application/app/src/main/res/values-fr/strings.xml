@@ -2185,6 +2185,20 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="nfqws2_item_expand">Développer l’élément</string>
     <string name="nfqws2_item_collapse">Réduire l’élément</string>
     <string name="nfqws2_search_no_matches">Aucun résultat</string>
+    <string name="nfqws2_lists_show_all">Afficher les %1$d listes</string>
+    <string name="nfqws2_lists_show_less">Afficher moins de listes</string>
+    <string name="settings_daemon_autorestart_title">Redémarrage automatique du daemon</string>
+    <string name="settings_daemon_autorestart_body">Redémarre le daemon après des échecs de connexion répétés lorsque l’application est ouverte.</string>
+    <string name="settings_daemon_control_title">Processus du daemon</string>
+    <string name="settings_daemon_start">Démarrer le daemon</string>
+    <string name="settings_daemon_start_body">Démarre ou redémarre le daemon de l’API sans activer le contournement.</string>
+    <string name="settings_daemon_killall">Tout arrêter</string>
+    <string name="settings_daemon_killall_body">Arrête le daemon, le contournement et les outils de test ; désactive le redémarrage automatique.</string>
+    <string name="settings_daemon_killall_confirm_title">Arrêter tous les processus du daemon ?</string>
+    <string name="settings_daemon_killall_confirm_body">Cela arrête le contournement, le daemon et les processus lancés par l’application ou le daemon. Le redémarrage automatique sera désactivé. Démarrez le daemon manuellement plus tard.</string>
+    <string name="settings_daemon_start_failed">Impossible de démarrer le daemon</string>
+    <string name="settings_daemon_killall_failed">Impossible d’arrêter tous les processus du daemon</string>
+    <string name="analysis_tools_entry_desc">Tests de stratégies, détection DPI et diagnostic réseau</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
