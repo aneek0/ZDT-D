@@ -204,10 +204,11 @@ async fn read_target(stream: &mut TcpStream, atyp: u8) -> std::io::Result<Socket
             let port = read_port(stream).await?;
             let host = String::from_utf8(host)
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-            tokio::net::lookup_host((host.as_str(), port))
+            let address = tokio::net::lookup_host((host.as_str(), port))
                 .await?
                 .next()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "domain resolved to no addresses"))
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "domain resolved to no addresses"))?;
+            Ok(address)
         }
         _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unsupported test ATYP")),
     }
@@ -773,7 +774,11 @@ async fn expired_warm_tunnels_are_never_served() {
     wait_for_green(&server, 1).await;
 
     roundtrip(server.listen_addr, echo.addr, b"warm-ttl").await;
-    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    // Proactive maintenance now refreshes recently-used targets before their
+    // one-second test TTL expires and stops after three TTL windows. Wait past
+    // both the recent-activity window and the lifetime of its final refresh so
+    // this still verifies that genuinely expired cached sockets are never used.
+    tokio::time::sleep(Duration::from_millis(4_500)).await;
     backend.reset_count();
 
     roundtrip(server.listen_addr, echo.addr, b"warm-ttl-expired").await;

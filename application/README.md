@@ -159,6 +159,10 @@ action that also disables auto-restart until a later manual start.
 The service-unavailable startup and runtime screens also expose an explicit
 daemon restart action.
 
+The startup failure and runtime service-unavailable screens provide an explicit
+daemon restart action. Restart preserves the saved runtime state; Retry only
+repeats the connection handshake.
+
 ### Support
 
 Shows project support links and related user information.

@@ -1,6 +1,7 @@
-pub mod common;
-pub mod nfqws_filters;
-pub mod nfqws2;
+pub(crate) mod components;
+pub(crate) mod registry;
+pub(crate) mod ports;
+pub mod nfqws;
 pub mod byedpi;
 pub mod dnscrypt;
 pub mod operaproxy;
@@ -16,6 +17,5 @@ pub mod amneziawg;
 pub mod tun2socks;
 pub mod myvpn;
 pub mod mihomo;
-pub mod mihomo_subscription;
 pub mod mieru;
 pub mod tgwsproxy;

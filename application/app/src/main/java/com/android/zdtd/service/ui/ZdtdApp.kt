@@ -69,6 +69,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -89,6 +92,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -238,6 +242,7 @@ private fun StartupDialogHost(
   uiState: UiState,
   setup: SetupUiState,
   onRetry: () -> Unit,
+  onRestartDaemon: () -> Unit,
   onReinstall: () -> Unit,
   onOpenSettings: () -> Unit,
   onExpandUpdate: () -> Unit,
@@ -288,6 +293,7 @@ private fun StartupDialogHost(
     startup = renderedStartup,
     setup = setup,
     onRetry = onRetry,
+    onRestartDaemon = onRestartDaemon,
     onReinstall = onReinstall,
     onOpenSettings = onOpenSettings,
     onExpandUpdate = onExpandUpdate,
@@ -304,6 +310,7 @@ private fun StartupFullscreenContent(
   startup: com.android.zdtd.service.StartupUiState,
   setup: SetupUiState,
   onRetry: () -> Unit,
+  onRestartDaemon: () -> Unit,
   onReinstall: () -> Unit,
   onOpenSettings: () -> Unit,
   onExpandUpdate: () -> Unit,
@@ -461,7 +468,7 @@ private fun StartupFullscreenContent(
                   Text(stringResource(R.string.common_retry))
                 }
                 OutlinedButton(
-                  onClick = onRetry,
+                  onClick = onRestartDaemon,
                   modifier = Modifier.fillMaxWidth(),
                 ) {
                   Text(stringResource(R.string.startup_restart_daemon))
@@ -1387,268 +1394,58 @@ private fun MainShell(
 
   if (showProgramUpdates) {
     val pu by programUpdatesFlow.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+      actions.refreshOptionalTools()
+    }
     ProgramUpdatesDialog(
       state = pu,
+      installedComponentIds = uiState.components.asSequence().filter { it.installed }.map { it.id }.toSet(),
+      componentsResolved = uiState.componentsResolved,
       onDismiss = { showProgramUpdates = false },
       actions = actions,
     )
   }
 
   val appUpdate by appUpdateFlow.collectAsStateWithLifecycle()
+  var settingsContentReady by remember { mutableStateOf(false) }
 
-  if (showSettings) {
-    var settingsContentReady by remember { mutableStateOf(false) }
-
-    fun resetInvalidHotspotT2sIfNeeded() {
-      val mode = if (appUpdate.hotspotMode == "vpn") "vpn" else "proxy"
-      val program = appUpdate.hotspotProgram.ifBlank { appUpdate.hotspotT2sTarget }
-      val profile = appUpdate.hotspotProfile.ifBlank {
-        when (program) {
-          "singbox" -> appUpdate.hotspotT2sSingboxProfile
-          "wireproxy" -> appUpdate.hotspotT2sWireproxyProfile
-          else -> ""
-        }
-      }
-      val needsProfile = mode == "vpn" || program == "singbox" || program == "wireproxy"
-      val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
-        program.isBlank() || (needsProfile && profile.isBlank())
-        )
-      if (hotspotInvalid) {
-        actions.setHotspotT2sEnabled(false)
+  fun resetInvalidHotspotT2sIfNeeded() {
+    val mode = if (appUpdate.hotspotMode == "vpn") "vpn" else "proxy"
+    val program = appUpdate.hotspotProgram.ifBlank { appUpdate.hotspotT2sTarget }
+    val profile = appUpdate.hotspotProfile.ifBlank {
+      when (program) {
+        "singbox" -> appUpdate.hotspotT2sSingboxProfile
+        "wireproxy" -> appUpdate.hotspotT2sWireproxyProfile
+        else -> ""
       }
     }
+    val needsProfile = mode == "vpn" || program == "singbox" || program == "wireproxy"
+    val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
+      program.isBlank() || (needsProfile && profile.isBlank())
+      )
+    if (hotspotInvalid) actions.setHotspotT2sEnabled(false)
+  }
 
-    fun dismissSettings(afterClose: (() -> Unit)? = null) {
-      resetInvalidHotspotT2sIfNeeded()
-      showSettings = false
-      settingsCloseRequested = false
-      afterClose?.invoke()
-    }
+  fun dismissSettings(afterClose: (() -> Unit)? = null) {
+    resetInvalidHotspotT2sIfNeeded()
+    showSettings = false
+    settingsCloseRequested = false
+    afterClose?.invoke()
+  }
 
-    fun closeSettings(afterClose: (() -> Unit)? = null) {
-      dismissSettings(afterClose)
-    }
-
-    LaunchedEffect(Unit) {
+  LaunchedEffect(showSettings) {
+    if (showSettings) {
       settingsContentReady = false
-      actions.refreshDaemonSettings()
-      actions.refreshEnergySaver()
-      actions.refreshProxyInfo()
-      actions.refreshBlockedQuic()
-      delay(260)
-      settingsContentReady = true
-    }
-
-    LaunchedEffect(settingsCloseRequested) {
-      if (settingsCloseRequested) closeSettings()
-    }
-
-    if (landscapeControl) {
-      LandscapeSettingsShelf(
-        onDismiss = { closeSettings() },
-      ) {
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
-        ) {
-          Crossfade(
-            targetState = settingsContentReady,
-            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-            label = "settingsContentReadyLandscape",
-          ) { ready ->
-            if (!ready) {
-              Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-              ) {
-                Column(
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                  CircularProgressIndicator()
-                  Text(
-                    text = stringResource(R.string.common_loading),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                  )
-                }
-              }
-            } else {
-              AppUpdateSettings(
-                enabled = appUpdate.enabled,
-                onToggle = actions::setAppUpdateChecksEnabled,
-                onCheckNow = actions::checkAppUpdateNow,
-                daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
-                onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
-                daemonOnline = uiState.daemonOnline,
-                daemonAutoRestartEnabled = appUpdate.daemonAutoRestartEnabled,
-                daemonActionInProgress = appUpdate.daemonActionInProgress,
-                onDaemonAutoRestartEnabledChange = actions::setDaemonAutoRestartEnabled,
-                onStartDaemon = actions::startDaemonManually,
-                onKillAllDaemons = actions::killAllDaemonProcesses,
-                languageMode = appUpdate.languageMode,
-                onLanguageModeChange = actions::setAppLanguageMode,
-                themeMode = appUpdate.themeMode,
-                onThemeModeChange = actions::setThemeMode,
-                protectorMode = appUpdate.protectorMode,
-                onProtectorModeChange = actions::setProtectorMode,
-                energySaver = appUpdate.energySaver,
-                energySaverBusy = appUpdate.energySaverBusy,
-                onRefreshEnergySaver = actions::refreshEnergySaver,
-                onSaveEnergySaver = actions::saveEnergySaver,
-                selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
-                ipForwardEnabled = appUpdate.ipForwardEnabled,
-                tproxyEnabled = appUpdate.tproxyEnabled,
-                onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
-                hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
-                hotspotMode = appUpdate.hotspotMode,
-                hotspotProgram = appUpdate.hotspotProgram,
-                hotspotProfile = appUpdate.hotspotProfile,
-                hotspotT2sTarget = appUpdate.hotspotT2sTarget,
-                hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
-                hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
-                hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
-                hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
-                hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
-                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
-                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
-                onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
-                onHotspotModeChange = actions::setHotspotMode,
-                onHotspotSelectionChange = actions::setHotspotSelection,
-                onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
-                onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
-                onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
-                onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
-                captivePortalEnabled = appUpdate.captivePortalEnabled,
-                onCaptivePortalEnabledChange = actions::setCaptivePortalEnabled,
-                proxyInfoEnabled = appUpdate.proxyInfoEnabled,
-                proxyInfoBusy = appUpdate.proxyInfoBusy,
-                proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
-                hidingStatus = appUpdate.hidingStatus,
-                onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
-                onLoadAppAssignments = actions::loadAppAssignments,
-                onProxyInfoAppsSave = actions::saveProxyInfoApps,
-                onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
-                blockedQuicEnabled = appUpdate.blockedQuicEnabled,
-                blockedQuicBusy = appUpdate.blockedQuicBusy,
-                blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
-                onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
-                onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
-                resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
-                onResetModuleIdentifier = actions::resetModuleIdentifier,
-                onDeleteModule = { closeSettings { showDeleteModule = true } },
-                landscapeColumns = true,
-              )
-            }
-          }
-        }
+      actions.refreshSettings {
+        if (showSettings) settingsContentReady = true
       }
     } else {
-      PortraitSettingsShelf(
-        onDismiss = { dismissSettings() },
-      ) {
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
-        ) {
-          Crossfade(
-            targetState = settingsContentReady,
-            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-            label = "settingsContentReady",
-          ) { ready ->
-            if (!ready) {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .heightIn(min = 220.dp)
-                  .padding(horizontal = 24.dp, vertical = 28.dp),
-                contentAlignment = Alignment.Center,
-              ) {
-                Column(
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                  CircularProgressIndicator()
-                  Text(
-                    text = stringResource(R.string.common_loading),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                  )
-                }
-              }
-            } else {
-              AppUpdateSettings(
-                enabled = appUpdate.enabled,
-                onToggle = actions::setAppUpdateChecksEnabled,
-                onCheckNow = actions::checkAppUpdateNow,
-                daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
-                onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
-                daemonOnline = uiState.daemonOnline,
-                daemonAutoRestartEnabled = appUpdate.daemonAutoRestartEnabled,
-                daemonActionInProgress = appUpdate.daemonActionInProgress,
-                onDaemonAutoRestartEnabledChange = actions::setDaemonAutoRestartEnabled,
-                onStartDaemon = actions::startDaemonManually,
-                onKillAllDaemons = actions::killAllDaemonProcesses,
-                languageMode = appUpdate.languageMode,
-                onLanguageModeChange = actions::setAppLanguageMode,
-                themeMode = appUpdate.themeMode,
-                onThemeModeChange = actions::setThemeMode,
-                protectorMode = appUpdate.protectorMode,
-                onProtectorModeChange = actions::setProtectorMode,
-                energySaver = appUpdate.energySaver,
-                energySaverBusy = appUpdate.energySaverBusy,
-                onRefreshEnergySaver = actions::refreshEnergySaver,
-                onSaveEnergySaver = actions::saveEnergySaver,
-                selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
-                ipForwardEnabled = appUpdate.ipForwardEnabled,
-                tproxyEnabled = appUpdate.tproxyEnabled,
-                onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
-                hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
-                hotspotMode = appUpdate.hotspotMode,
-                hotspotProgram = appUpdate.hotspotProgram,
-                hotspotProfile = appUpdate.hotspotProfile,
-                hotspotT2sTarget = appUpdate.hotspotT2sTarget,
-                hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
-                hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
-                hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
-                hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
-                hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
-                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
-                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
-                onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
-                onHotspotModeChange = actions::setHotspotMode,
-                onHotspotSelectionChange = actions::setHotspotSelection,
-                onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
-                onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
-                onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
-                onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
-                captivePortalEnabled = appUpdate.captivePortalEnabled,
-                onCaptivePortalEnabledChange = actions::setCaptivePortalEnabled,
-                proxyInfoEnabled = appUpdate.proxyInfoEnabled,
-                proxyInfoBusy = appUpdate.proxyInfoBusy,
-                proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
-                hidingStatus = appUpdate.hidingStatus,
-                onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
-                onLoadAppAssignments = actions::loadAppAssignments,
-                onProxyInfoAppsSave = actions::saveProxyInfoApps,
-                onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
-                blockedQuicEnabled = appUpdate.blockedQuicEnabled,
-                blockedQuicBusy = appUpdate.blockedQuicBusy,
-                blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
-                onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
-                onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
-                resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
-                onResetModuleIdentifier = actions::resetModuleIdentifier,
-                onDeleteModule = { closeSettings { showDeleteModule = true } },
-                landscapeColumns = false,
-              )
-            }
-          }
-        }
-      }
+      settingsContentReady = false
     }
+  }
+
+  LaunchedEffect(settingsCloseRequested, showSettings) {
+    if (showSettings && settingsCloseRequested) dismissSettings()
   }
 
   DeleteModuleConfirmDialog(
@@ -1726,8 +1523,8 @@ private fun MainShell(
     .asPaddingValues()
     .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
 
-  LaunchedEffect(tab) {
-    actions.setActiveMainTab(tab.name)
+  LaunchedEffect(tab, showSettings) {
+    actions.setActiveMainTab(if (showSettings) "SETTINGS" else tab.name)
   }
 
   val canGoBack = tab == Tab.APPS && appsRoute != AppsRoute.List
@@ -1843,9 +1640,25 @@ private fun MainShell(
       modifier = Modifier
         .fillMaxSize()
         .graphicsLayer {
-          alpha = mainContentAlpha
+          alpha = if (showSettings) 0f else mainContentAlpha
           translationX = mainContentSlidePx
         }
+        .focusProperties { canFocus = !showSettings }
+        .then(
+          if (showSettings) {
+            Modifier
+              .clearAndSetSemantics { }
+              .pointerInput(Unit) {
+                awaitPointerEventScope {
+                  while (true) {
+                    awaitPointerEvent().changes.forEach { it.consume() }
+                  }
+                }
+              }
+          } else {
+            Modifier
+          },
+        ),
     ) {
       if (christmasSeasonActive) {
         ChristmasSnowLayer(
@@ -1895,6 +1708,7 @@ private fun MainShell(
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
+          onOpenAppsList = { appsRoute = AppsRoute.List },
           onOpenProgram = internalOnOpenProgram,
           onOpenProfile = internalOnOpenProfile,
           onOpenAnalysisTools = internalOnOpenAnalysisTools,
@@ -1928,6 +1742,7 @@ private fun MainShell(
               tab = tab,
               uiStateFlow = uiStateFlow,
               appsRoute = appsRoute,
+              onOpenAppsList = { appsRoute = AppsRoute.List },
               onOpenProgram = internalOnOpenProgram,
               onOpenProfile = internalOnOpenProfile,
               onOpenAnalysisTools = internalOnOpenAnalysisTools,
@@ -2040,14 +1855,30 @@ private fun MainShell(
 
     }
 
+    if (showSettings) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .zIndex(10f),
+      ) {
+        RootSettingsScreen(
+          appUpdate = appUpdate,
+          actions = actions,
+          landscapeControl = landscapeControl,
+          daemonOnline = uiState.daemonOnline,
+          loading = !settingsContentReady,
+          onDismiss = { dismissSettings() },
+          onDeleteModule = { dismissSettings { showDeleteModule = true } },
+        )
+      }
+    }
+
     if (startupHostVisible) {
       StartupDialogHost(
         uiState = uiState,
         setup = setup,
-        onRetry = {
-          actions.retryDaemonStartup()
-          actions.startDaemonManually()
-        },
+        onRetry = actions::retryDaemonStartup,
+        onRestartDaemon = actions::startDaemonManually,
         onReinstall = actions::openModuleInstaller,
         onOpenSettings = {
           startupHostVisible = false
@@ -2087,6 +1918,7 @@ private fun LandscapeShellContent(
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
+  onOpenAppsList: () -> Unit,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
@@ -2104,6 +1936,9 @@ private fun LandscapeShellContent(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val appsNavFocusRequester = remember { FocusRequester() }
+  val appsEntryFocusRequester = remember { FocusRequester() }
+
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -2133,6 +1968,7 @@ private fun LandscapeShellContent(
           tab = tab,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
+          onOpenAppsList = onOpenAppsList,
           onOpenProgram = onOpenProgram,
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
@@ -2151,6 +1987,8 @@ private fun LandscapeShellContent(
           snackHost = snackHost,
           tproxyEnabled = appUpdate.tproxyEnabled,
           landscapeControl = true,
+          appsEntryFocusRequester = appsEntryFocusRequester,
+          appsNavFocusRequester = appsNavFocusRequester,
         )
       }
     }
@@ -2180,6 +2018,8 @@ private fun LandscapeShellContent(
       statsTabLabel = statsTabLabel,
       appsTabLabel = appsTabLabel,
       supportTabLabel = supportTabLabel,
+      appsNavFocusRequester = appsNavFocusRequester,
+      appsEntryFocusRequester = appsEntryFocusRequester.takeIf { tab == Tab.APPS && appsRoute == AppsRoute.List },
     )
   }
 }
@@ -2736,6 +2576,8 @@ private fun LandscapeRightNav(
   statsTabLabel: String,
   appsTabLabel: String,
   supportTabLabel: String,
+  appsNavFocusRequester: FocusRequester? = null,
+  appsEntryFocusRequester: FocusRequester? = null,
 ) {
   Surface(
     modifier = modifier
@@ -2766,6 +2608,8 @@ private fun LandscapeRightNav(
       LandscapeNavIcon(
         selected = tab == Tab.APPS,
         onClick = { onTabChange(Tab.APPS) },
+        focusRequester = appsNavFocusRequester,
+        leftFocusRequester = appsEntryFocusRequester,
         icon = { Icon(Icons.Filled.Apps, contentDescription = appsTabLabel, modifier = Modifier.size(30.dp)) },
       )
       LandscapeNavIcon(
@@ -2781,6 +2625,8 @@ private fun LandscapeRightNav(
 private fun LandscapeNavIcon(
   selected: Boolean,
   onClick: () -> Unit,
+  focusRequester: FocusRequester? = null,
+  leftFocusRequester: FocusRequester? = null,
   icon: @Composable () -> Unit,
 ) {
   val bgAlpha by animateFloatAsState(
@@ -2788,9 +2634,20 @@ private fun LandscapeNavIcon(
     animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
     label = "landscape_nav_bg",
   )
+  val focusModifier = Modifier
+    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+    .then(
+      if (leftFocusRequester != null) {
+        Modifier.focusProperties { left = leftFocusRequester }
+      } else {
+        Modifier
+      },
+    )
+
   Box(
-    modifier = Modifier
+    modifier = focusModifier
       .size(58.dp)
+      .tvFocusHighlight(CircleShape)
       .clip(CircleShape)
       .background(MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha))
       .clickable(onClick = onClick),
@@ -2807,16 +2664,101 @@ private fun LandscapeNavIcon(
 
 
 @Composable
+private fun RootSettingsScreen(
+  appUpdate: AppUpdateUiState,
+  actions: ZdtdActions,
+  landscapeControl: Boolean,
+  daemonOnline: Boolean,
+  loading: Boolean,
+  onDismiss: () -> Unit,
+  onDeleteModule: () -> Unit,
+) {
+  val content: @Composable () -> Unit = {
+    AppUpdateSettings(
+      enabled = appUpdate.enabled,
+      onToggle = actions::setAppUpdateChecksEnabled,
+      onCheckNow = actions::checkAppUpdateNow,
+      daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
+      onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+      daemonOnline = daemonOnline,
+      daemonAutoRestartEnabled = appUpdate.daemonAutoRestartEnabled,
+      daemonActionInProgress = appUpdate.daemonActionInProgress,
+      onDaemonAutoRestartEnabledChange = actions::setDaemonAutoRestartEnabled,
+      onStartDaemon = actions::startDaemonManually,
+      onKillAllDaemons = actions::killAllDaemonProcesses,
+      languageMode = appUpdate.languageMode,
+      onLanguageModeChange = actions::setAppLanguageMode,
+      themeMode = appUpdate.themeMode,
+      onThemeModeChange = actions::setThemeMode,
+      protectorMode = appUpdate.protectorMode,
+      onProtectorModeChange = actions::setProtectorMode,
+      energySaver = appUpdate.energySaver,
+      energySaverBusy = appUpdate.energySaverBusy,
+      onRefreshEnergySaver = actions::refreshEnergySaver,
+      onSaveEnergySaver = actions::saveEnergySaver,
+      selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
+      ipForwardEnabled = appUpdate.ipForwardEnabled,
+      tproxyEnabled = appUpdate.tproxyEnabled,
+      onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
+      hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+      hotspotMode = appUpdate.hotspotMode,
+      hotspotProgram = appUpdate.hotspotProgram,
+      hotspotProfile = appUpdate.hotspotProfile,
+      hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+      hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+      hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+      hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
+      hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
+      hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+      hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
+      hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
+      onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+      onHotspotModeChange = actions::setHotspotMode,
+      onHotspotSelectionChange = actions::setHotspotSelection,
+      onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+      onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
+      onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+      onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
+      captivePortalEnabled = appUpdate.captivePortalEnabled,
+      onCaptivePortalEnabledChange = actions::setCaptivePortalEnabled,
+      proxyInfoEnabled = appUpdate.proxyInfoEnabled,
+      proxyInfoBusy = appUpdate.proxyInfoBusy,
+      proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+      hidingStatus = appUpdate.hidingStatus,
+      onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+      onLoadAppAssignments = actions::loadAppAssignments,
+      onProxyInfoAppsSave = actions::saveProxyInfoApps,
+      onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
+      blockedQuicEnabled = appUpdate.blockedQuicEnabled,
+      blockedQuicBusy = appUpdate.blockedQuicBusy,
+      blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
+      onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
+      onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
+      resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
+      onResetModuleIdentifier = actions::resetModuleIdentifier,
+      onDeleteModule = onDeleteModule,
+      landscapeColumns = landscapeControl,
+    )
+  }
+
+  if (landscapeControl) {
+    LandscapeSettingsShelf(onDismiss = onDismiss, loading = loading, content = content)
+  } else {
+    PortraitSettingsShelf(onDismiss = onDismiss, loading = loading, content = content)
+  }
+}
+
+
+@Composable
 private fun PortraitSettingsShelf(
   onDismiss: () -> Unit,
+  loading: Boolean,
   content: @Composable () -> Unit,
 ) {
-  // Settings are now shown as a dedicated full-screen window (Material 3),
-  // not a draggable bottom-sheet card. The loading state is handled by the
-  // provided content, so this frame does not show its own spinner.
+  // Dedicated full-screen settings surface inside the existing app window.
   SettingsScreen(
     onDismiss = onDismiss,
-    loading = false,
+    loading = loading,
   ) {
     content()
   }
@@ -2825,12 +2767,13 @@ private fun PortraitSettingsShelf(
 @Composable
 private fun LandscapeSettingsShelf(
   onDismiss: () -> Unit,
+  loading: Boolean,
   content: @Composable () -> Unit,
 ) {
-  // Unified with portrait: full-screen Material 3 settings window.
+  // Unified with portrait: same-window full-screen Material 3 settings surface.
   SettingsScreen(
     onDismiss = onDismiss,
-    loading = false,
+    loading = loading,
   ) {
     content()
   }
@@ -2929,6 +2872,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "nfqws2",
       "byedpi",
       "sing-box",
+      "sing-box-lx",
       "wireproxy",
       "myproxy",
       "myprogram",
@@ -3083,6 +3027,7 @@ private fun TabBody(
   tab: Tab,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
+  onOpenAppsList: () -> Unit,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
@@ -3103,13 +3048,17 @@ private fun TabBody(
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  appsEntryFocusRequester: FocusRequester? = null,
+  appsNavFocusRequester: FocusRequester? = null,
 ) {
   val stateHolder = rememberSaveableStateHolder()
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
 
-  LaunchedEffect(tab) {
-    focusManager.clearFocus(force = true)
+  LaunchedEffect(tab, landscapeControl) {
+    if (!landscapeControl) {
+      focusManager.clearFocus(force = true)
+    }
     keyboardController?.hide()
   }
 
@@ -3144,6 +3093,7 @@ private fun TabBody(
           Tab.APPS -> AppsHost(
             uiStateFlow = uiStateFlow,
             route = appsRoute,
+            onOpenAppsList = onOpenAppsList,
             onOpenProgram = onOpenProgram,
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
@@ -3164,6 +3114,8 @@ private fun TabBody(
             landscapeControl = landscapeControl,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
+            appsEntryFocusRequester = appsEntryFocusRequester,
+            appsNavFocusRequester = appsNavFocusRequester,
           )
         }
       }

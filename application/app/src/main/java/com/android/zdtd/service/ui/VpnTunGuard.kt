@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Locale
 
-private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg")
+private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg", "sing-box", "sing-box-lx")
 
 internal fun vpnProfileApiPath(programId: String, profile: String): String =
   "/api/programs/${URLEncoder.encode(programId, "UTF-8")}/profiles/${URLEncoder.encode(profile, "UTF-8")}"
@@ -22,6 +22,7 @@ private fun defaultTunForVpnProgram(programId: String): String = when (programId
   "mihomo" -> "tun20"
   "amneziawg" -> "awg1"
   "sing-box" -> "sbtun0"
+  "sing-box-lx" -> "sblxtun0"
   else -> "tun1"
 }
 

@@ -22,6 +22,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::json;
 
 use crate::settings;
+use crate::api::support::fs::sha256_hex_bytes;
+use crate::common::process::shell;
 
 /// Cutover data-model version this binary implements.
 pub const CUTOVER_VERSION: u32 = 1;
@@ -226,7 +228,7 @@ fn run_backup() -> Result<BackupOutcome> {
             "path": rel,
             "source": src.display().to_string(),
             "size": data.len(),
-            "sha256": crate::api::sha256_hex_bytes_pub(&data),
+            "sha256": sha256_hex_bytes(&data),
         }));
         Ok(())
     };
@@ -286,7 +288,7 @@ fn run_backup() -> Result<BackupOutcome> {
         let rel = f["path"].as_str().unwrap_or("");
         let p = root.join(rel);
         let ok = fs::read(&p)
-            .map(|b| crate::api::sha256_hex_bytes_pub(&b) == f["sha256"].as_str().unwrap_or(""))
+            .map(|b| sha256_hex_bytes(&b) == f["sha256"].as_str().unwrap_or(""))
             .unwrap_or(false);
         if !ok {
             bail!("backup verification failed: {rel}");
@@ -328,9 +330,9 @@ fn chrono_like_timestamp() -> String {
 
 /// Kill only NFQWS2 processes (pidof nfqws2), best-effort.
 fn stop_nfqws2_only() {
-    if let Ok((_, out)) = crate::shell::run("pidof", &["nfqws2"], crate::shell::Capture::Stdout) {
+    if let Ok((_, out)) = shell::run("pidof", &["nfqws2"], shell::Capture::Stdout) {
         for pid in out.split_whitespace().filter_map(|s| s.trim().parse::<i32>().ok()) {
-            let _ = crate::shell::run("kill", &[&pid.to_string()], crate::shell::Capture::None);
+            let _ = shell::run("kill", &[&pid.to_string()], shell::Capture::None);
         }
     }
 }

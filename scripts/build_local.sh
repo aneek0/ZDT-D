@@ -33,6 +33,8 @@ done
 # hysteria2/dpitunnel entries in /api/programs after the sources were removed.
 RUST_CRATES=(
   "zdtd:rust/zdtd:prebuilt/bin/arm64-v8a/zdtd"
+  "t2s:rust/T2s:prebuilt/bin/arm64-v8a/t2s"
+  "d2s:rust/d2s:prebuilt/bin/arm64-v8a/d2s"
   "dpi-detector:rust/dpi-detector:prebuilt/bin/arm64-v8a/dpi-detector"
   "nfqws-tester:rust/nfqws-tester:prebuilt/bin/arm64-v8a/nfqws-tester"
 )

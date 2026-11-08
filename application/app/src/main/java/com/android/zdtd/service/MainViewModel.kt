@@ -23,8 +23,17 @@ import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.diagnostics.blockcheck.BlockcheckController
 import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterOverlayService
 import com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterRunner
+import com.android.zdtd.service.components.ComponentSelectionStore
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
+import com.android.zdtd.service.components.RootBinaryComponentRepository
+import com.android.zdtd.service.components.RootBinaryComponentStage
+import com.android.zdtd.service.components.RootBinaryComponentState
 import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteRootClient
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentError
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentRepository
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentStage
+import com.android.zdtd.service.singboxlx.SingBoxLxComponentState
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
@@ -43,6 +52,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -146,6 +156,9 @@ data class SetupUiState(
   val preInstallWarning: String? = null,
   val installConflicts: List<InstallConflictUi> = emptyList(),
   val installZygiskRequested: Boolean = false,
+  /** Online distribution only: logical tools selected for the initial module install. */
+  val installComponentsResolved: Boolean = false,
+  val installSelectedComponents: Set<String> = emptySet(),
   val showZygiskInstallConfirm: Boolean = false,
   val showKsuApatchZygiskWarning: Boolean = false,
   val showZygiskInstallRecoveryDialog: Boolean = false,
@@ -220,6 +233,12 @@ val device: ApiModels.DeviceInfo = ApiModels.DeviceInfo(),
   val daemonLogTail: String = "",
   val daemonLogDetailedTail: String = "",
   val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
+  val singBoxLx: SingBoxLxComponentState = SingBoxLxComponentState(),
+  /** Logical component availability reported by zdtd. */
+  val components: List<ApiModels.Component> = emptyList(),
+  val componentsResolved: Boolean = false,
+  /** Download/install state for module-delivered components. */
+  val rootComponents: Map<String, RootBinaryComponentState> = emptyMap(),
 )
 
 
@@ -294,6 +313,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   )
   private val remoteRoot = RemoteRootClient()
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
+  private val singBoxLxRepository = SingBoxLxComponentRepository(ctx, root)
+  private val componentSelectionStore = ComponentSelectionStore(root)
+  private val rootBinaryComponentRepository = RootBinaryComponentRepository(ctx, root, componentSelectionStore)
+  private val componentSelectionMutex = Mutex()
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -466,6 +489,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   @Volatile private var statsPowerReady: Boolean = false
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
+  private var settingsRefreshJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
   private var runtimeApplyPollJob: Job? = null
   private val proxyInfoApplyDelayMs: Long = 1_200L
@@ -1831,6 +1855,7 @@ private fun clearDownloadedUpdateApk() {
       // Auto restarts are foreground-only: never let a sleeping supervisor
       // spawn a daemon while the app is in the background.
       cancelDaemonAutoRestartSupervisor()
+      settingsRefreshJob?.cancel(); settingsRefreshJob = null
       return
     }
 
@@ -1868,6 +1893,14 @@ private fun clearDownloadedUpdateApk() {
     val wasHome = previousTab == "HOME"
     activeMainTabHint = tab
 
+    if (previousTab == "SETTINGS" && tab != "SETTINGS") {
+      settingsRefreshJob?.cancel()
+      settingsRefreshJob = null
+      if (tab != "HOME" && startupCompleted && appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+        startDaemonLogPolling()
+      }
+    }
+
     if (!wasHome && tab == "HOME") {
       refreshDaemonLog()
       if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
@@ -1894,10 +1927,15 @@ private fun clearDownloadedUpdateApk() {
     "HOME" -> 5_800L
     "STATS" -> 5_000L
     "APPS" -> 9_500L
+    "SETTINGS" -> 20_000L
     else -> 10_500L
   }
 
-  private fun currentDaemonLogPollDelayMs(): Long = if (activeMainTabHint == "HOME") 650L else 15_000L
+  private fun currentDaemonLogPollDelayMs(): Long = when (activeMainTabHint) {
+    "HOME" -> 650L
+    "SETTINGS" -> 30_000L
+    else -> 15_000L
+  }
 
   private fun moduleDirExists(): Boolean = runCatching {
     root.execRoot("sh -c 'test -d /data/adb/modules/ZDT-D'").isSuccess
@@ -1958,9 +1996,7 @@ private fun clearDownloadedUpdateApk() {
       if (st.remoteTargetName.isNotBlank()) {
         st.copy(daemonOnline = false, daemonUnavailableVisible = false)
       } else {
-        // A deliberate kill makes "unreachable" the expected state, so it must
-        // not reopen the overlay; the Start action stays available.
-        val showOverlay = startupCompleted && appVisible && !deliberateDaemonStop
+        val showOverlay = startupCompleted && appVisible && !deliberateDaemonStop && daemonActionJob?.isActive != true
         val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
         if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
         else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
@@ -2037,9 +2073,9 @@ private fun clearDownloadedUpdateApk() {
   }
 
 
-  private fun startStartupHandshake() {
+  private fun startStartupHandshake(): Job {
   startupJob?.cancel()
-  startupJob = launchIO {
+  val job = launchIO {
     startupCompleted = false
     val startupStartedAt = System.currentTimeMillis()
 
@@ -2058,6 +2094,8 @@ private fun clearDownloadedUpdateApk() {
     }
     failStartupHandshake()
   }
+  startupJob = job
+  return job
 }
 
   fun retryDaemonStartup() {
@@ -2797,6 +2835,18 @@ private fun clearDownloadedUpdateApk() {
 
     if (_setup.value.installing) return
     launchIO {
+      // A bundled/full installation always installs every bundled tool, but keep separately
+      // downloaded components (sing-box-lx/TGWS) in the persistent state so customize.sh can
+      // carry them across the module replacement instead of deleting them with the old bin/.
+      val selectionSaved = componentSelectionMutex.withLock {
+        componentSelectionStore.writeModuleSelection(RootBinaryComponentCatalog.moduleIds)
+      }
+      if (!selectionSaved) {
+        _setup.update { it.copy(installError = str(R.string.component_selection_save_failed)) }
+        log("ERR", "unable to prepare full component state before module install")
+        return@launchIO
+      }
+
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
       val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
       val label = moduleInstallerLabel(installer)
@@ -3910,6 +3960,43 @@ fi""".trimIndent()
   }
 
 
+  private val updaterComponentIds = setOf("nfqws2", "mihomo", "mieru", "operaproxy")
+
+  private suspend fun refreshInstalledUpdaterComponentIds(): Set<String> {
+    val report = runCatching { api.getComponents() }.getOrElse { return emptySet() }
+    _uiState.update { it.copy(components = report, componentsResolved = true) }
+    return report.asSequence()
+      .filter { it.installed && it.id in updaterComponentIds }
+      .map { it.id }
+      .toSet()
+  }
+
+  private fun updaterItem(state: ProgramUpdatesUiState, componentId: String): ProgramUpdateItemUi? = when (componentId) {
+    "nfqws2" -> state.zapret2
+    "mihomo" -> state.mihomo
+    "mieru" -> state.mieru
+    "operaproxy" -> state.operaProxy
+    else -> null
+  }
+
+  private fun resetProgramUpdateStateForComponent(componentId: String) {
+    if (componentId !in updaterComponentIds) return
+    _programUpdates.update { st ->
+      val base = st.copy(
+        bulkCheckCompleted = false,
+        bulkCheckHadFailures = false,
+      )
+      when (componentId) {
+        "nfqws2" -> base.copy(zapret2 = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title))
+        "mihomo" -> base.copy(mihomo = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title))
+        "mieru" -> base.copy(mieru = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mieru_title))
+        "operaproxy" -> base.copy(operaProxy = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_operaproxy_title))
+        else -> base
+      }
+    }
+  }
+
+
   fun checkAllProgramUpdates() {
     if (_rootState.value != RootState.GRANTED) return
     val current = _programUpdates.value
@@ -3922,17 +4009,17 @@ fi""".trimIndent()
           bulkCheckHadFailures = false,
         )
       }
+      val installed = refreshInstalledUpdaterComponentIds()
       try {
         // Keep checks independent: a broken/changed repository or an unexpected failure
-        // in one tool must never prevent the remaining tools from being checked.
-        runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
-        runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
-        runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
-        runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
+        // in one installed tool must never prevent the remaining installed tools from being checked.
+        if ("nfqws2" in installed) runProgramUpdateCheckSafely("zapret2") { checkZapret2Internal() }
+        if ("mihomo" in installed) runProgramUpdateCheckSafely("mihomo") { checkMihomoInternal() }
+        if ("mieru" in installed) runProgramUpdateCheckSafely("mieru") { checkMieruInternal() }
+        if ("operaproxy" in installed) runProgramUpdateCheckSafely("operaproxy") { checkOperaProxyInternal() }
       } finally {
         _programUpdates.update { st ->
-          val failed = listOf(st.zapret2, st.mihomo, st.mieru, st.operaProxy)
-            .any { it.errorText != null }
+          val failed = installed.any { updaterItem(st, it)?.errorText != null }
           st.copy(
             bulkChecking = false,
             bulkCheckCompleted = true,
@@ -3945,15 +4032,18 @@ fi""".trimIndent()
 
   fun updateAllProgramUpdates() {
     if (_rootState.value != RootState.GRANTED) return
-    val snapshot = _programUpdates.value
-    if (snapshot.bulkChecking || snapshot.bulkUpdating) return
-    val updateZapret2 = snapshot.zapret2.updateAvailable
-    val updateMihomo = snapshot.mihomo.updateAvailable
-    val updateMieru = snapshot.mieru.updateAvailable
-    val updateOperaProxy = snapshot.operaProxy.updateAvailable
-    if (!listOf(updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return
+    val current = _programUpdates.value
+    if (current.bulkChecking || current.bulkUpdating) return
 
     launchIO {
+      val installed = refreshInstalledUpdaterComponentIds()
+      val snapshot = _programUpdates.value
+      val updateZapret2 = "nfqws2" in installed && snapshot.zapret2.updateAvailable
+      val updateMihomo = "mihomo" in installed && snapshot.mihomo.updateAvailable
+      val updateMieru = "mieru" in installed && snapshot.mieru.updateAvailable
+      val updateOperaProxy = "operaproxy" in installed && snapshot.operaProxy.updateAvailable
+      if (!listOf(updateZapret2, updateMihomo, updateMieru, updateOperaProxy).any { it }) return@launchIO
+
       _programUpdates.update { it.copy(bulkUpdating = true) }
       try {
         // Sequential updates keep disk/root operations predictable. A failure in one
@@ -4010,42 +4100,42 @@ fi""".trimIndent()
 
   fun checkZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkZapret2Internal() }
+    launchIO { if ("nfqws2" in refreshInstalledUpdaterComponentIds()) checkZapret2Internal() }
   }
 
   fun updateZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateZapret2Internal() }
+    launchIO { if ("nfqws2" in refreshInstalledUpdaterComponentIds()) updateZapret2Internal() }
   }
 
   fun checkMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkMihomoInternal() }
+    launchIO { if ("mihomo" in refreshInstalledUpdaterComponentIds()) checkMihomoInternal() }
   }
 
   fun updateMihomoNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateMihomoInternal() }
+    launchIO { if ("mihomo" in refreshInstalledUpdaterComponentIds()) updateMihomoInternal() }
   }
 
   fun checkMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkMieruInternal() }
+    launchIO { if ("mieru" in refreshInstalledUpdaterComponentIds()) checkMieruInternal() }
   }
 
   fun updateMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateMieruInternal() }
+    launchIO { if ("mieru" in refreshInstalledUpdaterComponentIds()) updateMieruInternal() }
   }
 
   fun checkOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { checkOperaProxyInternal() }
+    launchIO { if ("operaproxy" in refreshInstalledUpdaterComponentIds()) checkOperaProxyInternal() }
   }
 
   fun updateOperaProxyNow() {
     if (_rootState.value != RootState.GRANTED) return
-    launchIO { updateOperaProxyInternal() }
+    launchIO { if ("operaproxy" in refreshInstalledUpdaterComponentIds()) updateOperaProxyInternal() }
   }
 
 
@@ -6660,6 +6750,8 @@ private fun shQuote(s: String): String {
     programsRefreshInFlight = true
     try {
       val list = api.getPrograms()
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
       // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
       val remoteActive = RemoteControlCenter.target.value != null
       if (remoteActive && list.isEmpty()) {
@@ -6678,8 +6770,23 @@ private fun shQuote(s: String): String {
           }
         }
       }
+      val unavailableProgramIds = if (componentResult.isSuccess) {
+        componentReport.asSequence()
+          .filterNot { it.installed }
+          .flatMap { it.programIds.asSequence() }
+          .toSet()
+      } else {
+        emptySet()
+      }
+      val visiblePrograms = patched.filterNot { it.id in unavailableProgramIds }
       lastProgramsFetchAtMs = System.currentTimeMillis()
-      _uiState.update { it.copy(programs = patched) }
+      _uiState.update {
+        it.copy(
+          programs = visiblePrograms,
+          components = componentReport,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
     } catch (e: Throwable) {
       log("ERR", "programs failed: ${e.message ?: e}")
     } finally {
@@ -6696,8 +6803,37 @@ private fun shQuote(s: String): String {
 
   fun refreshOptionalTools() {
     launchIO {
-      val state = runCatching { tgWsProxyRepository.currentState() }.getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
-      _uiState.update { it.copy(tgWsProxy = state) }
+      val tgWsState = runCatching { tgWsProxyRepository.currentState() }
+        .getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
+      val lxState = runCatching { singBoxLxRepository.currentState() }
+        .getOrDefault(
+          SingBoxLxComponentState(
+            stage = SingBoxLxComponentStage.FAILED,
+            statusResolved = false,
+            error = SingBoxLxComponentError.STATUS,
+          )
+        )
+      val genericStates = RootBinaryComponentCatalog.moduleComponents.associate { spec ->
+        spec.id to runCatching { rootBinaryComponentRepository.currentState(spec) }.getOrElse { error ->
+          RootBinaryComponentState(
+            id = spec.id,
+            stage = RootBinaryComponentStage.FAILED,
+            statusResolved = true,
+            errorMessage = error.message ?: error.javaClass.simpleName,
+          )
+        }
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          tgWsProxy = tgWsState,
+          singBoxLx = lxState,
+          rootComponents = genericStates,
+          components = componentReport,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
     }
   }
 
@@ -6709,8 +6845,14 @@ private fun shQuote(s: String): String {
         _uiState.update { it.copy(tgWsProxy = state) }
       }
       _uiState.update { it.copy(tgWsProxy = finalState) }
+      if (finalState.installed) componentSelectionStore.add("tgwsproxy")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (finalState.installed) {
         log("OK", "tg-ws-proxy installed (${finalState.selectedAbi})")
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       } else {
         log("ERR", "tg-ws-proxy install failed: ${finalState.errorMessage ?: "unknown"}")
       }
@@ -6727,10 +6869,172 @@ private fun shQuote(s: String): String {
         )
       }
       _uiState.update { it.copy(tgWsProxy = state) }
+      if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) componentSelectionStore.remove("tgwsproxy")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
       if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) {
         log("OK", "tg-ws-proxy removed")
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       } else if (state.stage == TgWsProxyComponentStage.FAILED) {
         log("ERR", "tg-ws-proxy remove failed: ${state.errorMessage ?: "unknown"}")
+      }
+    }
+  }
+
+
+  fun installSingBoxLx() {
+    launchIO {
+      val initial = SingBoxLxComponentState(
+        stage = SingBoxLxComponentStage.DOWNLOADING,
+        statusResolved = true,
+        selectedAbi = _uiState.value.singBoxLx.selectedAbi,
+      )
+      _uiState.update { it.copy(singBoxLx = initial) }
+      val finalState = singBoxLxRepository.downloadAndInstall { state ->
+        _uiState.update { it.copy(singBoxLx = state) }
+      }
+      _uiState.update { it.copy(singBoxLx = finalState) }
+      if (finalState.installed && finalState.stage == SingBoxLxComponentStage.INSTALLED) componentSelectionStore.add("sing-box-lx")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
+      if (finalState.installed && finalState.stage == SingBoxLxComponentStage.INSTALLED) {
+        log("OK", "sing-box-lx installed (${finalState.selectedAbi}, ${finalState.installedVersion})")
+      } else {
+        log(
+          "ERR",
+          "sing-box-lx install failed: ${finalState.error?.name ?: "unknown"}${finalState.errorDetail?.let { ": $it" } ?: ""}",
+        )
+      }
+      // Refresh the daemon program list immediately so the newly installed optional core appears
+      // without restarting the application.
+      lastProgramsFetchAtMs = 0L
+      refreshProgramsNow(force = true)
+    }
+  }
+
+  fun removeSingBoxLx() {
+    launchIO {
+      val state = runCatching { singBoxLxRepository.remove() }.getOrElse {
+        SingBoxLxComponentState(
+          stage = SingBoxLxComponentStage.FAILED,
+          installed = singBoxLxRepository.isInstalled(),
+          statusResolved = true,
+          error = SingBoxLxComponentError.REMOVE,
+          errorDetail = it.message ?: it.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(singBoxLx = state) }
+      if (!state.installed && state.stage != SingBoxLxComponentStage.FAILED) componentSelectionStore.remove("sing-box-lx")
+      val componentResult = runCatching { api.getComponents() }
+      val componentReport = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update { it.copy(components = componentReport, componentsResolved = componentResult.isSuccess || it.componentsResolved) }
+      if (!state.installed && state.stage != SingBoxLxComponentStage.FAILED) {
+        log("OK", "sing-box-lx removed")
+      } else if (state.stage == SingBoxLxComponentStage.FAILED) {
+        log(
+          "ERR",
+          "sing-box-lx remove failed: ${state.errorDetail ?: state.error?.name ?: "unknown"}",
+        )
+      }
+      lastProgramsFetchAtMs = 0L
+      refreshProgramsNow(force = true)
+    }
+  }
+
+  fun installRootComponent(componentId: String) {
+    val spec = RootBinaryComponentCatalog.find(componentId) ?: return
+    launchIO {
+      // Install logical dependencies first. They use their own verified Technical_Assets
+      // archives and are persisted independently so later module updates keep them too.
+      for (dependencyId in spec.dependencies) {
+        val dependency = RootBinaryComponentCatalog.find(dependencyId) ?: continue
+        if (!rootBinaryComponentRepository.isInstalled(dependency)) {
+          val depFinal = rootBinaryComponentRepository.downloadAndInstall(dependency) { state ->
+            _uiState.update { it.copy(rootComponents = it.rootComponents + (dependencyId to state)) }
+          }
+          _uiState.update { it.copy(rootComponents = it.rootComponents + (dependencyId to depFinal)) }
+          if (!depFinal.installed) {
+            log("ERR", "component ${spec.id} dependency ${dependency.id} install failed: ${depFinal.errorMessage ?: "unknown"}")
+            val componentResult = runCatching { api.getComponents() }
+            val componentReport = componentResult.getOrElse { _uiState.value.components }
+            _uiState.update {
+              it.copy(
+                components = componentReport,
+                componentsResolved = componentResult.isSuccess || it.componentsResolved,
+              )
+            }
+            return@launchIO
+          }
+        }
+      }
+
+      val current = _uiState.value.rootComponents[componentId]
+      val initial = RootBinaryComponentState(
+        id = componentId,
+        stage = RootBinaryComponentStage.DOWNLOADING,
+        installed = current?.installed == true,
+        statusResolved = true,
+        selectedAbi = current?.selectedAbi.orEmpty(),
+      )
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to initial)) }
+      val finalState = rootBinaryComponentRepository.downloadAndInstall(spec) { state ->
+        _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to state)) }
+      }
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to finalState)) }
+      if (finalState.installed) {
+        log("OK", "component ${spec.id} installed (${finalState.selectedAbi})")
+      } else {
+        log("ERR", "component ${spec.id} install failed: ${finalState.errorMessage ?: "unknown"}")
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val report = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          components = report,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
+      if (finalState.installed) {
+        resetProgramUpdateStateForComponent(spec.id)
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
+      }
+    }
+  }
+
+  fun removeRootComponent(componentId: String) {
+    val spec = RootBinaryComponentCatalog.find(componentId) ?: return
+    launchIO {
+      val state = runCatching { rootBinaryComponentRepository.remove(spec) }.getOrElse { error ->
+        RootBinaryComponentState(
+          id = spec.id,
+          stage = RootBinaryComponentStage.FAILED,
+          installed = rootBinaryComponentRepository.isInstalled(spec),
+          statusResolved = true,
+          errorMessage = error.message ?: error.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(rootComponents = it.rootComponents + (componentId to state)) }
+      if (!state.installed && state.stage != RootBinaryComponentStage.FAILED) {
+        log("OK", "component ${spec.id} removed")
+      } else if (state.stage == RootBinaryComponentStage.FAILED) {
+        log("ERR", "component ${spec.id} remove failed: ${state.errorMessage ?: "unknown"}")
+      }
+      val componentResult = runCatching { api.getComponents() }
+      val report = componentResult.getOrElse { _uiState.value.components }
+      _uiState.update {
+        it.copy(
+          components = report,
+          componentsResolved = componentResult.isSuccess || it.componentsResolved,
+        )
+      }
+      if (!state.installed && state.stage != RootBinaryComponentStage.FAILED) {
+        resetProgramUpdateStateForComponent(spec.id)
+        lastProgramsFetchAtMs = 0L
+        refreshProgramsNow(force = true)
       }
     }
   }
@@ -6773,6 +7077,7 @@ private fun shQuote(s: String): String {
     "nfqws2",
     "byedpi",
     "sing-box",
+    "sing-box-lx",
     "wireproxy",
     "myproxy",
     "myprogram",
@@ -6941,6 +7246,46 @@ private fun shQuote(s: String): String {
         log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  fun createSingBoxServer(programId: String, profile: String, server: String, onDone: (String?) -> Unit = {}) {
+    launchIO {
+      val safeProgram = programId.trim()
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.createSingBoxServer(safeProgram, safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "$safeProgram/$safeProfile/$safeServer created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
+      } else {
+        log("ERR", "$safeProgram/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+      }
+    }
+  }
+
+  fun deleteSingBoxServer(programId: String, profile: String, server: String, onDone: (Boolean) -> Unit = {}) {
+    launchIO {
+      val safeProgram = programId.trim()
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteSingBoxServer(safeProgram, safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "$safeProgram/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "$safeProgram/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+
+  fun validateSingBoxLxConfig(configText: String, onDone: (String?) -> Unit = {}) {
+    launchIO {
+      val error = runCatching { api.validateSingBoxLxConfig(configText) }
+        .getOrElse { it.message ?: it.toString() }
+      withContext(Dispatchers.Main.immediate) { onDone(error) }
     }
   }
 
@@ -7848,6 +8193,119 @@ fun applyProfileHostlists(programId: String, profile: String, hostlists: List<St
         hotspotProxyPrograms = proxyPrograms,
         hotspotVpnPrograms = vpnPrograms,
       )
+    }
+  }
+
+  fun refreshSettings(onDone: () -> Unit = {}) {
+    settingsRefreshJob?.cancel()
+    settingsRefreshJob = launchIO {
+      coroutineScope {
+          val daemonSettingsDeferred = async {
+            runCatching { api.getDaemonSettings() }
+              .onFailure { log("ERR", "settings refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val singboxProfilesDeferred = async {
+            runCatching { api.getSingBoxProfiles() }
+              .onFailure { log("ERR", "hotspot sing-box profiles load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val wireproxyProfilesDeferred = async {
+            runCatching { api.getWireProxyProfiles() }
+              .onFailure { log("ERR", "hotspot wireproxy profiles load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val programsDeferred = async {
+            runCatching { api.getPrograms() }
+              .onFailure { log("ERR", "settings programs load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val energySaverDeferred = async {
+            runCatching { api.getEnergySaver() }
+              .onFailure { log("ERR", "energy saver load failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val proxyInfoDeferred = async {
+            runCatching {
+              val base = api.getProxyInfo()
+              val apps = base.appsContent.ifBlank { api.getProxyInfoApps() }
+              base.copy(appsContent = apps)
+            }.onFailure { log("ERR", "proxyInfo refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val hidingStatusDeferred = async {
+            runCatching { api.getHidingStatus() }
+              .onFailure { log("ERR", "hiding status refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+          val blockedQuicDeferred = async {
+            runCatching {
+              val base = api.getBlockedQuic()
+              val apps = base.appsContent.ifBlank { api.getBlockedQuicApps() }
+              base.copy(appsContent = apps)
+            }.onFailure { log("ERR", "blockedQuic refresh failed: ${it.message ?: it}") }
+              .getOrNull()
+          }
+
+          val settings = daemonSettingsDeferred.await()
+          val singboxProfiles = singboxProfilesDeferred.await()
+          val wireproxyProfiles = wireproxyProfilesDeferred.await()
+          val programs = programsDeferred.await()
+          val energySaver = energySaverDeferred.await()
+          val proxyInfo = proxyInfoDeferred.await()
+          val hidingStatus = hidingStatusDeferred.await()
+          val blockedQuic = blockedQuicDeferred.await()
+
+          _appUpdate.update { current ->
+            var next = current
+            if (settings != null) {
+              next = next.copy(
+                protectorMode = settings.protectorMode,
+                hotspotT2sEnabled = settings.hotspotT2sEnabled,
+                hotspotMode = settings.hotspotMode,
+                hotspotProgram = settings.hotspotProgram,
+                hotspotProfile = settings.hotspotProfile,
+                hotspotT2sTarget = settings.hotspotT2sTarget,
+                hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+                hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
+                hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
+                captivePortalEnabled = settings.captivePortalEnabled,
+                selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
+                ipForwardEnabled = settings.ipForwardEnabled,
+                tproxyEnabled = settings.tproxyEnabled,
+              )
+            }
+            if (energySaver != null) next = next.copy(energySaver = energySaver)
+            if (singboxProfiles != null) next = next.copy(hotspotSingboxProfiles = singboxProfiles)
+            if (wireproxyProfiles != null) next = next.copy(hotspotWireproxyProfiles = wireproxyProfiles)
+            if (programs != null) {
+              val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+              val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
+              next = next.copy(
+                hotspotProxyPrograms = programs.filter { it.id in proxyIds },
+                hotspotVpnPrograms = programs.filter { it.id in vpnIds },
+              )
+            }
+            if (proxyInfo != null) {
+              next = next.copy(
+                proxyInfoEnabled = proxyInfo.enabled,
+                proxyInfoAppsContent = proxyInfo.appsContent,
+              )
+            }
+            if (hidingStatus != null) next = next.copy(hidingStatus = hidingStatus)
+            if (blockedQuic != null) {
+              next = next.copy(
+                blockedQuicEnabled = blockedQuic.enabled,
+                blockedQuicAppsContent = blockedQuic.appsContent,
+              )
+            }
+            next
+          }
+          if (proxyInfo != null) {
+            syncLsposedHidePreferences(proxyInfo.enabled, proxyInfo.appsContent)
+          }
+      }
+      withContext(Dispatchers.Main.immediate) { onDone() }
     }
   }
 

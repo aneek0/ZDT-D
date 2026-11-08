@@ -3,8 +3,8 @@ use log::{info, warn};
 use std::{fs, path::Path, time::Duration};
 
 use crate::iptables::{caps, mangle_app, port_filter};
-use crate::shell::Capture;
-use crate::xtables_lock;
+use crate::common::process::shell::Capture;
+use crate::iptables::lock as xtables_lock;
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const XT_WAIT_SECS: &str = "5";
@@ -40,8 +40,16 @@ pub fn apply(
         anyhow::bail!("Usage: full_id_iptables <full|no_full> <queue-num> [iface] [uid_file]");
     }
 
+    // Normalize only the rule match. The raw interface remains in the scope
+    // and snapshot below, so migrating a pinned bearer cannot orphan the old
+    // scoped chain or its empty-UID cleanup.
+    let normalized_iface = match (iface, uid_file) {
+        (Some(raw), Some(path)) => Some(crate::common::network::normalize_app_slot_iface(path, raw)),
+        _ => None,
+    };
+    let rule_iface = normalized_iface.as_deref().or(iface);
     let mut iopt: Vec<String> = Vec::new();
-    if let Some(iface) = iface {
+    if let Some(iface) = rule_iface {
         if !iface.is_empty() {
             iopt.push("-o".into());
             iopt.push(iface.into());
@@ -69,7 +77,7 @@ pub fn apply(
 
     if let Some(p) = uid_file {
         if p.is_file() {
-            crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
+            crate::runtime::refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
             let uids = read_uid_file(p)?;
             let total = uids.len();
             let label = p.file_name().and_then(|s| s.to_str()).unwrap_or("uids");
@@ -147,7 +155,7 @@ pub fn apply(
         }
     }
     if let Some(p) = uid_file {
-        crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
+        crate::runtime::refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
     }
 
     info!("full_id_iptables applied mode={} queue={} iface={:?}", mode, queue, iface);

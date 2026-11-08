@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -30,6 +32,7 @@ import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.ui.BlockcheckScreen
+import com.android.zdtd.service.components.RootBinaryComponentCatalog
 import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
@@ -46,6 +49,7 @@ import kotlinx.coroutines.flow.map
 fun AppsHost(
   uiStateFlow: StateFlow<UiState>,
   route: AppsRoute,
+  onOpenAppsList: () -> Unit,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
@@ -66,6 +70,8 @@ fun AppsHost(
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  appsEntryFocusRequester: FocusRequester? = null,
+  appsNavFocusRequester: FocusRequester? = null,
 ) {
   val context = LocalContext.current
   val application = context.applicationContext as android.app.Application
@@ -82,6 +88,22 @@ fun AppsHost(
   val tgWsProxy by remember(uiStateFlow) {
     uiStateFlow.map { it.tgWsProxy }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState())
+
+  val singBoxLx by remember(uiStateFlow) {
+    uiStateFlow.map { it.singBoxLx }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.singboxlx.SingBoxLxComponentState())
+
+  val components by remember(uiStateFlow) {
+    uiStateFlow.map { it.components }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+  val componentsResolved by remember(uiStateFlow) {
+    uiStateFlow.map { it.componentsResolved }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = false)
+
+  val rootComponents by remember(uiStateFlow) {
+    uiStateFlow.map { it.rootComponents }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = emptyMap())
 
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
@@ -107,6 +129,43 @@ fun AppsHost(
     is AppsRoute.Profile -> 2
   }
 
+  val routeProgramId = when (route) {
+    is AppsRoute.Program -> route.programId
+    is AppsRoute.Profile -> route.programId
+    else -> null
+  }
+  val knownComponentProgramIds = remember {
+    RootBinaryComponentCatalog.moduleComponents.flatMap { it.programIds }.toSet() + setOf("sing-box-lx", "tgwsproxy")
+  }
+  val componentBoundRoute = routeProgramId != null && routeProgramId in knownComponentProgramIds
+  val routeComponent = routeProgramId?.let { programId ->
+    components.firstOrNull { component -> programId in component.programIds }
+  }
+
+  if (componentBoundRoute && daemonOnline && !componentsResolved) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      CircularProgressIndicator()
+    }
+    return
+  }
+
+  if (componentBoundRoute && componentsResolved && routeComponent?.installed == false) {
+    val componentName = RootBinaryComponentCatalog.moduleComponents
+      .firstOrNull { spec -> routeProgramId in spec.programIds }
+      ?.displayName
+      ?: when (routeProgramId) {
+        "sing-box-lx" -> "sing-box-lx"
+        "tgwsproxy" -> "Telegram WS Proxy"
+        else -> routeProgramId.orEmpty()
+      }
+    ComponentInstallRequiredDialog(
+      componentName = componentName,
+      onDismiss = onOpenAppsList,
+      onOpenOptionalTools = onOpenOptionalTools,
+    )
+    return
+  }
+
   AnimatedContent(
     targetState = route,
     transitionSpec = {
@@ -129,7 +188,8 @@ fun AppsHost(
       AppsRoute.List -> AppsListScreen(
         programs = programs,
         daemonOnline = daemonOnline,
-        tgWsProxy = tgWsProxy,
+        components = components,
+        componentsResolved = componentsResolved,
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
@@ -138,6 +198,8 @@ fun AppsHost(
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
+        entryFocusRequester = if (landscapeControl) appsEntryFocusRequester else null,
+        navFocusRequester = if (landscapeControl) appsNavFocusRequester else null,
       )
       AppsRoute.VpsServers -> VpsServersScreen(
         viewModel = vpsViewModel,
@@ -191,7 +253,10 @@ fun AppsHost(
         }
       }
       AppsRoute.OptionalTools -> OptionalToolsScreen(
-        state = tgWsProxy,
+        tgWsProxyState = tgWsProxy,
+        singBoxLxState = singBoxLx,
+        components = components,
+        rootComponentStates = rootComponents,
         actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
@@ -240,6 +305,8 @@ fun AppsHost(
       AppsRoute.Subscriptions -> SubscriptionsScreen(
         actions = actions,
         snackHost = snackHost,
+        singBoxLxInstalled = singBoxLx.installed,
+        onOpenOptionalTools = onOpenOptionalTools,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
@@ -306,6 +373,24 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
           tproxyEnabled = tproxyEnabled,
+          singBoxLxInstalled = singBoxLx.installed,
+          singBoxLxStatusResolved = singBoxLx.statusResolved,
+          onOpenProgram = onOpenProgram,
+          onOpenOptionalTools = onOpenOptionalTools,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
+        "sing-box-lx" -> SingBoxProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          programId = "sing-box-lx",
+          actions = actions,
+          snackHost = snackHost,
+          tproxyEnabled = tproxyEnabled,
+          singBoxLxInstalled = singBoxLx.installed,
+          singBoxLxStatusResolved = singBoxLx.statusResolved,
+          onOpenProgram = onOpenProgram,
+          onOpenOptionalTools = onOpenOptionalTools,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )

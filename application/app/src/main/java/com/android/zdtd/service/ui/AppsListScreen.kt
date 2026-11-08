@@ -49,6 +49,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -59,14 +62,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
-import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 import java.util.Locale
 
 @Composable
 fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
-  tgWsProxy: TgWsProxyComponentState,
+  components: List<ApiModels.Component>,
+  componentsResolved: Boolean,
   onOpenProgram: (String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
@@ -75,6 +78,8 @@ fun AppsListScreen(
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
 ) {
 
   val isCompactWidth = rememberIsCompactWidth()
@@ -86,12 +91,18 @@ fun AppsListScreen(
   var query by rememberSaveable { mutableStateOf("") }
   val q = query.trim()
 
-  val all = remember(programs, tgWsProxy.installed) {
-    if (tgWsProxy.installed && programs.none { it.id == "tgwsproxy" }) {
-      programs + ApiModels.Program(id = "tgwsproxy", name = "Telegram WS Proxy", enabled = true)
+  val unavailableProgramIds = remember(components, componentsResolved) {
+    if (!componentsResolved) {
+      emptySet()
     } else {
-      programs
+      components.asSequence()
+        .filterNot { it.installed }
+        .flatMap { it.programIds.asSequence() }
+        .toSet()
     }
+  }
+  val all = remember(programs, unavailableProgramIds) {
+    programs.filterNot { it.id in unavailableProgramIds }
   }
   val filtered = remember(all, q) {
     if (q.isBlank()) {
@@ -161,8 +172,11 @@ fun AppsListScreen(
     item(key = "optional_tools_entry") {
       OptionalToolsEntryCard(
         compact = compactCards,
-        installedCount = if (tgWsProxy.installed) 1 else 0,
+        installedCount = components.count { it.installed },
+        statusResolved = componentsResolved,
         onClick = onOpenOptionalTools,
+        entryFocusRequester = entryFocusRequester,
+        navFocusRequester = navFocusRequester,
       )
     }
 
@@ -294,7 +308,10 @@ fun AppsListScreen(
 @Composable
 private fun AnalysisToolsEntryCard(
   compact: Boolean,
+
   onClick: () -> Unit,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
 ) {
   val accentColor = MaterialTheme.colorScheme.primary
   Card(
@@ -302,7 +319,12 @@ private fun AnalysisToolsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp),
+      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .then(if (entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
+      .then(
+        if (navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
+      )
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -351,7 +373,10 @@ private fun AnalysisToolsEntryCard(
 private fun OptionalToolsEntryCard(
   compact: Boolean,
   installedCount: Int,
+  statusResolved: Boolean,
   onClick: () -> Unit,
+  entryFocusRequester: FocusRequester? = null,
+  navFocusRequester: FocusRequester? = null,
 ) {
   val accentColor = MaterialTheme.colorScheme.primary
   Card(
@@ -359,7 +384,12 @@ private fun OptionalToolsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp),
+      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .then(if (entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
+      .then(
+        if (navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
+      )
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -394,7 +424,11 @@ private fun OptionalToolsEntryCard(
             overflow = TextOverflow.Ellipsis,
           )
           ProgramBadgeRow(
-            label = if (installedCount > 0) stringResource(R.string.optional_tools_installed_count, installedCount) else stringResource(R.string.optional_tools_available),
+            label = when {
+              !statusResolved -> stringResource(R.string.common_loading)
+              installedCount > 0 -> stringResource(R.string.optional_tools_installed_count, installedCount)
+              else -> stringResource(R.string.optional_tools_available)
+            },
             containerColor = accentColor.copy(alpha = 0.14f),
             contentColor = accentColor,
           )
@@ -423,7 +457,8 @@ private fun VpsServersEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp),
+      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -484,7 +519,11 @@ private fun SubscriptionsEntryCard(
   val accentColor = MaterialTheme.colorScheme.primary
   Card(
     onClick = onClick,
-    modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp).heightIn(min = if (compact) 81.5.dp else 89.5.dp),
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
+      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -853,7 +892,8 @@ private fun ProgramCard(
     modifier = modifier
       .fillMaxWidth()
       .padding(horizontal = horizontalPadding)
-      .heightIn(min = if (compact) 63.5.dp else 81.5.dp),
+      .heightIn(min = if (compact) 63.5.dp else 81.5.dp)
+      .tvFocusHighlight(shape),
     shape = shape,
     colors = CardDefaults.cardColors(containerColor = containerColor),
     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -1002,6 +1042,7 @@ internal fun programIconRes(id: String): Int? {
     "mihomo" -> R.drawable.ic_tool_mihomo
     "mieru" -> R.drawable.ic_tool_mieru
     "sing-box" -> R.drawable.ic_tool_sing_box
+    "sing-box-lx" -> R.drawable.ic_tool_sing_box
     else -> null
   }
 }
@@ -1023,6 +1064,7 @@ internal fun programIcon(id: String): ImageVector {
     "mihomo" -> Icons.Outlined.AltRoute
     "mieru" -> Icons.Outlined.Extension
     "sing-box" -> Icons.Outlined.Extension
+    "sing-box-lx" -> Icons.Outlined.Extension
     "tgwsproxy" -> Icons.Outlined.AddCircleOutline
     else -> Icons.Outlined.Extension
   }

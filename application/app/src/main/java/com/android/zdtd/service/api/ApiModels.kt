@@ -28,6 +28,7 @@ object ApiModels {
     val dnscrypt: ProcAgg = ProcAgg(),
     val d2s: ProcAgg = ProcAgg(),
     val singBox: ProcAgg = ProcAgg(),
+    val singBoxLx: ProcAgg = ProcAgg(),
     val wireProxy: ProcAgg = ProcAgg(),
     val tor: ProcAgg = ProcAgg(),
     val openVpn: ProcAgg = ProcAgg(),
@@ -91,6 +92,42 @@ object ApiModels {
     val type: String? = null,
     val profiles: List<Profile> = emptyList(),
   )
+
+  data class Component(
+    val id: String,
+    val installed: Boolean = false,
+    val asset: String = "",
+    val files: List<String> = emptyList(),
+    val missingFiles: List<String> = emptyList(),
+    val programIds: List<String> = emptyList(),
+  )
+
+  fun parseComponents(wrapper: JSONObject?): List<Component> {
+    val arr = wrapper?.optJSONArray("components") ?: return emptyList()
+    val out = ArrayList<Component>(arr.length())
+    for (i in 0 until arr.length()) {
+      val obj = arr.optJSONObject(i) ?: continue
+      val id = obj.optString("id", "").trim()
+      if (id.isEmpty()) continue
+      fun strings(name: String): List<String> {
+        val values = obj.optJSONArray(name) ?: return emptyList()
+        return buildList {
+          for (index in 0 until values.length()) {
+            values.optString(index, "").trim().takeIf { it.isNotEmpty() }?.let(::add)
+          }
+        }
+      }
+      out += Component(
+        id = id,
+        installed = obj.optBoolean("installed", false),
+        asset = obj.optString("asset", "").trim(),
+        files = strings("files"),
+        missingFiles = strings("missing_files"),
+        programIds = strings("program_ids"),
+      )
+    }
+    return out
+  }
 
   data class TrafficReport(
     val ok: Boolean = true,
@@ -414,6 +451,7 @@ object ApiModels {
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
       d2s = parseProcAgg(o.optJSONObject("d2s")),
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
+      singBoxLx = parseProcAgg(o.optJSONObject("sing_box_lx")),
       wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
       tor = parseProcAgg(o.optJSONObject("tor")),
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
@@ -475,7 +513,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.d2s.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.d2s.count + r.singBox.count + r.singBoxLx.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -510,6 +548,7 @@ object ApiModels {
       add(r.dnscrypt)
       add(r.d2s)
       add(r.singBox)
+      add(r.singBoxLx)
       add(r.wireProxy)
       add(r.tor)
       add(r.openVpn)

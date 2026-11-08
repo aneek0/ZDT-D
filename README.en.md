@@ -27,29 +27,29 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License" />
+  <a href="https://github.com/aneek0/ZDT-D/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/aneek0/ZDT-D?style=flat-square" alt="License" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/stargazers">
-    <img src="https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Stars" />
+  <a href="https://github.com/aneek0/ZDT-D/stargazers">
+    <img src="https://img.shields.io/github/stars/aneek0/ZDT-D?style=flat-square&logo=github" alt="GitHub Stars" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/network/members">
-    <img src="https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Forks" />
+  <a href="https://github.com/aneek0/ZDT-D/network/members">
+    <img src="https://img.shields.io/github/forks/aneek0/ZDT-D?style=flat-square&logo=github" alt="GitHub Forks" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
-    <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest Release" />
+  <a href="https://github.com/aneek0/ZDT-D/releases/latest">
+    <img src="https://img.shields.io/github/v/release/aneek0/ZDT-D?style=flat-square" alt="Latest Release" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
-    <img src="https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square" alt="Release Date" />
+  <a href="https://github.com/aneek0/ZDT-D/releases/latest">
+    <img src="https://img.shields.io/github/release-date/aneek0/ZDT-D?style=flat-square" alt="Release Date" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
-    <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads" />
+  <a href="https://github.com/aneek0/ZDT-D/releases">
+    <img src="https://img.shields.io/github/downloads/aneek0/ZDT-D/total?style=flat-square" alt="Downloads" />
   </a>
-  <a href="https://github.com/GAME-OVER-op/ZDT-D/commits/main">
-    <img src="https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square" alt="Last Commit" />
+  <a href="https://github.com/aneek0/ZDT-D/commits/main">
+    <img src="https://img.shields.io/github/last-commit/aneek0/ZDT-D?style=flat-square" alt="Last Commit" />
   </a>
-  <a href="https://tokei.kojix2.net/github/GAME-OVER-op/ZDT-D">
-   <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2FGAME-OVER-op%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
+  <a href="https://tokei.kojix2.net/github/aneek0/ZDT-D">
+   <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2Faneek0%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
   </a>
 </p>
 
@@ -258,8 +258,8 @@ inherited from the original project — not added here. The fork drops the
 non-root / online-module build flavors, the Hysteria2 VPS kind, the Termux
 plugin infrastructure and the legacy `nfqws` v1 / `dpitunnel` programs.
 
-The changes that are **actually introduced in this fork** (199 fork-only commits
-on top of the merge base) are a smaller, focused set:
+The changes that are **actually introduced in this fork** are a smaller,
+focused set:
 
 - **In-app blockcheck (strategy autotest).** A `diagnostics/blockcheck/` UI plus
   a native `nfqws-tester auto` sweep that probes a host list with no strategy
@@ -320,33 +320,33 @@ is **not** supported by, endorsed by, or affiliated with the original author.
 
 ## License
 
-GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE).
+GPL-3.0 License — see [LICENSE](https://github.com/aneek0/ZDT-D/blob/main/LICENSE).
 
 ## Downloads
 
-- [Releases](https://github.com/GAME-OVER-op/ZDT-D/releases)
+- [Releases](https://github.com/aneek0/ZDT-D/releases)
 
 ## Project growth
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=for-the-badge&logo=github&label=Stars" alt="GitHub Stars" />
-  <img src="https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=for-the-badge&logo=github&label=Forks" alt="GitHub Forks" />
-  <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=for-the-badge&label=Downloads" alt="Total Downloads" />
-  <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=for-the-badge&label=Latest%20Release" alt="Latest Release" />
+  <img src="https://img.shields.io/github/stars/aneek0/ZDT-D?style=for-the-badge&logo=github&label=Stars" alt="GitHub Stars" />
+  <img src="https://img.shields.io/github/forks/aneek0/ZDT-D?style=for-the-badge&logo=github&label=Forks" alt="GitHub Forks" />
+  <img src="https://img.shields.io/github/downloads/aneek0/ZDT-D/total?style=for-the-badge&label=Downloads" alt="Total Downloads" />
+  <img src="https://img.shields.io/github/v/release/aneek0/ZDT-D?style=for-the-badge&label=Latest%20Release" alt="Latest Release" />
 </p>
 
 | Metric | Status |
 |---|---|
-| Repository activity | ![Last Commit](https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square&label=Last%20Commit) |
-| Stars | ![GitHub Stars](https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Stars) |
-| Forks | ![GitHub Forks](https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Forks) |
-| Watchers | ![GitHub Watchers](https://img.shields.io/github/watchers/GAME-OVER-op/ZDT-D?style=flat-square&logo=github&label=Watchers) |
-| Downloads | ![Downloads](https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square&label=Total%20Downloads) |
-| Latest release | ![Latest Release](https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square&label=Release) |
-| Release date | ![Release Date](https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square&display_date=published_at&label=Published) |
-| Open issues | ![Issues](https://img.shields.io/github/issues/GAME-OVER-op/ZDT-D?style=flat-square&label=Issues) |
-| Repository size | ![Repo Size](https://img.shields.io/github/repo-size/GAME-OVER-op/ZDT-D?style=flat-square&label=Repo%20Size) |
-| Top language | ![Top Language](https://img.shields.io/github/languages/top/GAME-OVER-op/ZDT-D?style=flat-square&label=Top%20Language) |
+| Repository activity | ![Last Commit](https://img.shields.io/github/last-commit/aneek0/ZDT-D?style=flat-square&label=Last%20Commit) |
+| Stars | ![GitHub Stars](https://img.shields.io/github/stars/aneek0/ZDT-D?style=flat-square&logo=github&label=Stars) |
+| Forks | ![GitHub Forks](https://img.shields.io/github/forks/aneek0/ZDT-D?style=flat-square&logo=github&label=Forks) |
+| Watchers | ![GitHub Watchers](https://img.shields.io/github/watchers/aneek0/ZDT-D?style=flat-square&logo=github&label=Watchers) |
+| Downloads | ![Downloads](https://img.shields.io/github/downloads/aneek0/ZDT-D/total?style=flat-square&label=Total%20Downloads) |
+| Latest release | ![Latest Release](https://img.shields.io/github/v/release/aneek0/ZDT-D?style=flat-square&label=Release) |
+| Release date | ![Release Date](https://img.shields.io/github/release-date/aneek0/ZDT-D?style=flat-square&display_date=published_at&label=Published) |
+| Open issues | ![Issues](https://img.shields.io/github/issues/aneek0/ZDT-D?style=flat-square&label=Issues) |
+| Repository size | ![Repo Size](https://img.shields.io/github/repo-size/aneek0/ZDT-D?style=flat-square&label=Repo%20Size) |
+| Top language | ![Top Language](https://img.shields.io/github/languages/top/aneek0/ZDT-D?style=flat-square&label=Top%20Language) |
 
 <p align="center">
   <b>ZDT-D is actively maintained and continues to grow as an Android root networking project.</b>

@@ -47,6 +47,7 @@ env:
   TUN2SOCKS_REF: "v2.7.0"
   MIHOMO_REF: "v1.19.30"
   SING_BOX_REF: "v1.14.1"
+  SING_BOX_LX_REF: "v1.14.3-lx.22"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
   DNSCRYPT_PROXY_REF: "2.1.18"
@@ -1863,6 +1864,204 @@ jobs:
             out/artifacts/sing-box/sing-box.dynamic.txt
           retention-days: 1
 
+
+  build_singbox_lx_optional:
+    name: build optional sing-box-lx ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            artifact_suffix: arm64
+            goarch: arm64
+            cgo_enabled: "0"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          cache: false
+
+
+      - name: Build sing-box-lx for Android
+        run: |
+          set -euo pipefail
+
+          WORK="$PWD/out/build/sing-box-lx-android-${{ matrix.artifact_suffix }}"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/sing-box-lx"
+          rm -rf "$WORK"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch sing-box-lx source and required submodules ==="
+          git clone --depth 1 --branch "$SING_BOX_LX_REF" --recurse-submodules \
+            https://github.com/Leadaxe/sing-box-lx "$SRC/sing-box-lx"
+          git -C "$SRC/sing-box-lx" submodule update --init --recursive
+          LX_COMMIT="$(git -C "$SRC/sing-box-lx" rev-parse HEAD)"
+          LX_VERSION="${SING_BOX_LX_REF#v}"
+          printf '%s\n' "$LX_COMMIT" > "$ARTIFACT_DIR/sing-box-lx.commit"
+
+          pushd "$SRC/sing-box-lx" > /dev/null
+          echo "Target: android/${{ matrix.goarch }} CGO_ENABLED=${{ matrix.cgo_enabled }}"
+          EXPECTED_GO="$(tr -d '[:space:]' < go.version)"
+          EXPECTED_GO="${EXPECTED_GO#go}"
+          CURRENT_GO="$(go env GOVERSION | tr -d '[:space:]')"
+          CURRENT_GO="${CURRENT_GO#go}"
+          echo "sing-box-lx required Go: $EXPECTED_GO"
+          echo "Workflow installed Go: $CURRENT_GO"
+          if [[ "$CURRENT_GO" != "$EXPECTED_GO" ]]; then
+            echo "::error::sing-box-lx $SING_BOX_LX_REF requires Go $EXPECTED_GO, workflow provides $CURRENT_GO"
+            exit 1
+          fi
+
+          LX_TAGS="$(make -s -f Makefile.lx lx-print-tags)"
+          # Android CLI builds cannot use upstream's Naive/cronet pure-Go desktop path.
+          # ZDT-D does not need NaiveProxy here; keep every LX feature tag and remove only
+          # the Android-incompatible optional Naive outbound, matching the bundled sing-box policy.
+          LX_TAGS="$(printf '%s' "$LX_TAGS" | tr ',' '\n' | grep -v '^with_naive_outbound$' | paste -sd, -)"
+          echo "Build tags: $LX_TAGS"
+          for required_tag in with_gvisor with_quic with_utls with_xhttp with_awg with_lx_chain; do
+            printf '%s' "$LX_TAGS" | tr ',' '\n' | grep -Fx "$required_tag" >/dev/null || {
+              echo "::error::Required sing-box-lx build tag is missing: $required_tag"
+              exit 1
+            }
+          done
+          if printf '%s' "$LX_TAGS" | tr ',' '\n' | grep -Fx 'with_naive_outbound' >/dev/null; then
+            echo "::error::Android sing-box-lx build unexpectedly kept with_naive_outbound"
+            exit 1
+          fi
+
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
+            go build \
+              -v \
+              -trimpath \
+              -tags "$LX_TAGS" \
+              -ldflags="-X 'github.com/sagernet/sing-box/constant.Version=${LX_VERSION}' -checklinkname=0 -s -w -buildid=" \
+              -o "$ARTIFACT_DIR/sing-box-lx" \
+              ./cmd/sing-box
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/sing-box-lx"
+          cat > "$ARTIFACT_DIR/sing-box-lx.version" <<EOF_LX_VERSION
+          source=https://github.com/Leadaxe/sing-box-lx
+          ref=$SING_BOX_LX_REF
+          commit=$LX_COMMIT
+          binary=sing-box-lx
+          version=$LX_VERSION
+          target=android-${{ matrix.abi }}
+          tags=$LX_TAGS
+          license=GPL-3.0
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_LX_VERSION
+
+          echo "=== Verify sing-box-lx artifact ==="
+          test -s "$ARTIFACT_DIR/sing-box-lx"
+          file "$ARTIFACT_DIR/sing-box-lx"
+          readelf -h "$ARTIFACT_DIR/sing-box-lx" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/sing-box-lx" | tee "$ARTIFACT_DIR/sing-box-lx.dynamic.txt" || true
+          grep -q '^source=https://github.com/Leadaxe/sing-box-lx$' "$ARTIFACT_DIR/sing-box-lx.version"
+          grep -q '^license=GPL-3.0$' "$ARTIFACT_DIR/sing-box-lx.version"
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload sing-box-lx binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: sing-box-lx-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/sing-box-lx/sing-box-lx
+            out/artifacts/sing-box-lx/sing-box-lx.version
+            out/artifacts/sing-box-lx/sing-box-lx.commit
+            out/artifacts/sing-box-lx/sing-box-lx.dynamic.txt
+          retention-days: 1
+
+
+  package_singbox_lx_asset:
+    name: package sing_box_lx.zip
+    runs-on: ubuntu-latest
+    needs:
+      - build_singbox_lx_optional
+    if: needs.build_singbox_lx_optional.result == 'success'
+
+    steps:
+      - name: Download sing-box-lx arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: sing-box-lx-arm64
+          path: out/sing-box-lx/arm64-v8a
+
+
+      - name: Build sing_box_lx.zip
+        run: |
+          set -euo pipefail
+          ROOT="out/technical/sing_box_lx"
+          mkdir -p "$ROOT/arm64-v8a"
+          cp -f out/sing-box-lx/arm64-v8a/sing-box-lx "$ROOT/arm64-v8a/sing-box-lx"
+          chmod 755 "$ROOT/arm64-v8a/sing-box-lx"
+
+          ARM64_COMMIT="$(tr -d '[:space:]' < out/sing-box-lx/arm64-v8a/sing-box-lx.commit)"
+          [[ -n "$ARM64_COMMIT" ]] || {
+            echo "::error::sing-box-lx commit metadata is missing"
+            exit 1
+          }
+          LX_VERSION="${SING_BOX_LX_REF#v}"
+          BUILD_TAGS="$(sed -n 's/^tags=//p' out/sing-box-lx/arm64-v8a/sing-box-lx.version | head -1)"
+          [[ -n "$BUILD_TAGS" ]] || { echo "::error::sing-box-lx build tags metadata missing"; exit 1; }
+
+          ARM64_SHA="$(sha256sum "$ROOT/arm64-v8a/sing-box-lx" | cut -d ' ' -f1)"
+          ARM64_SIZE="$(stat -c%s "$ROOT/arm64-v8a/sing-box-lx")"
+          cat > "$ROOT/manifest.json" <<EOF_MANIFEST
+          {
+            "name": "sing-box-lx",
+            "version": "$LX_VERSION",
+            "source": "https://github.com/Leadaxe/sing-box-lx",
+            "ref": "$SING_BOX_LX_REF",
+            "commit": "$ARM64_COMMIT",
+            "license": "GPL-3.0",
+            "build_tags": "$BUILD_TAGS",
+            "files": {
+              "arm64-v8a/sing-box-lx": {
+                "sha256": "$ARM64_SHA",
+                "size": $ARM64_SIZE
+              }
+            }
+          }
+          EOF_MANIFEST
+
+          python3 - <<'PY_MANIFEST'
+          import json
+          with open('out/technical/sing_box_lx/manifest.json', encoding='utf-8') as f:
+              data = json.load(f)
+          assert data['name'] == 'sing-box-lx'
+          assert data['license'] == 'GPL-3.0'
+          assert set(data['files']) == {'arm64-v8a/sing-box-lx'}
+          PY_MANIFEST
+
+          (cd "$ROOT" && zip -9 -r ../sing_box_lx.zip manifest.json arm64-v8a/sing-box-lx)
+          unzip -t out/technical/sing_box_lx.zip
+          unzip -Z1 out/technical/sing_box_lx.zip | grep -Fx 'manifest.json'
+          unzip -Z1 out/technical/sing_box_lx.zip | grep -Fx 'arm64-v8a/sing-box-lx'
+          ls -lh out/technical/sing_box_lx.zip
+
+      - name: Upload sing_box_lx.zip artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sing-box-lx-technical-asset
+          path: out/technical/sing_box_lx.zip
+          retention-days: 1
+
+
   build_byedpi:
     name: build byedpi ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -3507,6 +3706,18 @@ jobs:
             chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
           done
 
+          echo "=== Package independently installable module components ==="
+          python3 scripts/ci/package-module-components.py \
+            --module-root "$MODULE_BUILD_DIR" \
+            --output out/technical/module-components
+          for component_asset in \
+            nfqws2.zip byedpi.zip opera_proxy.zip \
+            sing_box.zip wireproxy.zip openvpn.zip amneziawg.zip \
+            mihomo.zip mieru.zip tor.zip; do
+            require_file "out/technical/module-components/$component_asset"
+            unzip -t "out/technical/module-components/$component_asset" >/dev/null
+          done
+
           rm -rf "$MODULE_BUILD_DIR/verify_sum"
           mkdir -p "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
           while IFS= read -r file; do
@@ -3550,6 +3761,14 @@ jobs:
           path: |
             out/module/zdt_module.zip
             out/module/module.prop
+          retention-days: 1
+
+      - name: Upload module component technical assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-module-component-assets
+          path: out/technical/module-components/*.zip
+          if-no-files-found: error
           retention-days: 1
 
       - name: Publish archive completion
@@ -4235,7 +4454,8 @@ jobs:
       - build_gate
       - build_apk
       - bump_version
-    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
+      - package_singbox_lx_asset
+    if: always() && github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -4262,11 +4482,24 @@ jobs:
           name: zdt-apk
           path: out/dist
 
+      - name: Download module component technical assets
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-module-component-assets
+          path: out/technical/module-components
+
+      - name: Download sing_box_lx.zip artifact
+        if: needs.package_singbox_lx_asset.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: sing-box-lx-technical-asset
+          path: out/technical
 
       - name: Publish service and stable releases
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
+          SING_BOX_LX_PACKAGE_RESULT: ${{ needs.package_singbox_lx_asset.result }}
         run: |
           set -euo pipefail
 
@@ -4466,6 +4699,33 @@ jobs:
             return 1
           }
 
+          upload_optional_asset_clobber_only() {
+            local tag="$1"
+            local file_spec="$2"
+            local asset_name="$3"
+            local attempt=1
+            local max_attempts=5
+            OPTIONAL_UPLOAD_MODE="clobber"
+            OPTIONAL_UPLOAD_ATTEMPTS="0"
+
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Upload optional $asset_name to $tag with --clobber: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec" --clobber; then
+                OPTIONAL_UPLOAD_MODE="clobber"
+                OPTIONAL_UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::error::Failed to upload optional $asset_name to $tag. Existing release asset was not deleted by workflow."
+            return 1
+          }
+
+
           version_code_matches_version=false
           stable_version_shape=false
           code_min=""
@@ -4533,6 +4793,23 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TECHNICAL_TAG="Technical_Assets"
+          TECHNICAL_TITLE="ZDT-D Technical Assets"
+          if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+            gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+          else
+            gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+          fi
+
+          MODULE_COMPONENT_DIR="out/technical/module-components"
+          MODULE_COMPONENT_ASSETS="nfqws2.zip byedpi.zip opera_proxy.zip sing_box.zip wireproxy.zip openvpn.zip amneziawg.zip mihomo.zip mieru.zip tor.zip"
+          for component_asset in $MODULE_COMPONENT_ASSETS; do
+            component_path="$MODULE_COMPONENT_DIR/$component_asset"
+            test -s "$component_path" || { echo "::error::Module component technical asset is missing: $component_path"; exit 1; }
+            unzip -t "$component_path" >/dev/null || { echo "::error::Invalid component archive: $component_path"; exit 1; }
+            upload_asset_with_retry "$TECHNICAL_TAG" "$component_path#$component_asset" "$component_asset"
+          done
+
           git tag -f "$SERVICE_TAG" "$FULL_SHA"
           git push -f origin "refs/tags/${SERVICE_TAG}"
 
@@ -4544,6 +4821,30 @@ jobs:
           upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_APK" "ZDT-D-service-build.apk"
           SERVICE_UPLOAD_MODE="$UPLOAD_MODE"
           SERVICE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+          SING_BOX_LX_ASSET="out/technical/sing_box_lx.zip"
+          SING_BOX_LX_UPLOAD_MODE="skipped"
+          SING_BOX_LX_UPLOAD_ATTEMPTS="0"
+
+          if [[ "${SING_BOX_LX_PACKAGE_RESULT:-skipped}" != "success" ]]; then
+            echo "::warning::sing-box-lx technical asset was not rebuilt: package job result=${SING_BOX_LX_PACKAGE_RESULT:-unknown}. Existing Technical_Assets/sing_box_lx.zip is left untouched."
+          elif [[ ! -s "$SING_BOX_LX_ASSET" ]]; then
+            echo "::error::sing_box_lx.zip technical asset is missing after successful package job: $SING_BOX_LX_ASSET"
+            echo "::warning::Existing Technical_Assets/sing_box_lx.zip is left untouched."
+          else
+            if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+              gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+            else
+              gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+            fi
+            if upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$SING_BOX_LX_ASSET#sing_box_lx.zip" "sing_box_lx.zip"; then
+              SING_BOX_LX_UPLOAD_MODE="$OPTIONAL_UPLOAD_MODE"
+              SING_BOX_LX_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
+            else
+              SING_BOX_LX_UPLOAD_MODE="failed-clobber-only"
+              SING_BOX_LX_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
+              echo "::warning::Existing Technical_Assets/sing_box_lx.zip was not deleted or replaced by fallback."
+            fi
+          fi
 
           STABLE_ACTION="skipped"
           STABLE_REASON=""
@@ -4724,6 +5025,8 @@ jobs:
             echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
             echo "Service upload mode: \`${SERVICE_UPLOAD_MODE}\`"
             echo "Service upload attempts: \`${SERVICE_UPLOAD_ATTEMPTS}\`"
+            echo "sing-box-lx Technical Asset upload mode: \`${SING_BOX_LX_UPLOAD_MODE}\`"
+            echo "sing-box-lx Technical Asset upload attempts: \`${SING_BOX_LX_UPLOAD_ATTEMPTS}\`"
             echo "Service changelog baseline: \`${LATEST_STABLE_TAG:-none}\`"
             echo "Service compare: ${SERVICE_COMPARE_URL}"
             echo "GitHub Models AI summary: \`attempted\`"
@@ -4768,7 +5071,6 @@ jobs:
       - pack_module
       - apk_tools_ready
       - build_apk
-      - build_tgws_plugin_apk
       - publish_service
     if: >-
       always() &&
@@ -4780,7 +5082,6 @@ jobs:
        needs.pack_module.result != 'success' ||
        needs.apk_tools_ready.result != 'success' ||
        needs.build_apk.result != 'success' ||
-       needs.build_tgws_plugin_apk.result != 'success' ||
        needs.publish_service.result != 'success')
 
     steps:
@@ -4796,7 +5097,6 @@ jobs:
           PACK_RESULT: ${{ needs.pack_module.result }}
           APK_TOOLS_RESULT: ${{ needs.apk_tools_ready.result }}
           APK_RESULT: ${{ needs.build_apk.result }}
-          TGWS_PLUGIN_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
           RELEASE_RESULT: ${{ needs.publish_service.result }}
         run: |
           set -euo pipefail
@@ -4809,9 +5109,6 @@ jobs:
             elif [[ "$APK_RESULT" != "success" ]]; then
               stage="apk"
               message="Android application build failed"
-            elif [[ "$TGWS_PLUGIN_RESULT" != "success" ]]; then
-              stage="apk"
-              message="TGWS plugin APK build failed"
             elif [[ "$RELEASE_RESULT" != "success" ]]; then
               stage="release"
               message="GitHub release publishing failed"

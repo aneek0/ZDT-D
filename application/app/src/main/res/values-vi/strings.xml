@@ -708,6 +708,7 @@ Khi tiếp tục, bạn đồng ý khôi phục bản sao lưu và bỏ qua ki�
     <string name="startup_stage_connecting">Giai đoạn 1: Kết nối với dịch vụ</string>
     <string name="startup_stage_loading">Giai đoạn 2: Tải thông tin từ dịch vụ</string>
     <string name="startup_reinstall_module">Cài đặt lại mô-đun</string>
+    <string name="startup_restart_daemon">Khởi động lại daemon</string>
     <string name="startup_loading_title">Đang tải ứng dụng</string>
     <string name="startup_loading_subtitle">Đang chuẩn bị giao diện và kiểm tra kết nối với mô-đun.</string>
     <string name="startup_stage_connecting_short">Đang kết nối...</string>
@@ -796,6 +797,11 @@ Hãy cài đặt lại mô-đun.</string>
     <string name="singbox_import_dialog_title">Tạo máy chủ sing-box</string>
     <string name="singbox_import_dialog_beta_warning">Tính năng beta. Hãy kiểm tra kỹ kết quả nếu bạn dùng tham số ít phổ biến.</string>
     <string name="singbox_import_dialog_desc">Dán cấu hình một dòng như vless://, vmess://, trojan://, ss:// hoặc socks://. Máy chủ mới và cài đặt của nó sẽ được tạo tự động.</string>
+    <string name="singbox_lx_import_dialog_title">Tạo máy chủ sing-box-lx</string>
+    <string name="singbox_lx_import_dialog_desc">Dán liên kết VLESS, VMess, Trojan, Shadowsocks hoặc SOCKS, hoặc JSON đầy đủ. Liên kết XHTTP/splithttp được nhập dưới dạng transport XHTTP gốc của sing-box-lx.</string>
+    <string name="singbox_import_requires_lx_title">Liên kết này cần sing-box-lx</string>
+    <string name="singbox_import_requires_lx_message">Cấu hình dùng XHTTP, không được lõi sing-box tiêu chuẩn hỗ trợ. Hãy nhập bằng công cụ sing-box-lx.</string>
+    <string name="singbox_import_open_lx">Mở sing-box-lx</string>
     <string name="singbox_import_auto_port_hint">Một cổng mixed-in trống sẽ được gán tự động. Cổng đề xuất: %1$d.</string>
     <string name="singbox_import_source_label">Cấu hình một dòng</string>
     <string name="singbox_import_source_support_hint">Hỗ trợ: vless, vmess, trojan, shadowsocks, socks. Cũng chấp nhận JSON đầy đủ.</string>
@@ -1188,7 +1194,7 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="myproxy_user_hint">Tên người dùng SOCKS5. Để trống nếu không cần xác thực.</string>
     <string name="myproxy_pass_hint">Mật khẩu SOCKS5. Để trống nếu không cần xác thực.</string>
 
-    <string name="optional_tools_title">Tiện ích bổ sung</string>
+    <string name="optional_tools_title">Thành phần bổ sung</string>
     <string name="optional_tools_entry_desc">Tại đây bạn có thể tải xuống các công cụ được tác giả dự án hỗ trợ.</string>
     <string name="optional_tools_screen_desc">Tại đây bạn có thể tải xuống các công cụ được tác giả dự án hỗ trợ.</string>
     <string name="optional_tools_available">Có thể cài đặt</string>
@@ -1206,6 +1212,17 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Proxy Telegram WS</string>
     <string name="tg_ws_proxy_desc">Tiện ích proxy Telegram MTProto → WebSocket.</string>
+    <string name="sing_box_lx_title">sing-box-lx</string>
+    <string name="sing_box_lx_desc">Lõi sing-box mở rộng tùy chọn với XHTTP, MASQUE/WARP, AmneziaWG 3.x và các khả năng VLESS bổ sung.</string>
+    <string name="sing_box_lx_install_required_title">Cần sing-box-lx</string>
+    <string name="sing_box_lx_install_required_message">Thao tác này cần thành phần sing-box-lx tùy chọn. Hãy cài đặt từ Công cụ bổ sung để tiếp tục.</string>
+    <string name="sing_box_lx_open_optional_tools">Mở công cụ bổ sung</string>
+    <string name="sing_box_lx_error_status">Không thể kiểm tra trạng thái cài đặt sing-box-lx.</string>
+    <string name="sing_box_lx_error_unsupported_abi">ABI CPU không được hỗ trợ: %1$s</string>
+    <string name="sing_box_lx_error_download">Không thể tải sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_package">Xác minh gói sing-box-lx thất bại: %1$s</string>
+    <string name="sing_box_lx_error_install">Không thể cài đặt sing-box-lx: %1$s</string>
+    <string name="sing_box_lx_error_remove">Không thể gỡ sing-box-lx: %1$s</string>
     <string name="apps_list_desc_tgwsproxy">Tiện ích proxy Telegram MTProto → WebSocket.</string>
 
     <string name="world_map_title">Bản đồ thế giới</string>
@@ -2198,7 +2215,6 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="settings_daemon_start_failed">Không thể khởi động daemon</string>
     <string name="settings_daemon_killall_failed">Không thể dừng tất cả tiến trình daemon</string>
     <string name="analysis_tools_entry_desc">Kiểm thử chiến lược, phát hiện DPI và chẩn đoán mạng</string>
-    <string name="startup_restart_daemon">Khởi động lại daemon</string>
     <!-- DNSCrypt / D2S -->
     <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
     <string name="dnscrypt_tab_d2s">D2S</string>
@@ -2452,4 +2468,83 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="operaproxy_custom_proxy_desc">Nhập URL proxy đầy đủ. Hỗ trợ máy chủ từ xa trên Internet. Định dạng: http://, https://, socks5:// và socks5h://. Có thể ghi tên đăng nhập và mật khẩu trong URL.</string>
     <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
     <string name="operaproxy_custom_proxy_error">Nhập URL proxy HTTP, HTTPS, SOCKS5 hoặc SOCKS5H hợp lệ kèm máy chủ và cổng.</string>
+
+    <!-- sing-box-lx subscription capability routing -->
+    <string name="subscription_lx_required_badge">Cần sing-box-lx</string>
+    <string name="subscription_lx_required_hint">Nút này dùng XHTTP hoặc tính năng khác chỉ có trong sing-box-lx.</string>
+    <string name="subscription_lx_not_installed_hint">Nút này cần sing-box-lx. Hãy cài thành phần tùy chọn để nhập.</string>
+    <string name="subscription_install_required_short">cần cài đặt</string>
+    <string name="subscription_bulk_import_section">Nhập hàng loạt</string>
+    <string name="subscription_bulk_import_desc">Nhập mọi nút tương thích của gói đăng ký này vào một hồ sơ. Các nút đã liên kết sẽ được bỏ qua.</string>
+    <string name="subscription_bulk_import_to">Nhập tất cả vào %1$s (%2$d)</string>
+    <string name="subscription_bulk_import_title">Nhập hàng loạt vào %1$s</string>
+    <string name="subscription_bulk_import_count">%1$d nút tương thích</string>
+    <string name="subscription_bulk_import_naming_hint">Tên máy chủ được tạo từ tên nút; xung đột được thêm hậu tố số. Cần hồ sơ T2S khi nhập nhiều máy chủ.</string>
+    <string name="subscription_bulk_import_result">Đã nhập %1$d · bỏ qua %2$d · lỗi %3$d</string>
+    <string name="subscription_bulk_import_failed">Nhập hàng loạt thất bại</string>
+    <string name="subscription_target_choice">Đích nhập</string>
+    <string name="subscription_new_profile_name">Tên hồ sơ mới</string>
+    <string name="subscription_create_profile">Tạo hồ sơ</string>
+    <string name="subscription_profile_created">Đã tạo hồ sơ %1$s</string>
+    <string name="subscription_profile_create_failed">Không thể tạo hồ sơ đích</string>
+
+    <!-- sing-box-lx Cloudflare WARP / MASQUE -->
+    <string name="warp_masque_title">Cloudflare WARP / MASQUE</string>
+    <string name="warp_masque_desc">Tạo nút WARP qua MASQUE (CONNECT-IP trên HTTP/3 hoặc HTTP/2). Khóa riêng P-256 được tạo trên thiết bị này và không gửi cho bên thứ ba.</string>
+    <string name="warp_masque_cache_loading">Đang kiểm tra đăng ký WARP đã lưu…</string>
+    <string name="warp_masque_cache_ready">Đăng ký MASQUE đã lưu sẵn sàng</string>
+    <string name="warp_masque_cache_summary">IPv4: %1$s\nIPv6: %2$s\nEndpoint: %3$s:%4$d</string>
+    <string name="warp_masque_cache_unavailable">Không thể đọc đăng ký MASQUE đã lưu.</string>
+    <string name="warp_masque_cache_missing">Chưa có đăng ký MASQUE đã lưu. Một thiết bị Cloudflare WARP mới sẽ được đăng ký.</string>
+    <string name="warp_masque_server_name">Tên máy chủ</string>
+    <string name="warp_masque_transport_fmt">Giao vận: %1$s</string>
+    <string name="warp_masque_transport_auto">Tự động (HTTP/3 → HTTP/2)</string>
+    <string name="warp_masque_transport_h3">HTTP/3 (QUIC)</string>
+    <string name="warp_masque_transport_h2">HTTP/2 (TCP)</string>
+    <string name="warp_masque_endpoint">IP hoặc host endpoint</string>
+    <string name="warp_masque_endpoint_hint">Để trống = endpoint đăng ký (%1$s)</string>
+    <string name="warp_masque_endpoint_port">Cổng endpoint</string>
+    <string name="warp_masque_endpoint_port_hint">Để trống = cổng đăng ký (%1$d)</string>
+    <string name="warp_masque_sni">SNI</string>
+    <string name="warp_masque_sni_hint">Mặc định: www.cloudflare.com. Có thể đặt SNI khác hoạt động trên mạng của bạn.</string>
+    <string name="warp_masque_mtu">MTU</string>
+    <string name="warp_masque_idle_minutes">Thời gian chờ nhàn rỗi, phút</string>
+    <string name="warp_masque_keepalive_seconds">Keep-alive, giây</string>
+    <string name="warp_masque_optional_default">Tùy chọn. Để trống = mặc định của sing-box-lx.</string>
+    <string name="warp_masque_keepalive_h2">Không dùng với HTTP/2 cố định.</string>
+    <string name="warp_masque_reregister">Đăng ký lại WARP</string>
+    <string name="warp_masque_reregister_hint">Tạo khóa mới và thiết bị Cloudflare WARP mới thay vì dùng đăng ký đã lưu.</string>
+    <string name="warp_masque_clear_cache">Xóa đăng ký MASQUE đã lưu</string>
+    <string name="warp_masque_create_cached">Tạo từ đăng ký đã lưu</string>
+    <string name="warp_masque_register_create">Đăng ký và tạo</string>
+    <string name="warp_masque_add_action">Nhận WARP / MASQUE</string>
+    <string name="warp_masque_created_fmt">Đã tạo máy chủ WARP MASQUE: %1$s</string>
+    <string name="warp_masque_error_name">Nhập tên máy chủ.</string>
+    <string name="warp_masque_error_name_exists">Đã có máy chủ với tên này.</string>
+    <string name="warp_masque_error_port">Cổng endpoint phải từ 1 đến 65535.</string>
+    <string name="warp_masque_error_mtu">MTU phải từ 576 đến 16000.</string>
+    <string name="warp_masque_error_idle">Thời gian chờ nhàn rỗi phải từ 1 đến 1440 phút hoặc để trống.</string>
+    <string name="warp_masque_error_keepalive">Keep-alive phải từ 1 đến 3600 giây hoặc để trống.</string>
+    <string name="warp_masque_error_config">Không thể tạo cấu hình MASQUE.</string>
+    <string name="warp_masque_error_registration">Đăng ký Cloudflare WARP MASQUE thất bại.</string>
+    <string name="warp_masque_error_cache_save">Đăng ký thành công nhưng không thể lưu an toàn trong mô-đun root.</string>
+    <string name="warp_masque_error_cache_clear">Không thể xóa đăng ký MASQUE đã lưu.</string>
+    <string name="warp_masque_error_network">Không thể kết nối tới dịch vụ đăng ký Cloudflare WARP. Hãy kiểm tra kết nối và thử lại.</string>
+    <string name="warp_masque_error_api_http">Dịch vụ đăng ký Cloudflare WARP trả về HTTP %1$d. API có thể đã thay đổi.</string>
+    <string name="warp_masque_error_response">Cloudflare trả về phản hồi WARP MASQUE không hợp lệ hoặc không đầy đủ.</string>
+    <string name="warp_masque_error_crypto">Không thể tạo khóa P-256 cục bộ cho WARP MASQUE.</string>
+    <string name="singbox_import_requires_lx_feature_message">Cấu hình này sử dụng %1$s, nên cần sing-box-lx. Hãy nhập cấu hình qua công cụ sing-box-lx.</string>
+    <string name="singbox_import_invalid_vless_encryption">Giá trị mã hóa VLESS không đúng định dạng. ML-KEM phải dùng định dạng mlkem768x25519plus….</string>
+    <string name="singbox_lx_advanced_json_hint">Các trường JSON nâng cao của sing-box-lx được giữ nguyên. ZDT-D chỉ quản lý mixed inbound cục bộ và thêm mặc định DNS/định tuyến an toàn khi còn thiếu.</string>
+
+    <string name="setup_components_title">Thành phần mô-đun</string>
+    <string name="setup_components_selected_fmt">Đã chọn: %1$d / %2$d công cụ</string>
+    <string name="setup_components_configure">Chọn</string>
+    <string name="setup_components_dialog_title">Chọn công cụ</string>
+    <string name="setup_components_dialog_body">Chọn các công cụ sẽ được cài cùng mô-đun trực tuyến. Nền tảng định tuyến luôn được cài và không hiển thị trong danh sách này.</string>
+    <string name="component_selection_save_failed">Không thể lưu các thành phần mô-đun đã chọn.</string>
+    <string name="component_install_required_title">Thành phần chưa được cài</string>
+    <string name="component_install_required_message">Thành phần %1$s chưa được cài. Cài từ Thành phần bổ sung?</string>
+    <string name="component_install_required_action">Cài đặt</string>
+    <string name="optional_component_generic_desc">Cài, cập nhật hoặc xóa công cụ này mà không cần cài lại mô-đun hay khởi động lại.</string>
 </resources>

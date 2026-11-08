@@ -1,14 +1,16 @@
 use crate::{
     backend::BackendPool,
     config::Config,
+    coord::DialPriority,
     socks5::{connect_via_socks5, RuntimeFailureClass, SocksClientError},
     status::RuntimeStats,
     target::TargetAddr,
 };
 use anyhow::{anyhow, Context, Result};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
+    os::unix::io::AsRawFd,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -27,9 +29,9 @@ const DIRECT_FAILURE_THRESHOLD: u32 = 3;
 const DIRECT_FAILURE_COOLDOWN_MS: u64 = 5_000;
 
 /// Cached pre-connected tunnels per target. Each warm hit consumes one tunnel
-/// and schedules exactly one background replacement, so steady-state upstream
-/// connect volume is unchanged; only the final tunnel before an idle gap can
-/// go unused.
+/// and schedules one background replacement. A separate bounded proactive
+/// refresher may replace tunnels for the hottest recently-used resolver targets
+/// before TTL expiry, but stops after the recent-activity window.
 const WARM_TUNNELS_PER_TARGET: usize = 4;
 
 /// How many recently used DNS targets are remembered as warmup candidates.
@@ -48,6 +50,38 @@ struct AttemptOutcome {
     started: Instant,
     window_ms: u64,
     result: Result<TcpStream, SocksClientError>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum DialPurpose {
+    ForegroundDns,
+    Background,
+}
+
+impl DialPurpose {
+    fn is_foreground(self) -> bool {
+        self == Self::ForegroundDns
+    }
+
+    fn priority(self) -> DialPriority {
+        if self.is_foreground() {
+            DialPriority::ForegroundDns
+        } else {
+            DialPriority::Background
+        }
+    }
+
+    fn coordination_wait(self, config: &Config) -> Duration {
+        if self.is_foreground() {
+            config.foreground_coordination_wait()
+        } else {
+            config.background_coordination_wait()
+        }
+    }
+
+    fn attempt_timeout(self, config: &Config) -> Duration {
+        config.coordinated_attempt_timeout(self.is_foreground())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -99,6 +133,10 @@ pub struct Router {
     /// establishes a tunnel to the hottest one right after a backend turns
     /// GREEN, so the first real query does not pay route establishment.
     hot_targets: Arc<std::sync::Mutex<HashMap<TargetAddr, Instant>>>,
+    /// At most one proactive refresh loop per recently-used resolver target.
+    warm_refresh_tasks: Arc<std::sync::Mutex<HashSet<TargetAddr>>>,
+    /// Stops proactive network work as soon as server shutdown begins.
+    warm_shutdown: Arc<AtomicBool>,
 }
 
 impl Router {
@@ -111,6 +149,8 @@ impl Router {
             direct_health: Arc::new(DirectHealth::default()),
             warm_cache: Arc::new(TokioMutex::new(HashMap::new())),
             hot_targets: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            warm_refresh_tasks: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            warm_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -135,11 +175,142 @@ impl Router {
             .map(|(target, _)| target.clone())
     }
 
+    /// Keep only the two most recently used resolver targets proactively warm.
+    /// dnscrypt-proxy can rotate resolvers, so maintaining just one target can
+    /// still leave the next query cold; limiting this to two bounds background
+    /// sockets/network work even when many resolvers were seen historically.
+    fn is_recent_top_warm_target(&self, target: &TargetAddr) -> bool {
+        let hot = self.hot_targets.lock().expect("hot targets lock poisoned");
+        let Some(target_at) = hot.get(target).copied() else { return false };
+        if target_at.elapsed() > self.config.warm_active_window() {
+            return false;
+        }
+        let newer = hot.values().filter(|at| **at > target_at).count();
+        newer < 2
+    }
+
+    pub fn begin_shutdown(&self) {
+        self.warm_shutdown.store(true, Ordering::Release);
+    }
+
+    fn schedule_proactive_warm_refresh(&self, target: TargetAddr) {
+        if !self.config.warm_tunnels || self.warm_shutdown.load(Ordering::Acquire) {
+            return;
+        }
+        {
+            let mut tasks = self
+                .warm_refresh_tasks
+                .lock()
+                .expect("warm refresh task lock poisoned");
+            if !tasks.insert(target.clone()) {
+                return;
+            }
+        }
+
+        let router = self.clone();
+        tokio::spawn(async move {
+            router.proactive_warm_refresh_loop(target.clone()).await;
+            router
+                .warm_refresh_tasks
+                .lock()
+                .expect("warm refresh task lock poisoned")
+                .remove(&target);
+            // Close the tiny exit/remove race: a foreground DNS request may
+            // have made this target hot again while the old task was exiting.
+            // Re-arm maintenance if it is still eligible after releasing the
+            // task guard.
+            if !router.warm_shutdown.load(Ordering::Acquire)
+                && router.is_recent_top_warm_target(&target)
+            {
+                router.schedule_proactive_warm_refresh(target);
+            }
+        });
+    }
+
+    async fn proactive_warm_refresh_loop(&self, target: TargetAddr) {
+        const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(2);
+        loop {
+            if self.warm_shutdown.load(Ordering::Acquire)
+                || !self.is_recent_top_warm_target(&target)
+            {
+                return;
+            }
+
+            let delay = self.time_until_warm_refresh(&target).await;
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+
+            if self.warm_shutdown.load(Ordering::Acquire)
+                || !self.is_recent_top_warm_target(&target)
+            {
+                return;
+            }
+
+            // A normal foreground query may have consumed/replaced the tunnel
+            // while this task slept. Recalculate before dialing so proactive
+            // maintenance never creates duplicate connections unnecessarily.
+            if !self.warm_refresh_due(&target).await {
+                continue;
+            }
+
+            if !self.proactive_refresh_warm_tunnel(&target).await {
+                // Backend/coordination can be temporarily busy. Retry soon
+                // while the target is still active, but never change health or
+                // fall back DIRECT from this background task.
+                tokio::time::sleep(RETRY_AFTER_FAILURE).await;
+            }
+        }
+    }
+
+    async fn time_until_warm_refresh(&self, target: &TargetAddr) -> Duration {
+        const EMPTY_CACHE_RETRY: Duration = Duration::from_millis(750);
+        let refresh_after = self.config.warm_refresh_interval();
+        let cache = self.warm_cache.lock().await;
+        let Some(newest) = cache.get(target).and_then(|queue| queue.back()) else {
+            return EMPTY_CACHE_RETRY;
+        };
+        refresh_after.saturating_sub(newest.created.elapsed())
+    }
+
+    async fn warm_refresh_due(&self, target: &TargetAddr) -> bool {
+        let refresh_after = self.config.warm_refresh_interval();
+        let cache = self.warm_cache.lock().await;
+        cache
+            .get(target)
+            .and_then(|queue| queue.back())
+            .map(|newest| newest.created.elapsed() >= refresh_after)
+            .unwrap_or(true)
+    }
+
+    async fn proactive_refresh_warm_tunnel(&self, target: &TargetAddr) -> bool {
+        let candidates = self.pool.candidate_order().await;
+        if candidates.is_empty() {
+            return false;
+        }
+        let deadline = TokioInstant::now() + self.config.route_budget();
+        let routed = if candidates.len() > 1 {
+            self.connect_hedged(candidates, target, deadline, DialPurpose::Background).await
+        } else {
+            self.connect_sequential(candidates, target, deadline, DialPurpose::Background).await
+        };
+        let Ok(routed) = routed else { return false };
+        let Some(backend) = routed.backend else { return false };
+        if self.warm_shutdown.load(Ordering::Acquire) {
+            return false;
+        }
+        self.replace_warm_tunnel(target.clone(), backend, routed.stream)
+            .await;
+        debug!(%target, %backend, "proactively refreshed hot DNS tunnel");
+        true
+    }
+
     pub async fn connect(&self, target: &TargetAddr) -> Result<RoutedStream> {
         self.reject_recursive_target(target)?;
 
         if let Some(routed) = self.try_take_warm_tunnel(target).await {
             self.schedule_warm_refill(target.clone());
+            self.schedule_proactive_warm_refresh(target.clone());
             return Ok(routed);
         }
 
@@ -149,13 +320,14 @@ impl Router {
         let deadline = TokioInstant::now() + self.config.route_budget();
         let candidates = self.pool.candidate_order().await;
         let routed = if candidates.len() > 1 {
-            self.connect_hedged(candidates, target, deadline).await?
+            self.connect_hedged(candidates, target, deadline, DialPurpose::ForegroundDns).await?
         } else {
-            self.connect_sequential(candidates, target, deadline).await?
+            self.connect_sequential(candidates, target, deadline, DialPurpose::ForegroundDns).await?
         };
 
         if self.warm_eligible(&routed) {
             self.schedule_warm_refill(target.clone());
+            self.schedule_proactive_warm_refresh(target.clone());
         }
         Ok(routed)
     }
@@ -165,45 +337,77 @@ impl Router {
     /// entries and tunnels of degraded backends are closed instead of reused
     /// because a half-open upstream session would otherwise turn the first
     /// DNS request after a quiet period into a guaranteed stall.
+    fn warm_stream_looks_alive(stream: &TcpStream) -> bool {
+        let mut byte = 0u8;
+        let rc = unsafe {
+            libc::recv(
+                stream.as_raw_fd(),
+                &mut byte as *mut u8 as *mut libc::c_void,
+                1,
+                libc::MSG_PEEK | libc::MSG_DONTWAIT,
+            )
+        };
+        if rc > 0 {
+            return true;
+        }
+        if rc == 0 {
+            return false;
+        }
+        let error = std::io::Error::last_os_error();
+        let code = error.raw_os_error();
+        code == Some(libc::EAGAIN)
+            || code == Some(libc::EWOULDBLOCK)
+            || code == Some(libc::EINTR)
+    }
+
     async fn try_take_warm_tunnel(&self, target: &TargetAddr) -> Option<RoutedStream> {
         if !self.config.warm_tunnels {
             return None;
         }
         let ttl = self.config.warm_tunnel_ttl();
-        let mut cache = self.warm_cache.lock().await;
-        let queue = cache.get_mut(target)?;
-        // Front is the oldest entry: if it expired, every entry expired.
-        let expired = queue
-            .front()
-            .map(|tunnel| tunnel.created.elapsed() > ttl)
-            .unwrap_or(true);
-        if expired {
-            queue.clear();
-            cache.remove(target);
-            return None;
-        }
-        let tunnel = queue.pop_front().expect("front checked above");
-        let queue_emptied = queue.is_empty();
-        if queue_emptied {
-            cache.remove(target);
-        }
-        drop(cache);
 
-        let backend = tunnel.backend?;
-        if !self.pool.backend_selectable(backend).await {
-            debug!(%target, %backend, "discarded warm tunnel of a degraded backend");
-            return None;
-        }
+        loop {
+            let tunnel = {
+                let mut cache = self.warm_cache.lock().await;
+                let queue = cache.get_mut(target)?;
 
-        self.note_hot_target(target);
-        self.stats.warm_tunnel_hits.fetch_add(1, Ordering::Relaxed);
-        self.note_socks_restored();
-        debug!(%target, %backend, "served request from a warm pre-connected tunnel");
-        Some(RoutedStream {
-            stream: tunnel.stream,
-            route: RouteKind::Socks,
-            backend: Some(backend),
-        })
+                // Drop expired entries one-by-one. The old implementation
+                // cleared the entire queue when the oldest entry expired,
+                // which could throw away a fresh replacement behind it and
+                // recreate the exact cold-start pause we are trying to avoid.
+                while queue
+                    .front()
+                    .is_some_and(|tunnel| tunnel.created.elapsed() > ttl)
+                {
+                    queue.pop_front();
+                }
+                let tunnel = queue.pop_front();
+                if queue.is_empty() {
+                    cache.remove(target);
+                }
+                tunnel
+            }?;
+
+            let Some(backend) = tunnel.backend else { continue };
+            if !Self::warm_stream_looks_alive(&tunnel.stream) {
+                debug!(%target, %backend, "discarded closed warm tunnel before serving it");
+                continue;
+            }
+            if !self.pool.backend_selectable(backend).await {
+                debug!(%target, %backend, "discarded warm tunnel of a degraded backend");
+                continue;
+            }
+
+            self.note_hot_target(target);
+            self.stats.warm_tunnel_hits.fetch_add(1, Ordering::Relaxed);
+            self.note_socks_restored();
+            debug!(%target, %backend, "served request from a warm pre-connected tunnel");
+            return Some(RoutedStream {
+                stream: tunnel.stream,
+                route: RouteKind::Socks,
+                backend: Some(backend),
+            });
+        }
     }
 
     fn warm_eligible(&self, routed: &RoutedStream) -> bool {
@@ -216,7 +420,7 @@ impl Router {
     }
 
     /// Replace a consumed (or newly created) warm tunnel in the background so
-    /// the request path never waits for the replacement dial. The spawned task
+    /// the request path never waits for the reactive replacement dial. The spawned task
     /// owns its sockets and every dial step is timeout-bounded, so a dropped
     /// or cancelled refill simply closes its half-open connection; it cannot
     /// leak relay workers the way a detached relay copy could.
@@ -236,9 +440,9 @@ impl Router {
         }
         let deadline = TokioInstant::now() + self.config.route_budget();
         let routed = if candidates.len() > 1 {
-            self.connect_hedged(candidates, target, deadline).await
+            self.connect_hedged(candidates, target, deadline, DialPurpose::Background).await
         } else {
-            self.connect_sequential(candidates, target, deadline).await
+            self.connect_sequential(candidates, target, deadline, DialPurpose::Background).await
         };
         let Ok(routed) = routed else { return };
         // Never cache DIRECT streams: they skip SOCKS accounting and the
@@ -271,13 +475,31 @@ impl Router {
         }
     }
 
+    /// A proactive refresh supersedes older idle tunnels for the same target.
+    /// Install the new connection atomically and drop old sockets afterwards so
+    /// the request path always sees the freshest possible warm candidate.
+    async fn replace_warm_tunnel(
+        &self,
+        target: TargetAddr,
+        backend: SocketAddr,
+        stream: TcpStream,
+    ) {
+        let mut cache = self.warm_cache.lock().await;
+        let queue = cache.entry(target).or_default();
+        queue.clear();
+        queue.push_back(WarmTunnel {
+            created: Instant::now(),
+            stream,
+            backend: Some(backend),
+        });
+    }
+
     async fn warm_cache_has_fresh(&self, target: &TargetAddr) -> bool {
         let ttl = self.config.warm_tunnel_ttl();
         let cache = self.warm_cache.lock().await;
         cache
             .get(target)
-            .and_then(|queue| queue.front())
-            .map(|tunnel| tunnel.created.elapsed() <= ttl)
+            .map(|queue| queue.iter().any(|tunnel| tunnel.created.elapsed() <= ttl))
             .unwrap_or(false)
     }
 
@@ -291,6 +513,9 @@ impl Router {
             // warms the cache the usual way.
             return;
         };
+        if !self.is_recent_top_warm_target(&target) {
+            return;
+        }
         if self.warm_cache_has_fresh(&target).await {
             return;
         }
@@ -298,13 +523,16 @@ impl Router {
             return;
         }
         let attempt = tokio::time::timeout(
-            self.config.backend_attempt_timeout(),
+            DialPurpose::Background.attempt_timeout(&self.config),
             connect_via_socks5(
                 backend,
                 &target,
                 self.config.connect_timeout(),
                 self.config.upstream_handshake_timeout(),
                 self.config.tcp_nodelay,
+                DialPurpose::Background.priority(),
+                DialPurpose::Background.coordination_wait(&self.config),
+                self.config.backend_attempt_timeout(),
             ),
         )
         .await;
@@ -316,7 +544,8 @@ impl Router {
         if !self.pool.backend_selectable(backend).await {
             return;
         }
-        self.store_warm_tunnel(target, backend, stream).await;
+        self.store_warm_tunnel(target.clone(), backend, stream).await;
+        self.schedule_proactive_warm_refresh(target);
         debug!(%backend, "warm tunnel pre-connected after GREEN transition");
     }
 
@@ -336,6 +565,7 @@ impl Router {
         candidates: Vec<SocketAddr>,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) -> Result<RoutedStream> {
         const BUDGET_EXHAUSTED: &str =
             "dnscrypt route budget exhausted before trying all backends";
@@ -343,13 +573,13 @@ impl Router {
         let mut failures = Vec::new();
         if TokioInstant::now() >= deadline {
             failures.push(BUDGET_EXHAUSTED.to_string());
-            return self.finish_with_direct(target, failures, deadline).await;
+            return self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await;
         }
 
         let mut next_candidate = 1usize;
         let mut in_flight: JoinSet<AttemptOutcome> = JoinSet::new();
         let head = candidates[0];
-        self.start_hedged_attempt(&mut in_flight, head, target, deadline)
+        self.start_hedged_attempt(&mut in_flight, head, target, deadline, purpose)
             .await;
 
         // One hedge window per request, anchored to the first dial.
@@ -385,7 +615,9 @@ impl Router {
                                 .upstream_connections
                                 .fetch_add(1, Ordering::Relaxed);
                             self.note_socks_restored();
-                            self.note_hot_target(target);
+                            if purpose.is_foreground() {
+                                self.note_hot_target(target);
+                            }
                             debug!(backend = %backend, %target, "hedged dial won");
 
                             if !in_flight.is_empty() {
@@ -405,7 +637,7 @@ impl Router {
                                         }) = joined
                                         {
                                             router
-                                                .settle_attempt(backend, started, window_ms, result)
+                                                .settle_attempt(backend, started, window_ms, result, purpose)
                                                 .await;
                                         }
                                     }
@@ -419,7 +651,7 @@ impl Router {
                         }
                         Err(error) => {
                             if let Some(message) = self
-                                .settle_attempt(backend, started, window_ms, Err(error))
+                                .settle_attempt(backend, started, window_ms, Err(error), purpose)
                                 .await
                             {
                                 failures.push(message);
@@ -437,7 +669,7 @@ impl Router {
                     stagger_armed = false;
                     if let Some(&candidate) = candidates.get(next_candidate) {
                         if self.pool.backend_selectable(candidate).await {
-                            self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                            self.start_hedged_attempt(&mut in_flight, candidate, target, deadline, purpose)
                                 .await;
                             next_candidate += 1;
                         }
@@ -455,7 +687,7 @@ impl Router {
                         failures.push(BUDGET_EXHAUSTED.to_string());
                         break;
                     }
-                    self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                    self.start_hedged_attempt(&mut in_flight, candidate, target, deadline, purpose)
                         .await;
                     next_candidate += 1;
                 } else {
@@ -464,7 +696,7 @@ impl Router {
             }
         }
 
-        self.finish_with_direct(target, failures, deadline).await
+        self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await
     }
 
     async fn start_hedged_attempt(
@@ -473,16 +705,20 @@ impl Router {
         backend: SocketAddr,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) {
         let now = TokioInstant::now();
         if now >= deadline {
             return;
         }
-        let window = self.config.backend_attempt_timeout().min(deadline - now);
+        let window = purpose.attempt_timeout(&self.config).min(deadline - now);
         self.pool.mark_attempt(backend).await;
         let connect_timeout = self.config.connect_timeout();
         let handshake_timeout = self.config.upstream_handshake_timeout();
         let tcp_nodelay = self.config.tcp_nodelay;
+        let priority = purpose.priority();
+        let coordination_wait = purpose.coordination_wait(&self.config);
+        let backend_attempt_timeout = self.config.backend_attempt_timeout();
         let window_ms = window.as_millis() as u64;
         let target = target.clone();
         in_flight.spawn(async move {
@@ -495,6 +731,9 @@ impl Router {
                     connect_timeout,
                     handshake_timeout,
                     tcp_nodelay,
+                    priority,
+                    coordination_wait,
+                    backend_attempt_timeout,
                 ),
             )
             .await
@@ -529,6 +768,7 @@ impl Router {
         started: Instant,
         window_ms: u64,
         result: Result<TcpStream, SocksClientError>,
+        purpose: DialPurpose,
     ) -> Option<String> {
         match result {
             Ok(stream) => {
@@ -540,6 +780,16 @@ impl Router {
                 None
             }
             Err(error) => {
+                if error.is_coordination_busy() {
+                    let message = error.to_string();
+                    debug!(%backend, %message, "backend dial deferred by shared T2S/D2S coordination");
+                    return Some(format!("{backend}: {message}"));
+                }
+                if !purpose.is_foreground() {
+                    let message = error.to_string();
+                    debug!(%backend, %message, "background warm dial failed without changing backend health");
+                    return Some(format!("{backend}: {message}"));
+                }
                 let class = error.runtime_failure_class();
                 let message = match &error {
                     SocksClientError::Timeout("hedged backend attempt") => {
@@ -555,13 +805,15 @@ impl Router {
         }
     }
 
-    /// Original sequential dialer, used verbatim for zero/one candidate (the
-    /// single-backend case keeps its one-shot transient retry).
+    /// Sequential dialer for zero/one candidate. Foreground DNS uses the
+    /// shared coordinator and keeps the existing one-shot transient retry;
+    /// coordination contention is retried once without poisoning backend health.
     async fn connect_sequential(
         &self,
         candidates: Vec<SocketAddr>,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) -> Result<RoutedStream> {
         let single_backend_mode = candidates.len() == 1;
         let mut failures = Vec::new();
@@ -573,7 +825,7 @@ impl Router {
                 break;
             }
             let remaining = deadline - now;
-            let attempt_timeout = self.config.backend_attempt_timeout().min(remaining);
+            let attempt_timeout = purpose.attempt_timeout(&self.config).min(remaining);
 
             self.pool.mark_attempt(backend).await;
             let started = Instant::now();
@@ -585,6 +837,9 @@ impl Router {
                     self.config.connect_timeout(),
                     self.config.upstream_handshake_timeout(),
                     self.config.tcp_nodelay,
+                    purpose.priority(),
+                    purpose.coordination_wait(&self.config),
+                    self.config.backend_attempt_timeout(),
                 ),
             )
             .await;
@@ -597,7 +852,9 @@ impl Router {
                         .upstream_connections
                         .fetch_add(1, Ordering::Relaxed);
                     self.note_socks_restored();
-                    self.note_hot_target(target);
+                    if purpose.is_foreground() {
+                        self.note_hot_target(target);
+                    }
                     debug!(%backend, %target, "routed connection through SOCKS5 backend");
                     return Ok(RoutedStream {
                         stream,
@@ -606,18 +863,28 @@ impl Router {
                     });
                 }
                 Ok(Err(mut error)) => {
-                    // Keep the existing DNS-specific one-shot retry for short
-                    // Android route transitions. It changes only the current
-                    // DNSCrypt request; health is still decided by Full probe.
-                    if single_backend_mode && error.should_retry_once_on_single_backend() {
-                        let retry_delay = Duration::from_millis(75);
+                    // A busy coordination slot is not a backend failure. In the
+                    // important single-backend DNS case give the priority lease
+                    // one extra short attempt within the existing route budget.
+                    // Keep the existing Android-route retry for network/host
+                    // unreachable replies as well.
+                    let coordination_busy = error.is_coordination_busy();
+                    let should_retry = single_backend_mode
+                        && purpose.is_foreground()
+                        && (coordination_busy || error.should_retry_once_on_single_backend());
+                    if should_retry {
+                        let retry_delay = if coordination_busy {
+                            Duration::from_millis(20)
+                        } else {
+                            Duration::from_millis(75)
+                        };
                         let now = TokioInstant::now();
                         if now < deadline && deadline - now > retry_delay {
                             tokio::time::sleep(retry_delay).await;
                             let now = TokioInstant::now();
                             if now < deadline {
                                 let remaining = deadline - now;
-                                let retry_timeout = self.config.backend_attempt_timeout().min(remaining);
+                                let retry_timeout = purpose.attempt_timeout(&self.config).min(remaining);
                                 let retry_started = Instant::now();
                                 match tokio::time::timeout(
                                     retry_timeout,
@@ -627,6 +894,9 @@ impl Router {
                                         self.config.connect_timeout(),
                                         self.config.upstream_handshake_timeout(),
                                         self.config.tcp_nodelay,
+                                        purpose.priority(),
+                                        purpose.coordination_wait(&self.config),
+                                        self.config.backend_attempt_timeout(),
                                     ),
                                 )
                                 .await
@@ -637,8 +907,10 @@ impl Router {
                                             .upstream_connections
                                             .fetch_add(1, Ordering::Relaxed);
                                         self.note_socks_restored();
-                                        self.note_hot_target(target);
-                                        debug!(%backend, %target, "single-backend transient retry succeeded");
+                                        if purpose.is_foreground() {
+                                            self.note_hot_target(target);
+                                        }
+                                        debug!(%backend, %target, "single-backend retry succeeded");
                                         return Ok(RoutedStream {
                                             stream,
                                             route: RouteKind::Socks,
@@ -666,9 +938,21 @@ impl Router {
                         }
                     }
 
-                    let class = error.runtime_failure_class();
                     let message = error.to_string();
-                    self.pool.mark_runtime_failure(backend, class, &message).await;
+                    if error.is_coordination_busy() {
+                        // Another local T2S/D2S handshake owned the backend
+                        // slot. Do not poison health or cooldown for contention
+                        // that says nothing about backend reachability.
+                        debug!(%backend, %message, "SOCKS backend busy in shared dial coordinator");
+                        failures.push(format!("{backend}: {message}"));
+                        continue;
+                    }
+                    if purpose.is_foreground() {
+                        let class = error.runtime_failure_class();
+                        self.pool.mark_runtime_failure(backend, class, &message).await;
+                    } else {
+                        debug!(%backend, %message, "background warm dial failed without changing backend health");
+                    }
                     failures.push(format!("{backend}: {message}"));
                 }
                 Err(_) => {
@@ -676,15 +960,19 @@ impl Router {
                         "backend attempt exceeded {} ms",
                         attempt_timeout.as_millis()
                     );
-                    self.pool
-                        .mark_runtime_failure(backend, RuntimeFailureClass::Soft, &message)
-                        .await;
+                    if purpose.is_foreground() {
+                        self.pool
+                            .mark_runtime_failure(backend, RuntimeFailureClass::Soft, &message)
+                            .await;
+                    } else {
+                        debug!(%backend, %message, "background warm timeout ignored for backend health");
+                    }
                     failures.push(format!("{backend}: {message}"));
                 }
             }
         }
 
-        self.finish_with_direct(target, failures, deadline).await
+        self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await
     }
 
     async fn finish_with_direct(
@@ -692,7 +980,14 @@ impl Router {
         target: &TargetAddr,
         failures: Vec<String>,
         deadline: TokioInstant,
+        allow_direct: bool,
     ) -> Result<RoutedStream> {
+        if !allow_direct {
+            return Err(anyhow!(
+                "background SOCKS route deferred/failed for {target}; failures: {}",
+                failures.join(" | ")
+            ));
+        }
         if !self.config.direct_fallback {
             return Err(anyhow!(
                 "no SOCKS5 backend could reach {target}; direct fallback is disabled; failures: {}",

@@ -134,7 +134,7 @@ The APK does not bundle the DB-IP MMDB file.
 When the user opens the World Map and accepts the warning dialog, the application downloads the optional runtime component on demand:
 
 ```text
-https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz
+https://github.com/aneek0/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz
 ```
 
 Runtime flow:

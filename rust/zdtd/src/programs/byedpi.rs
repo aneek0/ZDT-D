@@ -1,24 +1,25 @@
 use anyhow::{Context, Result};
-use super::common::*;
+use crate::common::apps::{count_valid_uid_pairs};
+use crate::common::config::{normalize_config_args};
+use crate::common::process::{LogMode, spawn_detached_logged};
 use log::info;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::Duration,
 };
-use std::fs::OpenOptions;
-use std::os::unix::process::CommandExt;
 
-use crate::android::pkg_uid::{self, Mode, Sha256Tracker};
+use crate::platform::android::pkg_uid::{self, Mode, Sha256Tracker};
 use crate::settings;
 use crate::iptables::iptables_port::{self, IptablesDpiOptions, ProtoChoice};
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 const BYEDPI_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/byedpi";
+pub const PROCESS_NAMES: &[&str] = &["ciadpi-zdt", "ciadpi", "byedpi", "bye_dpi", "byedpi.bin"];
 const BIN_DIR: &str = "/data/adb/modules/ZDT-D/bin";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
@@ -40,9 +41,9 @@ struct PortJson {
 }
 
 pub fn start_active_profiles() -> Result<()> {
-    ensure_dir(MODULE_DIR)?;
-    ensure_dir(WORKING_DIR)?;
-    ensure_dir(BYEDPI_ROOT)?;
+    crate::common::fs::require_dir_str(MODULE_DIR)?;
+    crate::common::fs::require_dir_str(WORKING_DIR)?;
+    crate::common::fs::require_dir_str(BYEDPI_ROOT)?;
 
     let active_path = Path::new(BYEDPI_ROOT).join("active.json");
     let active = read_json::<ActiveJson>(&active_path)
@@ -61,7 +62,7 @@ pub fn start_active_profiles() -> Result<()> {
 
 fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let profile_dir = Path::new(BYEDPI_ROOT).join(profile_name);
-    ensure_dir(profile_dir.to_string_lossy().as_ref())?;
+    crate::common::fs::require_dir_str(profile_dir.to_string_lossy().as_ref())?;
 
     let port_path = profile_dir.join("port.json");
     let port_cfg = read_json::<PortJson>(&port_path)
@@ -80,7 +81,7 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let _ = pkg_uid::unified_processing(Mode::Default, tracker, &out_user, &in_user)?;
 
     let resolved = count_valid_uid_pairs(&out_user)?;
-    let has_launch_marker = pkg_uid::file_has_launch_marker(&in_user).unwrap_or(false);
+    let has_launch_marker = crate::common::apps::file_has_launch_marker(&in_user).unwrap_or(false);
     if resolved == 0 && !has_launch_marker {
         log::warn!("byedpi: no apps resolved for {} -> skip start/iptables", profile_dir.display());
         return Ok(());
@@ -123,36 +124,20 @@ fn spawn_byedpi(workdir: &Path, bin: &Path, port: u16, extra_args: &[String], lo
     // ciadpi-zdt -i 127.0.0.1 -p "$DPI_PORT" -x 2 -E "$@"
     let port_s = port.to_string();
 
-    // Truncate log each start
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
     let mut cmd = Command::new(bin);
     cmd.current_dir(workdir);
     cmd.arg("-i").arg("127.0.0.1")
         .arg("-p").arg(&port_s)
         .arg("-x").arg("2")
         .arg("-E")
-        .args(extra_args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
+        .args(extra_args);
 
-    unsafe {
-        cmd.pre_exec(|| {
-            unsafe {
-                let _ = libc::setsid();
-            }
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
+    let child = spawn_detached_logged(
+        &mut cmd,
+        log_path,
+        LogMode::Truncate,
+        || format!("spawn {}", bin.display()),
+    )?;
     let pid = child.id();
     info!("spawned byedpi pid={} port={} log={}", pid, port, log_path.display());
 
@@ -175,13 +160,5 @@ fn find_byedpi_bin() -> Result<PathBuf> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    crate::jsonfs::read_json(path)
-}
-
-fn ensure_dir(p: &str) -> Result<()> {
-    let path = Path::new(p);
-    if !path.is_dir() {
-        anyhow::bail!("directory missing: {}", path.display());
-    }
-    Ok(())
+    crate::common::fs::json::read_json(path)
 }

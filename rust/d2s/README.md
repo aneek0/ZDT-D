@@ -14,6 +14,39 @@ cache, routing tables, TUN state, iptables, or Android DNS settings. The D2S
 listener is read from the active local `proxy = 'socks5://127.0.0.1:PORT'`
 entry in `dnscrypt-proxy.toml`.
 
+## Shared backend coordination with T2S
+
+When D2S and one or more T2S instances use the same local SOCKS5 backend they
+coordinate **without an HTTP/API service**. Both processes use the same
+per-backend advisory `flock` under the ZDT-D runtime directory, so only the TCP
+connect + SOCKS handshake phase is serialized. Established relays continue in
+parallel and are never throttled by the coordinator. The short 100 ms
+post-handshake spacing keeps the lock alive in the background, so a successful
+DNS tunnel is returned immediately instead of paying that stagger as latency.
+
+Real DNSCrypt requests hold a shared flock-backed priority lease on
+`backend-<ip>-<port>.dns-priority.lock` before waiting for the backend lock.
+T2S probes that lease and briefly yields new handshakes so DNS gets first access
+to a fragile single-server backend. Foreground T2S traffic yields for at most
+100 ms; background T2S health may yield for up to 750 ms. Both windows are
+bounded, so continuous DNS traffic cannot starve new T2S connections. D2S
+health probes, recovery probes and warm-tunnel creation are background work:
+they do not hold a priority lease and defer when a real DNS request is waiting.
+
+Coordination contention is never treated as backend health failure. A health
+probe that cannot get the shared slot is simply rescheduled, and a foreground
+DNS request can retry within DNSCrypt's existing route budget or use the
+existing DIRECT fallback. The priority lease and backend handshake lock are
+protected by `flock`; if either process crashes the kernel releases them
+automatically. Lock files may remain on disk, but unlocked files are inert and
+need no stale-state cleanup.
+Filesystem/flock failures fail open, preserving the previous routing behavior.
+
+The default coordination directory is `/data/adb/modules/ZDT-D/api/t2s/locks`.
+When D2S is spawned by `zdtd`, the same path is supplied through
+`ZDTD_BACKEND_COORD_DIR` from ZDT-D's canonical API directory; this is only a
+filesystem path override and does not enable or require any D2S API listener.
+
 ## Health model adapted from T2S
 
 A local SOCKS listener being alive is not enough to become GREEN. D2S uses two
@@ -117,18 +150,24 @@ full backend TCP + SOCKS handshake again.
 
 The replacement dial is fully detached from the request path (it never adds
 latency), is bounded by the usual attempt timeouts, and only SOCKS-routed
-tunnels are cached — DIRECT is never pre-connected. Tunnels older than
-`warm_tunnel_ttl_secs` are closed instead of served, and the `warm_tunnel_hits`
-status counter makes the hit rate visible. In steady state the number of
-upstream connects per request is unchanged; only the final replacement before
-an idle gap can go unused.
+tunnels are cached — DIRECT is never pre-connected. Expired entries are removed
+one-by-one, so an old queue head can no longer discard a fresher replacement
+behind it. The `warm_tunnel_hits` status counter makes the hit rate visible.
 
-On top of the reactive cache, a backend that transitions into GREEN (initial
-verification or recovery) immediately pre-connects one tunnel to the hottest
-recently used DNS target. Without this, every recovery made the first DNS
-requests slow until the transport session warmed up — now the warm path is
-ready before the first query arrives. The preconnect re-checks that the
-backend is still selectable after its dial and silently gives up otherwise.
+On top of the reactive cache, D2S proactively refreshes up to the two hottest
+recent resolver targets at 75% of `warm_tunnel_ttl_secs` (45 s with the default
+60 s TTL). This maintenance runs only while real DNS activity for the target is
+recent; by default it stops after three TTL windows, so long idle periods cause
+no continuing network wakeups. A proactive refresh atomically replaces older
+idle tunnels with the newly-established one and never uses DIRECT fallback.
+Background warm failures and coordination contention do not downgrade backend
+health; strict probes and real foreground DNS remain the health sources of truth.
+
+A backend that transitions into GREEN (initial verification or recovery) also
+pre-connects one tunnel to the hottest *recent* DNS target. Without this, every
+recovery made the first DNS requests slow until the transport session warmed up.
+The preconnect re-checks that the backend is still selectable after its dial and
+silently gives up otherwise.
 
 ### DNS-path fitness of backends
 
@@ -192,7 +231,9 @@ required.
 The health scheduler itself is event-driven: instead of waking once per second,
 it sleeps until the earliest `next_probe` deadline and is woken immediately by
 runtime/relay failure signals, so failure responsiveness is unchanged while a
-fully idle D2S no longer burns periodic CPU wakeups. A GREEN backend that is
+fully idle D2S no longer burns periodic CPU wakeups. Warm-tunnel maintenance is
+separate and deliberately finite: it only runs inside the recent-DNS activity
+window described above, then stops scheduling network refreshes. A GREEN backend that is
 actively serving real DNSCrypt traffic also skips its scheduled cheap Light
 check: a successful runtime CONNECT proves strictly more than a SOCKS-only
 reachability probe. Strict Full Internet verification keeps its own long

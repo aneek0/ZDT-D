@@ -1,6 +1,6 @@
 //! ZDT-D TPROXY backend for t2s-aware routing.
 //! The production t2s path now calls the real `apply` function through
-//! `programs::common::apply_t2s_routing`; if the device/kernel cannot support
+//! `network::t2s::apply_t2s_routing`; if the device/kernel cannot support
 //! TPROXY, the caller falls back to the standard DNAT backend.
 #![allow(dead_code)]
 
@@ -8,11 +8,11 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path, time::Duration};
 
-use crate::{settings, shell::Capture, xtables_lock};
+use crate::{settings, common::process::shell::Capture, iptables::lock as xtables_lock};
 use super::iptables_port::{IptablesDpiOptions, ProtoChoice};
 
 /// Legacy compatibility entrypoint for stale callers.
-/// New t2s routing should use `programs::common::apply_t2s_routing`, which
+/// New t2s routing should use `network::t2s::apply_t2s_routing`, which
 /// tries the real TPROXY backend and then falls back to DNAT when unsupported.
 pub fn apply_or_fallback(
     uid_file: &Path,
@@ -127,7 +127,7 @@ fn ipt_runv_timeout(args: &[String], capture: Capture, timeout: Duration) -> Res
 }
 
 fn ip_run_timeout(args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
-    crate::shell::run_timeout("ip", args, capture, timeout)
+    crate::common::process::shell::run_timeout("ip", args, capture, timeout)
 }
 
 fn tproxy_no_path() -> std::path::PathBuf {
@@ -324,7 +324,15 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
         unsupported(msg)
     })?;
 
-    let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw).map_err(failed)?;
+    // As in the NAT fallback, normalize only OperaProxy's rule interfaces;
+    // scope_label() below keeps the raw value for stable cleanup and fwmark.
+    let normalized_ifaces = if uid_file.starts_with(crate::programs::registry::working_program_dir("operaproxy").join("app/out")) {
+        ifaces_raw.map(|raw| crate::common::network::normalize_app_slot_iface(uid_file, raw))
+    } else {
+        None
+    };
+    let rule_ifaces = normalized_ifaces.as_deref().or(ifaces_raw);
+    let (mode, ifaces, invalid) = normalize_ifaces(rule_ifaces).map_err(failed)?;
     if !invalid.is_empty() {
         warn!("TPROXY: invalid ifaces skipped: {:?}", invalid);
     }
@@ -340,7 +348,7 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
     if uids.is_empty() {
         warn!("TPROXY: no valid UIDs in file: {} (remove scoped chains)", uid_file.display());
         cleanup_scope_by_label(&scope).map_err(failed)?;
-        crate::runtime_refresh::register_tproxy(uid_file, dest_port, proto_choice, ifaces_raw, opt, mark, ROUTE_TABLE);
+        crate::runtime::refresh::register_tproxy(uid_file, dest_port, proto_choice, ifaces_raw, opt, mark, ROUTE_TABLE);
         return Ok(());
     }
 
@@ -381,7 +389,7 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
     // cannot leak straight out over IPv6 and instead falls back to IPv4 (which
     // is what gets TPROXY'd).  Best-effort: never fail the whole apply on it.
     apply_ipv6_block(&scope, &uids);
-    crate::runtime_refresh::register_tproxy(uid_file, dest_port, proto_choice, ifaces_raw, opt, mark, ROUTE_TABLE);
+    crate::runtime::refresh::register_tproxy(uid_file, dest_port, proto_choice, ifaces_raw, opt, mark, ROUTE_TABLE);
     info!("TPROXY applied uid_file={} dest_port={} mark={} table={}", uid_file.display(), dest_port, mark_hex(mark), ROUTE_TABLE);
     Ok(())
 }
@@ -696,7 +704,7 @@ fn apply_ipv6_block(scope: &str, uids: &[String]) {
 }
 
 fn list_ip6_filter_chains_with_prefix(prefix: &str) -> Vec<String> {
-    let Ok((0, out)) = crate::shell::run_timeout("ip6tables-save", &["-t", "filter"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
+    let Ok((0, out)) = crate::common::process::shell::run_timeout("ip6tables-save", &["-t", "filter"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
         return Vec::new();
     };
     out.lines()
@@ -752,7 +760,7 @@ pub fn cleanup_all() -> Result<()> {
 }
 
 fn list_mangle_chains_with_prefix(prefix: &str) -> Vec<String> {
-    let Ok((0, out)) = crate::shell::run_timeout("iptables-save", &["-t", "mangle"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
+    let Ok((0, out)) = crate::common::process::shell::run_timeout("iptables-save", &["-t", "mangle"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
         return Vec::new();
     };
     out.lines()
@@ -910,28 +918,21 @@ fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Ve
 }
 
 fn iface_exists(name: &str) -> bool {
-    // `foo+` is the iptables interface wildcard: valid while at least one
-    // interface matches the prefix (mobile bearers appear and disappear).
+    // A wildcard is valid even while no matching bearer exists; installing it
+    // now covers the interface when mobile data comes back up.
     if let Some(prefix) = name.strip_suffix('+') {
-        return fs::read_dir("/sys/class/net")
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter_map(|e| e.file_name().to_str().map(str::to_owned))
-                    .any(|n| n.starts_with(prefix))
-            })
-            .unwrap_or(false);
+        return !prefix.is_empty();
     }
-    if crate::shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
-    if crate::shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
+    if crate::common::process::shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
+    if crate::common::process::shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     std::path::Path::new("/sys/class/net").join(name).is_dir()
 }
 
 fn detect_default_iface() -> Result<Option<String>> {
-    if let Ok((c,out)) = crate::shell::run("ip", &["route","get","8.8.8.8"], Capture::Stdout) {
+    if let Ok((c,out)) = crate::common::process::shell::run("ip", &["route","get","8.8.8.8"], Capture::Stdout) {
         if c == 0 { if let Some(dev) = parse_dev_from_route(&out) { return Ok(Some(dev)); } }
     }
-    if let Ok((c,out)) = crate::shell::run("ip", &["route"], Capture::Stdout) {
+    if let Ok((c,out)) = crate::common::process::shell::run("ip", &["route"], Capture::Stdout) {
         if c == 0 { if let Some(dev) = parse_default_dev(&out) { return Ok(Some(dev)); } }
     }
     if let Ok(rd) = fs::read_dir("/sys/class/net") {

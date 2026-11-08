@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
-use crate::{settings, shell::{self, Capture}, xtables_lock};
+use crate::{settings, common::process::shell::{self, Capture}, iptables::lock as xtables_lock};
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(2);
 const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(5);
@@ -85,7 +85,16 @@ fn allow_loopback_redirect_enabled() -> bool {
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: IptablesDpiOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
     let allow_loopback_redirect = allow_loopback_redirect_enabled();
-    let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
+    // OperaProxy owns these mobile/Wi-Fi slots. Other NAT consumers retain
+    // their exact configured interface behavior. Scope and snapshots below
+    // deliberately keep `ifaces_raw`, not the normalized rule value.
+    let normalized_ifaces = if uid_file.starts_with(crate::programs::registry::working_program_dir("operaproxy").join("app/out")) {
+        ifaces_raw.map(|raw| crate::common::network::normalize_app_slot_iface(uid_file, raw))
+    } else {
+        None
+    };
+    let rule_ifaces = normalized_ifaces.as_deref().or(ifaces_raw);
+    let (mode, ifaces, invalid) = normalize_ifaces(rule_ifaces)?;
     if !invalid.is_empty() {
         warn!("DPI: invalid ifaces skipped: {:?}", invalid);
     }
@@ -111,7 +120,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         if allow_loopback_redirect {
             remove_nat_scoped_chain(&scoped_nat_chain_name(&format!("local:{scope}")), "NAT_DPI_LOCAL")?;
         }
-        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+        crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -144,7 +153,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         if let Some(chain) = scoped_local_chain.as_deref() {
             finish_nat_scoped_chain(chain)?;
         }
-        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+        crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -205,7 +214,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
     if let Some(chain) = scoped_local_chain.as_deref() {
         finish_nat_scoped_chain(chain)?;
     }
-    crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+    crate::runtime::refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
     Ok(())
 }
 
@@ -286,17 +295,11 @@ fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Ve
 }
 
 fn iface_exists(name: &str) -> bool {
-    // `foo+` is the iptables interface wildcard: valid while at least one
-    // interface matches the prefix (mobile bearers appear and disappear).
+    // Keep a syntactically valid wildcard even while its bearer is down. It
+    // starts matching when Android recreates the interface; falling back to
+    // the current default route here could incorrectly select Wi-Fi.
     if let Some(prefix) = name.strip_suffix('+') {
-        return fs::read_dir("/sys/class/net")
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter_map(|e| e.file_name().to_str().map(str::to_owned))
-                    .any(|n| n.starts_with(prefix))
-            })
-            .unwrap_or(false);
+        return !prefix.is_empty();
     }
     if shell::run("ip", &["link","show",name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }
     if shell::run("ifconfig", &[name], Capture::None).map(|(c,_)| c==0).unwrap_or(false) { return true; }

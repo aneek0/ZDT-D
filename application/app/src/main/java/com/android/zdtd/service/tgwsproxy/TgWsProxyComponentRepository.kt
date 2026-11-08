@@ -278,14 +278,8 @@ class TgWsProxyComponentRepository(
         return runCatching { JSONObject(raw).optString("installed_version", "") }.getOrDefault("")
     }
 
-    private fun selectAbi(): String? {
-        val supported = Build.SUPPORTED_ABIS.toList()
-        return when {
-            supported.contains("arm64-v8a") -> "arm64-v8a"
-            supported.contains("armeabi-v7a") -> "armeabi-v7a"
-            else -> null
-        }
-    }
+    private fun selectAbi(): String? =
+        "arm64-v8a".takeIf { Build.SUPPORTED_ABIS.contains(it) }
 
     private fun componentDir(): File = File(context.cacheDir, COMPONENT_CACHE_DIR)
 
@@ -312,7 +306,7 @@ class TgWsProxyComponentRepository(
         private const val MODULE_BIN_DIR = "/data/adb/modules/ZDT-D/bin"
         const val MODULE_BIN_PATH = "$MODULE_BIN_DIR/$BINARY_NAME"
         private const val COMPONENT_INFO_PATH = "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/component.json"
-        private const val DOWNLOAD_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/tg_ws_proxy.zip"
+        private const val DOWNLOAD_URL = "https://github.com/aneek0/ZDT-D/releases/download/Technical_Assets/tg_ws_proxy.zip"
         private const val MIN_EXPECTED_ARCHIVE_BYTES = 128_000L
         private const val MIN_EXPECTED_BINARY_BYTES = 64_000L
         private const val PROGRESS_EMIT_BYTES = 256L * 1024L
