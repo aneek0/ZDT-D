@@ -5,7 +5,7 @@ pub(crate) mod support;
 mod routes;
 
 pub use server::serve;
-pub(crate) use support::apps::{any_program_enabled, find_enabled_app_overlaps, EnabledAppList};
+pub(crate) use support::apps::{any_program_enabled, find_enabled_app_overlaps, format_enabled_app_overlaps};
 use cache::API_SLOW_WARN_THRESHOLD;
 use http::{is_authorized, parse_http_request, write_empty_404};
 

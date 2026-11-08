@@ -90,7 +90,7 @@ fun ProfileScreen(
     when (tab) {
       0 -> {
         if (programId == "nfqws" || programId == "nfqws2") {
-          NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost, programs = programs)
+          NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost)
         } else {
           AppListPickerCard(
             title = stringResource(R.string.apps_common_title),
@@ -98,7 +98,6 @@ fun ProfileScreen(
             path = "$pfx/apps/user",
             actions = actions,
             snackHost = snackHost,
-            programs = programs,
           )
         }
       }

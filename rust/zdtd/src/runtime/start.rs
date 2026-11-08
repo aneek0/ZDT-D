@@ -54,8 +54,21 @@ pub fn start_full() -> Result<()> {
 
     settings::ensure_minimal_program_layouts()?;
     crate::runtime::sanitize::sanitize_runtime_files_best_effort();
+    let adopt_existing_runtime = can_adopt_existing_runtime();
+    if let Err(error) = validate_no_profile_app_overlap() {
+        if adopt_existing_runtime {
+            // Do not leave an unsafe runtime alive behind an OFF/error API state.
+            match stop_full(true) {
+                Ok(()) => {
+                    let _ = crate::platform::android::notification::send_app_state(false);
+                }
+                Err(cleanup_error) => log::error!("overlap rejection cleanup failed: {cleanup_error:#}"),
+            }
+        }
+        return Err(error);
+    }
 
-    if can_adopt_existing_runtime() {
+    if adopt_existing_runtime {
         crate::features::captive_portal::sync_from_settings_best_effort();
         final_sync_runtime_settings_best_effort("adopted runtime");
         crate::runtime::state::write_running(false, true).ok();
@@ -100,7 +113,6 @@ pub fn start_full() -> Result<()> {
     if start_plan_had_warning {
         mark_start_partial();
     }
-    validate_no_profile_app_overlap()?;
 
     crate::logging::user_info("Подготовка: восстановление базовых iptables");
     // Restore baseline iptables before applying rules (prevents leftovers between starts).
@@ -396,34 +408,16 @@ if !any_main_service_running(&runtime_plan) {
     Ok(())
 }
 
-/// The app-list rule, enforced once per start and applied to every program
-/// alike: two *different* enabled lists must never claim the same application.
-///
-/// Assigning an app to a second list stays free, so this cannot be enforced at
-/// assignment or enable time without rejecting legitimate setups. Reading the
-/// lists from disk here covers every way a start can happen — the app,
-/// autostart, the API, boot — including lists written by hand, and it runs
-/// before any program starts so nothing half-applies its routing.
-/// No program is named: the rule is over enabled lists, not program ids.
+/// Assignment stays free; every enabled runtime path rejects actual routing
+/// overlaps before it can claim the same package through two profiles.
 fn validate_no_profile_app_overlap() -> Result<()> {
-    let overlaps = crate::api::find_enabled_app_overlaps();
-    if let Some((left, right, count)) = overlaps.first() {
-        // User-visible: without this the app only sees a generic start failure
-        // and has no way to tell which two lists to fix.
-        crate::logging::user_error(&format!(
-            "Ошибка запуска: списки '{}' и '{}' содержат одинаковые приложения ({}) — отключите один из них",
-            left.label(),
-            right.label(),
-            count
-        ));
-        bail!(
-            "app lists '{}' and '{}' share {} app(s): disable one or remove overlap",
-            left.label(),
-            right.label(),
-            count
-        );
+    let overlaps = crate::api::find_enabled_app_overlaps()?;
+    if overlaps.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    let details = crate::api::format_enabled_app_overlaps(&overlaps);
+    crate::logging::user_app_overlap_error(&details);
+    bail!("enabled app lists overlap: {details}; disable one conflicting profile or remove the duplicates");
 }
 
 fn final_sync_runtime_settings_best_effort(context: &str) {

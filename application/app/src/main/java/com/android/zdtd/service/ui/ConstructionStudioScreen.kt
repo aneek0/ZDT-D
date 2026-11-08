@@ -713,7 +713,6 @@ fun ConstructionStudioScreen(
       group = group,
       programName = displayProgramName(programs, group.programId),
       actions = actions,
-      programs = programs,
       onSaved = { requestTraffic() },
       onDismiss = { selectedGroup = null },
     )
@@ -723,7 +722,6 @@ fun ConstructionStudioScreen(
       vpn = vpn,
       programName = displayProgramName(programs, vpn.ownerProgram),
       actions = actions,
-      programs = programs,
       onSaved = { requestTraffic() },
       onDismiss = { selectedVpn = null },
     )
@@ -1755,7 +1753,6 @@ private fun StudioAppsBottomSheet(
   group: StudioAppGroup,
   programName: String,
   actions: ZdtdActions,
-  programs: List<ApiModels.Program>,
   onSaved: () -> Unit,
   onDismiss: () -> Unit,
 ) {
@@ -1796,13 +1793,12 @@ private fun StudioAppsBottomSheet(
       title = stringResource(R.string.construction_studio_edit_list_title, activePickerTitle),
       path = targetPath,
       actions = actions,
-      programs = programs,
       initialSelected = activePickerPackages,
       onDismiss = {
         pickerTarget = null
         showSinglePicker = false
       },
-      onSave = { newSel, removalsByPath ->
+      onSave = { newSel ->
         pickerTarget = null
         showSinglePicker = false
         saving = true
@@ -1815,11 +1811,7 @@ private fun StudioAppsBottomSheet(
             onSaved()
           }
         }
-        if (removalsByPath.isEmpty()) {
-          actions.saveText(targetPath, payload, done)
-        } else {
-          actions.saveAppListResolvingConflicts(targetPath, payload, removalsByPath, done)
-        }
+        actions.saveText(targetPath, payload, done)
       },
     )
   }
@@ -1942,7 +1934,6 @@ private fun VpnAppsBottomSheet(
   vpn: ApiModels.VpnTraffic,
   programName: String,
   actions: ZdtdActions,
-  programs: List<ApiModels.Program>,
   onSaved: () -> Unit,
   onDismiss: () -> Unit,
 ) {
@@ -1961,10 +1952,9 @@ private fun VpnAppsBottomSheet(
       title = stringResource(R.string.construction_studio_edit_list_title, programNodeTitle(programName, vpn.profile.takeIf { it.isNotBlank() })),
       path = targetPath,
       actions = actions,
-      programs = programs,
       initialSelected = selectedPackages,
       onDismiss = { showPicker = false },
-      onSave = { newSel, removalsByPath ->
+      onSave = { newSel ->
         showPicker = false
         saving = true
         selectedPackages = newSel
@@ -1976,11 +1966,7 @@ private fun VpnAppsBottomSheet(
             onSaved()
           }
         }
-        if (removalsByPath.isEmpty()) {
-          actions.saveText(targetPath, payload, done)
-        } else {
-          actions.saveAppListResolvingConflicts(targetPath, payload, removalsByPath, done)
-        }
+        actions.saveText(targetPath, payload, done)
       },
     )
   }

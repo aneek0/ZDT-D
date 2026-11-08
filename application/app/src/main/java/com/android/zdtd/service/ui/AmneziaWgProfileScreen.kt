@@ -721,8 +721,6 @@ fun AmneziaWgProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
-      saveFailedMessage = stringResource(R.string.amneziawg_app_conflict_error),
       onSavedSelection = { appCount = it.size },
     )
 

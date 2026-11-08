@@ -1,5 +1,5 @@
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use anyhow::{Context, Result};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::{BTreeMap, BTreeSet}, fs, path::{Path, PathBuf}};
 
 use crate::{common::apps::parse_package_set, settings};
@@ -393,7 +393,7 @@ pub(in crate::api) fn validate_launch_marker_usage(content: &str, program_id: &s
     Ok(())
 }
 
-pub(in crate::api) fn validate_program_apps_content(content: &str, current_api_path: &str, program_id: &str, _slot: &str) -> Result<()> {
+pub(in crate::api) fn validate_program_apps_content(content: &str, _current_api_path: &str, program_id: &str, _slot: &str) -> Result<()> {
     validate_launch_marker_usage(content, program_id)?;
     let candidate = parse_package_set(content);
     if candidate.is_empty() { return Ok(()); }
@@ -462,14 +462,40 @@ fn read_package_set_or_empty(p: &Path) -> Result<BTreeSet<String>> {
 // One application may be assigned to as many profiles and programs as the
 // user likes, but two *different* enabled lists must never claim it at the
 // same time, because then the daemon would drive the same traffic twice.
-// Discovery walks `working_folder`, so no program id is named here.
+
+#[derive(Debug, Clone, Default)]
+struct AppListSlots {
+    common: BTreeSet<String>,
+    mobile: BTreeSet<String>,
+    wifi: BTreeSet<String>,
+}
+
+impl AppListSlots {
+    fn is_empty(&self) -> bool {
+        self.common.is_empty() && self.mobile.is_empty() && self.wifi.is_empty()
+    }
+
+    fn extend_overlap(&self, other: &Self, out: &mut BTreeSet<String>) {
+        for (left, right) in [
+            (&self.common, &other.common),
+            (&self.common, &other.mobile),
+            (&self.common, &other.wifi),
+            (&self.mobile, &other.common),
+            (&self.wifi, &other.common),
+            (&self.mobile, &other.mobile),
+            (&self.wifi, &other.wifi),
+        ] {
+            out.extend(left.intersection(right).cloned());
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct EnabledAppList {
     pub(crate) program_id: String,
     /// Empty for single-instance programs (tor, operaproxy), else the profile name.
     pub(crate) profile: String,
-    pub(crate) packages: BTreeSet<String>,
+    slots: AppListSlots,
 }
 
 impl EnabledAppList {
@@ -482,75 +508,125 @@ impl EnabledAppList {
     }
 }
 
-/// Read every enabled app list from `working_folder`, discovering programs by
-/// walking the tree instead of matching known program ids, so a rule written
-/// here applies to every program without naming any of them.
-///
-/// Two layouts exist on disk and both are discovered:
-///   - profile based: `<program>/<profile>/app/uid/*_program` (nfqws2) or
-///     `<program>/profile/<profile>/app/uid/*_program` (everything else),
-///     enabled per profile in `<program>/active.json`.
-///   - single instance: `<program>/app/uid/*_program`, enabled by
-///     `<program>/enabled.json` (tor, operaproxy).
-///
-/// `.deleted` holds trash from previous runs and is skipped.
-pub(crate) fn collect_enabled_app_lists() -> Vec<EnabledAppList> {
-    collect_enabled_app_lists_under(&crate::programs::registry::working_root())
+#[derive(Debug, Clone)]
+pub(crate) struct EnabledAppOverlap {
+    pub(crate) left: EnabledAppList,
+    pub(crate) right: EnabledAppList,
+    pub(crate) packages: Vec<String>,
 }
 
-/// [`collect_enabled_app_lists`] against an arbitrary `working_folder`, so the
-/// rule can be exercised on a scratch tree.
-fn collect_enabled_app_lists_under(root: &Path) -> Vec<EnabledAppList> {
+pub(crate) fn format_enabled_app_overlaps(overlaps: &[EnabledAppOverlap]) -> String {
+    overlaps
+        .iter()
+        .map(|item| format!("{} ↔ {}: {}", item.left.label(), item.right.label(), item.packages.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn metadata_if_present(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => match fs::symlink_metadata(path) {
+            Ok(_) => anyhow::bail!("metadata failed {}: dangling symlink or entry changed during validation", path.display()),
+            Err(link_error) if link_error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(link_error) => Err(link_error).with_context(|| format!("read link metadata {}", path.display())),
+        },
+        Err(e) => Err(e).with_context(|| format!("read metadata {}", path.display())),
+    }
+}
+
+fn read_json_if_present<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
+    if metadata_if_present(path)?.is_none() {
+        return Ok(None);
+    }
+    super::fs::read_json(path).map(Some)
+}
+
+fn read_text_if_present(path: &Path) -> Result<String> {
+    if metadata_if_present(path)?.is_none() {
+        return Ok(String::new());
+    }
+    super::fs::read_text(path)
+}
+
+
+
+/// Collect enabled lists from an arbitrary `working_folder` scratch tree.
+fn collect_enabled_app_lists_under(root: &Path) -> Result<Vec<EnabledAppList>> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(root) else { return out; };
-    for program in entries.flatten() {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
+        Err(e) => return Err(e).with_context(|| format!("read directory {}", root.display())),
+    };
+    for program in entries {
+        let program = program.with_context(|| format!("read directory entry in {}", root.display()))?;
         let program_id = program.file_name().to_string_lossy().to_string();
         let program_root = program.path();
-        if !program_root.is_dir() || program_id.starts_with('.') {
+        if !metadata_if_present(&program_root)?.is_some_and(|metadata| metadata.is_dir()) || program_id.starts_with('.') {
             continue;
         }
-        collect_program_app_lists(&program_id, &program_root, &mut out);
+        collect_program_app_lists(&program_id, &program_root, &mut out)?;
     }
     out.sort_by(|a, b| a.label().cmp(&b.label()));
-    out
+    Ok(out)
 }
 
-/// Slot files a list may keep its packages in, relative to an `app/uid` dir.
-const APP_LIST_SLOTS: [&str; 3] = ["user_program", "mobile_program", "wifi_program"];
-
-fn read_app_list_dir(uid_dir: &Path) -> BTreeSet<String> {
-    let mut pkgs = BTreeSet::new();
-    for slot in APP_LIST_SLOTS {
-        if let Ok(content) = read_text_or_empty(&uid_dir.join(slot)) {
-            pkgs.extend(parse_package_set(&content));
+fn read_app_list_dir(uid_dir: &Path, interface_slots: bool) -> Result<AppListSlots> {
+    let mut slots = AppListSlots::default();
+    for (file, packages) in [
+        ("user_program", &mut slots.common),
+        ("mobile_program", &mut slots.mobile),
+        ("wifi_program", &mut slots.wifi),
+    ] {
+        if !interface_slots && file != "user_program" {
+            continue;
         }
+        let content = read_text_if_present(&uid_dir.join(file))?;
+        packages.extend(parse_package_set(&content));
     }
-    pkgs
+    Ok(slots)
 }
 
-fn collect_program_app_lists(program_id: &str, root: &Path, out: &mut Vec<EnabledAppList>) {
+fn collect_program_app_lists(program_id: &str, root: &Path, out: &mut Vec<EnabledAppList>) -> Result<()> {
+    let interface_slots = matches!(program_id, "nfqws2" | "operaproxy");
+    let active_path = root.join("active.json");
+    let (active, mut single_enabled) = match read_json_if_present::<serde_json::Value>(&active_path)? {
+        Some(value) if value.get("profiles").is_some() => {
+            let active = serde_json::from_value::<super::model::ProfilesActive>(value)
+                .with_context(|| format!("bad JSON {}", active_path.display()))?;
+            (Some(active), false)
+        }
+        Some(value) => {
+            let active = serde_json::from_value::<super::model::EnabledActive>(value)
+                .with_context(|| format!("bad JSON {}", active_path.display()))?;
+            (None, active.enabled)
+        }
+        None => (None, false),
+    };
     let enabled = |name: &str| -> bool {
-        super::fs::read_json::<super::model::ProfilesActive>(&root.join("active.json"))
-            .map(|a| a.profiles.get(name).is_some_and(|st| st.enabled))
-            .unwrap_or(false)
+        active.as_ref().is_some_and(|a| a.profiles.get(name).is_some_and(|st| st.enabled))
     };
 
     // Single-instance program: the whole program is one list, enabled through
     // its own flag file. Both names in use on disk are accepted so that no
     // program id has to be named here.
-    let single_enabled = ["enabled.json", "active.json"].iter().any(|file| {
-        super::fs::read_json::<super::model::EnabledActive>(&root.join(file))
-            .map(|v| v.enabled)
-            .unwrap_or(false)
-    });
+    if !single_enabled {
+        single_enabled = read_json_if_present::<super::model::EnabledActive>(&root.join("enabled.json"))?
+            .is_some_and(|v| v.enabled);
+    }
     if single_enabled {
         let uid_dir = root.join("app/uid");
-        let packages = read_app_list_dir(&uid_dir);
-        if !packages.is_empty() {
+        let slots = if metadata_if_present(&uid_dir)?.is_some_and(|metadata| metadata.is_dir()) {
+            read_app_list_dir(&uid_dir, interface_slots)?
+        } else {
+            AppListSlots::default()
+        };
+        if !slots.is_empty() {
             out.push(EnabledAppList {
                 program_id: program_id.to_string(),
                 profile: String::new(),
-                packages,
+                slots,
             });
         }
     }
@@ -558,49 +634,75 @@ fn collect_program_app_lists(program_id: &str, root: &Path, out: &mut Vec<Enable
     // Profile based: `<program>/<profile>/app/uid` (nfqws2) and
     // `<program>/profile/<profile>/app/uid` (the rest). Both are walked.
     for container in [root.to_path_buf(), root.join("profile")] {
-        let Ok(profiles) = std::fs::read_dir(&container) else { continue; };
-        for entry in profiles.flatten() {
+        if !metadata_if_present(&container)?.is_some_and(|metadata| metadata.is_dir()) {
+            continue;
+        }
+        let profiles = match std::fs::read_dir(&container) {
+            Ok(profiles) => profiles,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e).with_context(|| format!("read directory {}", container.display())),
+        };
+        for entry in profiles {
+            let entry = entry.with_context(|| format!("read directory entry in {}", container.display()))?;
             let profile = entry.file_name().to_string_lossy().to_string();
             if profile.starts_with('.') {
                 continue;
             }
-            let uid_dir = entry.path().join("app/uid");
-            if !uid_dir.is_dir() || !enabled(&profile) {
+            let profile_dir = entry.path();
+            if !metadata_if_present(&profile_dir)?.is_some_and(|metadata| metadata.is_dir()) {
                 continue;
             }
-            let packages = read_app_list_dir(&uid_dir);
-            if packages.is_empty() {
+            let uid_dir = profile_dir.join("app/uid");
+            if !metadata_if_present(&uid_dir)?.is_some_and(|metadata| metadata.is_dir()) || !enabled(&profile) {
+                continue;
+            }
+            if program_id == "myprogram" {
+                let setting = read_json_if_present::<crate::programs::myprogram::ProfileSetting>(
+                    &entry.path().join("setting.json"),
+                )?;
+                if !setting.is_some_and(|value| value.apps_mode) {
+                    continue;
+                }
+            }
+            let slots = read_app_list_dir(&uid_dir, interface_slots)?;
+            if slots.is_empty() {
                 continue;
             }
             out.push(EnabledAppList {
                 program_id: program_id.to_string(),
                 profile,
-                packages,
+                slots,
             });
         }
     }
+    Ok(())
 }
 
-/// The single app-list rule. A list compared against itself is not a pair, so
-/// re-enabling the list that already holds an app never trips the rule.
-pub(crate) fn find_enabled_app_overlaps() -> Vec<(EnabledAppList, EnabledAppList, usize)> {
+/// Find every pair of distinct enabled profiles that claims the same package
+/// in a compatible routing slot. Re-enabling one list never compares it to itself.
+pub(crate) fn find_enabled_app_overlaps() -> Result<Vec<EnabledAppOverlap>> {
     find_enabled_app_overlaps_under(&crate::programs::registry::working_root())
 }
 
 /// [`find_enabled_app_overlaps`] against an arbitrary `working_folder`, so the
 /// rule can be exercised on a scratch tree.
-fn find_enabled_app_overlaps_under(root: &Path) -> Vec<(EnabledAppList, EnabledAppList, usize)> {
-    let lists = collect_enabled_app_lists_under(root);
+fn find_enabled_app_overlaps_under(root: &Path) -> Result<Vec<EnabledAppOverlap>> {
+    let lists = collect_enabled_app_lists_under(root)?;
     let mut out = Vec::new();
     for i in 0..lists.len() {
         for j in (i + 1)..lists.len() {
-            let common = lists[i].packages.intersection(&lists[j].packages).count();
-            if common > 0 {
-                out.push((lists[i].clone(), lists[j].clone(), common));
+            let mut packages = BTreeSet::new();
+            lists[i].slots.extend_overlap(&lists[j].slots, &mut packages);
+            if !packages.is_empty() {
+                out.push(EnabledAppOverlap {
+                    left: lists[i].clone(),
+                    right: lists[j].clone(),
+                    packages: packages.into_iter().collect(),
+                });
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// True when at least one program would start something: a profile is
@@ -652,4 +754,259 @@ fn any_program_enabled_under(root: &Path) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod app_list_rule_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "zdtd-app-list-rule-{name}-{}-{id}",
+                std::process::id(),
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn put(&self, relative: &str, content: &str) {
+            let path = self.0.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn malformed_active_json_is_an_error() {
+        let scratch = Scratch::new("malformed-active");
+        scratch.put("nfqws2/active.json", "not json");
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[test]
+    fn mobile_and_wifi_lists_do_not_overlap() {
+        let scratch = Scratch::new("split-interfaces");
+        scratch.put(
+            "nfqws2/active.json",
+            r#"{"profiles":{"one":{"enabled":true},"two":{"enabled":true}}}"#,
+        );
+        scratch.put("nfqws2/one/app/uid/mobile_program", "com.example.app\n");
+        scratch.put("nfqws2/two/app/uid/wifi_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        assert!(overlaps.is_empty(), "mobile and Wi-Fi routes use different interfaces: {overlaps:?}");
+    }
+
+    #[test]
+    fn myprogram_without_apps_mode_does_not_claim_packages() {
+        let scratch = Scratch::new("myprogram-disabled-apps");
+        scratch.put("myprogram/active.json", r#"{"profiles":{"custom":{"enabled":true}}}"#);
+        scratch.put("myprogram/profile/custom/setting.json", r#"{"apps_mode":false}"#);
+        scratch.put("myprogram/profile/custom/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        assert!(overlaps.is_empty(), "apps_mode=false does not install UID routing: {overlaps:?}");
+    }
+
+    #[test]
+    fn reports_every_pair_and_shared_package() {
+        let scratch = Scratch::new("conflict-details");
+        scratch.put(
+            "nfqws2/active.json",
+            r#"{"profiles":{"one":{"enabled":true},"two":{"enabled":true}}}"#,
+        );
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/two/app/uid/user_program", "com.example.app\n");
+        scratch.put("mihomo/active.json", r#"{"profiles":{"vpn":{"enabled":true}}}"#);
+        scratch.put("mihomo/profile/vpn/app/uid/user_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        assert_eq!(overlaps.len(), 3);
+        assert!(overlaps.iter().all(|item| item.packages == ["com.example.app"]));
+        assert_eq!(format_enabled_app_overlaps(&overlaps), "mihomo/vpn ↔ nfqws2/one: com.example.app; mihomo/vpn ↔ nfqws2/two: com.example.app; nfqws2/one ↔ nfqws2/two: com.example.app");
+    }
+
+    #[test]
+    fn disabled_duplicate_lists_are_allowed() {
+        let scratch = Scratch::new("disabled-duplicate");
+        scratch.put(
+            "nfqws2/active.json",
+            r#"{"profiles":{"one":{"enabled":true},"two":{"enabled":false}}}"#,
+        );
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/two/app/uid/user_program", "com.example.app\n");
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn common_and_matching_slots_conflict_without_cross_interface_false_positive() {
+        let scratch = Scratch::new("slot-matrix");
+        scratch.put(
+            "nfqws2/active.json",
+            r#"{"profiles":{"base":{"enabled":true},"mobile":{"enabled":true},"wifi":{"enabled":true}}}"#,
+        );
+        scratch.put("nfqws2/base/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/mobile/app/uid/mobile_program", "com.example.app\n");
+        scratch.put("nfqws2/wifi/app/uid/wifi_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        let labels = overlaps.iter().map(|item| (item.left.label(), item.right.label())).collect::<Vec<_>>();
+        assert_eq!(labels, vec![
+            ("nfqws2/base".into(), "nfqws2/mobile".into()),
+            ("nfqws2/base".into(), "nfqws2/wifi".into()),
+        ]);
+    }
+
+    #[test]
+    fn one_profile_is_not_compared_to_itself() {
+        let scratch = Scratch::new("self-list");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/one/app/uid/mobile_program", "com.example.app\n");
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn single_instance_layout_participates() {
+        let scratch = Scratch::new("single-instance");
+        scratch.put("tor/enabled.json", r#"{"enabled":true}"#);
+        scratch.put("tor/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        assert_eq!(overlaps.len(), 1);
+        assert_eq!(overlaps[0].left.label(), "nfqws2/one");
+        assert_eq!(overlaps[0].right.label(), "tor");
+    }
+
+    #[test]
+    fn myprogram_with_apps_mode_claims_packages() {
+        let scratch = Scratch::new("myprogram-enabled-apps");
+        scratch.put("myprogram/active.json", r#"{"profiles":{"custom":{"enabled":true}}}"#);
+        scratch.put("myprogram/profile/custom/setting.json", r#"{"apps_mode":true}"#);
+        scratch.put("myprogram/profile/custom/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        assert_eq!(find_enabled_app_overlaps_under(&scratch.0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn app_list_read_failures_are_errors() {
+        let scratch = Scratch::new("unreadable-list");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        fs::create_dir_all(scratch.0.join("nfqws2/one/app/uid/user_program")).unwrap();
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[test]
+    fn enabled_profile_without_app_list_counts_as_start_intent() {
+        let scratch = Scratch::new("empty-enabled-profile");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        fs::create_dir_all(scratch.0.join("nfqws2/one")).unwrap();
+
+        assert!(any_program_enabled_under(&scratch.0));
+    }
+
+    #[test]
+    fn byedpi_does_not_claim_nfqws_only_interface_slots() {
+        let scratch = Scratch::new("byedpi-stale-slots");
+        scratch.put("byedpi/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("byedpi/one/app/uid/mobile_program", "com.example.app\n");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn operaproxy_active_json_is_single_instance_state() {
+        let scratch = Scratch::new("operaproxy-active");
+        scratch.put("operaproxy/active.json", r#"{"enabled":true}"#);
+        scratch.put("operaproxy/app/uid/user_program", "com.example.app\n");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        let overlaps = find_enabled_app_overlaps_under(&scratch.0).unwrap();
+        assert_eq!(overlaps.len(), 1);
+        assert_eq!(overlaps[0].right.label(), "operaproxy");
+    }
+
+    #[test]
+    fn invalid_profile_enabled_value_is_an_error() {
+        let scratch = Scratch::new("invalid-enabled-value");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":"yes"}}}"#);
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_active_symlink_is_an_error() {
+        let scratch = Scratch::new("dangling-active");
+        fs::create_dir_all(scratch.0.join("nfqws2/one/app/uid")).unwrap();
+        scratch.put("nfqws2/one/app/uid/user_program", "com.example.app\n");
+        std::os::unix::fs::symlink("missing-active.json", scratch.0.join("nfqws2/active.json")).unwrap();
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_app_list_symlink_is_an_error() {
+        let scratch = Scratch::new("dangling-list");
+        scratch.put("nfqws2/active.json", r#"{"profiles":{"one":{"enabled":true}}}"#);
+        fs::create_dir_all(scratch.0.join("nfqws2/one/app/uid")).unwrap();
+        std::os::unix::fs::symlink(
+            "missing-user-program",
+            scratch.0.join("nfqws2/one/app/uid/user_program"),
+        )
+        .unwrap();
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_single_instance_uid_dir_symlink_is_an_error() {
+        let scratch = Scratch::new("dangling-single-uid-dir");
+        scratch.put("tor/enabled.json", r#"{"enabled":true}"#);
+        fs::create_dir_all(scratch.0.join("tor/app")).unwrap();
+        std::os::unix::fs::symlink("missing-uid", scratch.0.join("tor/app/uid")).unwrap();
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_profile_container_symlink_is_an_error() {
+        let scratch = Scratch::new("dangling-profile-container");
+        scratch.put("mihomo/active.json", r#"{"profiles":{"vpn":{"enabled":true}}}"#);
+        std::os::unix::fs::symlink("missing-profiles", scratch.0.join("mihomo/profile")).unwrap();
+
+        assert!(find_enabled_app_overlaps_under(&scratch.0).is_err());
+    }
 }

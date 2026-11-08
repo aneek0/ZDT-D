@@ -2782,8 +2782,6 @@ fun MihomoProfileScreen(
           path = "$basePath/apps/user",
           actions = actions,
           snackHost = snackHost,
-      programs = programs,
-          saveFailedMessage = stringResource(R.string.mihomo_app_conflict_error),
           onSavedSelection = {
             selectedApps = it
             appCount = it.size

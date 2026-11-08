@@ -573,8 +573,6 @@ val ok = actions.awaitSaveJson("$basePath/setting", buildOpenVpnSettingJson(curr
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
-      programs = programs,
-      saveFailedMessage = stringResource(R.string.openvpn_app_conflict_error),
       onSavedSelection = { appCount = it.size },
     )
 
