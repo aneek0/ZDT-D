@@ -283,7 +283,7 @@ class BlockcheckRunner(
                                     trySend(BlockcheckEvent.Started(session!!))
                                 }
                                 "auto_phase" -> {
-                                    trySend(BlockcheckEvent.Phase(json.optString("phase", ""), session!!))
+                                    trySend(BlockcheckEvent.Phase(json.optString("phase", ""), session))
                                 }
                                 "auto_baseline_probe" -> {
                                     trySend(BlockcheckEvent.BaselineProbe(probe = BlockcheckBaselineProbe(

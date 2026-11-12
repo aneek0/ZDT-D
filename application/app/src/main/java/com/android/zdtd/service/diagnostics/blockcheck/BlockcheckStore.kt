@@ -94,7 +94,7 @@ data class BlockcheckStrategyResult(
 
 sealed class BlockcheckEvent {
     data class Started(val session: BlockcheckSession) : BlockcheckEvent()
-    data class Phase(val phase: String, val session: BlockcheckSession) : BlockcheckEvent()
+    data class Phase(val phase: String, val session: BlockcheckSession?) : BlockcheckEvent()
     data class BaselineProbe(val probe: BlockcheckBaselineProbe, val session: BlockcheckSession) : BlockcheckEvent()
     data class StrategyStarted(val strategy: String, val index: Int, val total: Int, val session: BlockcheckSession) : BlockcheckEvent()
     data class StrategyProbe(val probe: BlockcheckStrategyProbe, val session: BlockcheckSession) : BlockcheckEvent()
