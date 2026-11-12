@@ -346,6 +346,7 @@ fun BlockcheckScreen(
                         Text(
                             text = when {
                                 state.phase == "network" -> context.getString(R.string.blockcheck_phase_network)
+                                state.phase == "blockcheckw" || state.phase.startsWith("blockcheckw_") -> context.getString(R.string.blockcheck_phase_blockcheckw)
                                 state.phase == "baseline" -> context.getString(R.string.blockcheck_baseline)
                                 state.phase == "pass_control" -> context.getString(R.string.blockcheck_phase_pass_control)
                                 state.phase == "strategies" && state.currentStrategyIndex >= 0 ->

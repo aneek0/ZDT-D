@@ -2168,6 +2168,7 @@ APatch: 10700+</string>
     <string name="blockcheck_mode_full">Полный (все)</string>
     <string name="blockcheck_phase_network">Проверка интернета…</string>
     <string name="blockcheck_phase_pass_control">Контрольная проверка…</string>
+    <string name="blockcheck_phase_blockcheckw">Быстрый параллельный поиск…</string>
     <string name="blockcheck_confirm_baseline_open">Сейчас на этом соединении нет DPI-блокировки — без обхода ничего не блокируется. Скан всё равно запустится, но результаты будут информационными и не попадут в историю. Продолжить?</string>
     <string name="blockcheck_confirm_pass_opened">Цели открываются даже без модификации трафика — измерения ненадёжны. Продолжить?</string>
     <string name="blockcheck_confirm_continue">Продолжить</string>

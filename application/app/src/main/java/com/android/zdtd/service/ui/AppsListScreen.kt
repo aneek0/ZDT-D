@@ -319,7 +319,7 @@ private fun AnalysisToolsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .heightIn(min = if (compact) 64.dp else 70.dp)
       .then(if (entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
       .then(
         if (navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
@@ -333,19 +333,19 @@ private fun AnalysisToolsEntryCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 8.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
-        modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+        modifier = Modifier.size(if (compact) 34.dp else 38.dp),
         shape = CircleShape,
         color = accentColor.copy(alpha = 0.14f),
         contentColor = accentColor,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
+          Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(if (compact) 18.dp else 20.dp))
         }
       }
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
@@ -360,7 +360,7 @@ private fun AnalysisToolsEntryCard(
           stringResource(R.string.analysis_tools_entry_desc),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
           style = MaterialTheme.typography.bodySmall,
-          maxLines = 2,
+          maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
@@ -384,7 +384,7 @@ private fun OptionalToolsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .heightIn(min = if (compact) 64.dp else 70.dp)
       .then(if (entryFocusRequester != null) Modifier.focusRequester(entryFocusRequester) else Modifier)
       .then(
         if (navFocusRequester != null) Modifier.focusProperties { right = navFocusRequester } else Modifier,
@@ -398,19 +398,19 @@ private fun OptionalToolsEntryCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 8.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
-        modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+        modifier = Modifier.size(if (compact) 34.dp else 38.dp),
         shape = CircleShape,
         color = accentColor.copy(alpha = 0.14f),
         contentColor = accentColor,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(Icons.Outlined.Extension, contentDescription = null, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
+          Icon(Icons.Outlined.Extension, contentDescription = null, modifier = Modifier.size(if (compact) 18.dp else 20.dp))
         }
       }
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
@@ -437,7 +437,7 @@ private fun OptionalToolsEntryCard(
           stringResource(R.string.optional_tools_entry_desc),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
           style = MaterialTheme.typography.bodySmall,
-          maxLines = 2,
+          maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
@@ -457,7 +457,7 @@ private fun VpsServersEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .heightIn(min = if (compact) 64.dp else 70.dp)
       .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -467,19 +467,19 @@ private fun VpsServersEntryCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 8.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
-        modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+        modifier = Modifier.size(if (compact) 34.dp else 38.dp),
         shape = CircleShape,
         color = accentColor.copy(alpha = 0.14f),
         contentColor = accentColor,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
+          Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(if (compact) 18.dp else 20.dp))
         }
       }
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
@@ -502,7 +502,7 @@ private fun VpsServersEntryCard(
           stringResource(R.string.vps_servers_entry_desc),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
           style = MaterialTheme.typography.bodySmall,
-          maxLines = 2,
+          maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
@@ -522,7 +522,7 @@ private fun SubscriptionsEntryCard(
     modifier = Modifier
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp)
-      .heightIn(min = if (compact) 81.5.dp else 89.5.dp)
+      .heightIn(min = if (compact) 64.dp else 70.dp)
       .tvFocusHighlight(RoundedCornerShape(18.dp)),
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -531,19 +531,19 @@ private fun SubscriptionsEntryCard(
   ) {
     Row(
       modifier = Modifier.fillMaxWidth()
-        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 8.dp else 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Surface(
-        modifier = Modifier.size(if (compact) 38.dp else 44.dp),
+        modifier = Modifier.size(if (compact) 34.dp else 38.dp),
         shape = CircleShape,
         color = accentColor.copy(alpha = 0.14f),
         contentColor = accentColor,
         border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(Icons.Outlined.Public, contentDescription = null, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
+          Icon(Icons.Outlined.Public, contentDescription = null, modifier = Modifier.size(if (compact) 18.dp else 20.dp))
         }
       }
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
@@ -566,7 +566,7 @@ private fun SubscriptionsEntryCard(
           stringResource(R.string.subscriptions_entry_desc),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
           style = MaterialTheme.typography.bodySmall,
-          maxLines = 2,
+          maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
@@ -938,15 +938,21 @@ private fun ProgramCard(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-          Text(
-            title,
-            modifier = Modifier.weight(1f, fill = false),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+        Text(
+          title,
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = if (compact) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          subtitle,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = if (compact) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           ProgramBadgeRow(
             label = primaryChip,
             containerColor = if (isProfiles) {
@@ -966,13 +972,6 @@ private fun ProgramCard(
             )
           }
         }
-        Text(
-          subtitle,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-          style = MaterialTheme.typography.bodySmall,
-          maxLines = if (compact) 1 else 2,
-          overflow = TextOverflow.Ellipsis,
-        )
       }
 
       Icon(

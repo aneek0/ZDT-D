@@ -195,8 +195,16 @@ class BlockcheckRunner(
         // DEFAULT_QNUM in rust/nfqws-tester/src/main.rs.
         qnum: Int = 300,
         timeoutSecs: Int = 4,
+        // Parallel search phase via blockcheckw (tcp_https only). Null or a
+        // failed install falls back to the legacy sequential scan.
+        useBlockcheckw: Boolean = false,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
+        val blockcheckw = if (useBlockcheckw && program == "nfqws2" && protocol == "tcp_https") {
+            runCatching { BlockcheckwBinary(context).ensureInstalled().absolutePath }.getOrNull()
+        } else {
+            null
+        }
         val args = buildList {
             add("auto")
             add("--program"); add(program)
@@ -213,6 +221,9 @@ class BlockcheckRunner(
             if (http2) add("--http2")
             add("--qnum"); add(qnum.toString())
             add("--timeout"); add(timeoutSecs.toString())
+            if (blockcheckw != null) {
+                add("--blockcheckw"); add(blockcheckw)
+            }
         }
         val cmd = buildShellCommand(binary.absolutePath, args)
 
@@ -434,6 +445,13 @@ class BlockcheckRunner(
             val quoted = "'" + path.replace("'", "'\\''") + "'"
             "[ \"\$exe\" = $quoted ]"
         }
+        // Prefix globs for the cmdline prefilter: $binary*' in case-pattern
+        // syntax. Unquoted glob chars are impossible here except '[' ']' '*'
+        // '?', which no Android app path contains; quoting anyway keeps it
+        // inert even for exotic data dirs.
+        val cmdlineGlobs = paths.joinToString("|") { path ->
+            "\"" + path.replace("'", "'\\''") + "\"*"
+        }
         val binQuoted = "'" + binary.replace("'", "'\\''") + "'"
         val appPid = android.os.Process.myPid()
         val command = buildString {
@@ -442,21 +460,26 @@ class BlockcheckRunner(
             append("case \"\$link\" in pipe:\\[*\\]) pipes=\"\$pipes \$link\";; esac; done; }; ")
             if (suPid != null && suPid > 1L) append("collect_pipes /proc/$suPid; ")
             append("collect_idle() { for p in /proc/[0-9]*; do [ -r \"\$p/wchan\" ] || continue; ")
-            append("[ \"\$(cat \"\$p/wchan\")\" = sigsuspend ] || continue; ")
-            append("set -- \$(cat \"\$p/stat\" 2>/dev/null); [ \"\$4\" = $appPid ] || continue; ")
+            append("w=; IFS= read -r w < \"\$p/wchan\" 2>/dev/null || true; [ \"\$w\" = sigsuspend ] || continue; ")
+            append("s=; IFS= read -r s < \"\$p/stat\" 2>/dev/null || true; [ -n \"\$s\" ] || continue; set -- \$s; [ \"\$4\" = $appPid ] || continue; ")
             append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; ")
             append("case \"\$exe\" in /system/bin/sh|/system/bin/mksh|/bin/sh) ;; *) continue;; esac; ")
             append("collect_pipes \"\$p\"; done; }; collect_idle; ")
             // Exact executable paths only; never pkill/pgrep by a substring.
-            append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
-            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
+            // A full /proc readlink sweep spawns ~1000 toybox processes
+            // (~20ms each) and delayed the stop by ~20s; prefilter on cmdline
+            // with the shell builtin read and readlink only the candidates.
+            // cmdline args are NUL-glued, so match a path prefix.
+            append("cand=; for p in /proc/[0-9]*; do c=; IFS= read -r c < \"\$p/cmdline\" 2>/dev/null || true; [ -n \"\$c\" ] || continue; ")
+            append("case \"\$c\" in $cmdlineGlobs) cand=\"\$cand \${p#/proc/}\";; esac; done; ")
+            append("for pid in \$cand; do exe=\$(readlink \"/proc/\$pid/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
             append("if $match; then kill -TERM \"\$pid\" 2>/dev/null || true; fi; done; sleep 0.7; ")
-            append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
-            append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
+            append("for pid in \$cand; do [ -d \"/proc/\$pid\" ] || continue; exe=\$(readlink \"/proc/\$pid/exe\" 2>/dev/null) || continue; exe=\${exe% (deleted)}; ")
             append("if $match; then kill -KILL \"\$pid\" 2>/dev/null || true; fi; done; ")
             append("collect_idle; ")
             // Reap only shell wrappers holding this run's IPC pipes.
             append("for p in /proc/[0-9]*; do pid=\${p#/proc/}; ")
+            append("s=; IFS= read -r s < \"\$p/stat\" 2>/dev/null || true; [ -n \"\$s\" ] || continue; set -- \$s; [ \"\$4\" = $appPid ] || continue; ")
             append("exe=\$(readlink \"\$p/exe\" 2>/dev/null) || continue; ")
             append("case \"\$exe\" in /system/bin/sh|/system/bin/mksh|/bin/sh) ;; *) continue;; esac; ")
             append("for f in \"\$p\"/fd/*; do link=\$(readlink \"\$f\" 2>/dev/null) || continue; ")

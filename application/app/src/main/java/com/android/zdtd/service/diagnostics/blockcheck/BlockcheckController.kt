@@ -131,6 +131,7 @@ object BlockcheckController {
                     stopOnFirst = request.stopOnFirst,
                     http2 = request.http2,
                     historyPath = BlockcheckHistory(appContext).path(),
+                    useBlockcheckw = true,
                 ).collect { event -> apply(appContext, request, event) }
             } finally {
                 // Only the current run may clear state or drop the service: a

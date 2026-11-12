@@ -561,6 +561,18 @@ jobs:
           fi
           chmod 755 application/app/build/generated/zdt-root-assets/main/nfqws-tester/arm64-v8a/nfqws_tester
 
+          # blockcheckw APK asset (optional): prebuilt only — it is built
+          # from the aneek0/blockcheckw fork, not from this repo's crates.
+          # Missing binary is a warning: the tester falls back to the
+          # legacy sequential scan.
+          mkdir -p application/app/build/generated/zdt-root-assets/main/blockcheckw/arm64-v8a
+          if [ -f prebuilt/bin/arm64-v8a/blockcheckw ]; then
+            cp prebuilt/bin/arm64-v8a/blockcheckw application/app/build/generated/zdt-root-assets/main/blockcheckw/arm64-v8a/blockcheckw
+            chmod 755 application/app/build/generated/zdt-root-assets/main/blockcheckw/arm64-v8a/blockcheckw
+          else
+            echo "::warning::blockcheckw binary missing — APK ships without the parallel search binary"
+          fi
+
       - name: Build APK
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         run: |

@@ -120,6 +120,7 @@ class BlockcheckScanService : Service() {
 
     private fun progressText(session: BlockcheckSession): String = when {
         session.phase == "network" -> getString(R.string.blockcheck_phase_network)
+        session.phase == "blockcheckw" || session.phase.startsWith("blockcheckw_") -> getString(R.string.blockcheck_phase_blockcheckw)
         session.phase == "baseline" -> getString(R.string.blockcheck_baseline)
         session.phase == "pass_control" -> getString(R.string.blockcheck_phase_pass_control)
         session.phase == "strategies" && session.currentStrategyIndex >= 0 && session.totalStrategies > 0 ->

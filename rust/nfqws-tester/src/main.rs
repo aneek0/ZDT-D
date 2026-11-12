@@ -155,6 +155,7 @@ fn entry() -> Result<()> {
                 http2,
                 qnum,
                 timeout_secs,
+                blockcheckw: parse_named_value(&args[1..], "--blockcheckw").ok(),
             };
             // SIGTERM/SIGINT (UI "stop", su teardown): die fast but let
             // run_auto's exit path clean the engine + rules first. The handler
@@ -176,7 +177,7 @@ fn print_help() {
     println!("  nfqws-tester --version");
     println!("  nfqws-tester list --program nfqws2");
     println!("  nfqws-tester start --program nfqws2 --config /path/to/file.txt [--qnum 200]");
-    println!("  nfqws-tester auto --program nfqws2 [--config FILE] [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE]");
+    println!("  nfqws-tester auto --program nfqws2 [--config FILE] [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE] [--blockcheckw /path/to/blockcheckw]");
     println!("  nfqws-tester export --program nfqws2 --protocol tcp_https|stun_voice|udp_games --id <strategy-id>");
     println!("  nfqws-tester catalog --protocol tcp_https|stun_voice|udp_games");
     println!("  nfqws-tester stop");
@@ -1206,6 +1207,9 @@ struct AutoOptions {
     http2: bool,
     qnum: u16,
     timeout_secs: u64,
+    // blockcheckw binary for the parallel search phase; env ZDT_BLOCKCHECKW
+    // is the fallback (the app always passes an explicit path).
+    blockcheckw: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2413,6 +2417,154 @@ fn nfqueue_port_filter(raw: &str, protocol: &str) -> ProtoPortFilter {
     pass_filter_for_protocol(protocol)
 }
 
+
+// ── blockcheckw search phase ────────────────────────────────────────────────
+
+/// Path to the blockcheckw binary: explicit flag wins, env is the app-level
+/// default. `None` = legacy sequential scan (no blockcheckw shipped).
+fn blockcheckw_bin(opts: &AutoOptions) -> Option<PathBuf> {
+    let path = opts
+        .blockcheckw
+        .clone()
+        .or_else(|| std::env::var("ZDT_BLOCKCHECKW").ok().filter(|v| !v.is_empty()))?;
+    let path = PathBuf::from(path);
+    path.is_file().then_some(path)
+}
+
+/// Pre-search the candidate batch with blockcheckw: one parallel engine run
+/// instead of one engine spawn per strategy.
+///
+/// Returns the reordered batch: winners (blockcheckw-verified on the first
+/// target) first in stable order, then the rest. On any failure the batch is
+/// returned unchanged — the legacy confirm loop remains the source of truth.
+fn blockcheckw_search(
+    opts: &AutoOptions,
+    strategies: &[Candidate],
+) -> Vec<Candidate> {
+    // Only the nfqws2 TCP path is covered: blockcheckw measures HTTPS with
+    // its own socket probes and would misjudge UDP/STUN verdicts.
+    if opts.program != "nfqws2" || opts.protocol != "tcp_https" {
+        return strategies.to_vec();
+    }
+    let Some(bin) = blockcheckw_bin(opts) else {
+        emit_event(&json!({
+            "type": "auto_phase", "phase": "blockcheckw_skipped",
+            "reason": "binary not found", "ts": now_unix_ms(),
+        }));
+        return strategies.to_vec();
+    };
+    emit_event(&json!({
+        "type": "auto_phase", "phase": "blockcheckw", "ts": now_unix_ms(),
+    }));
+
+    // Candidate → vanilla strategy line. Reuses the exact config the legacy
+    // loop will spawn, so the args-string is a stable identity for the
+    // reverse mapping from the blockcheckw report.
+    let host = strategies
+        .first()
+        .and_then(|_| auto_targets(opts).ok())
+        .and_then(|t| t.first().map(|t| t.host.clone()))
+        .unwrap_or_default();
+    let mut lines = String::new();
+    let mut index: Vec<String> = Vec::with_capacity(strategies.len());
+    for candidate in strategies {
+        let config_path = candidate.config_path(&opts.program);
+        let Ok(raw) = fs::read_to_string(&config_path) else {
+            continue;
+        };
+        let args = normalize_config_args(&raw);
+        let line = format!(
+            "# bcwid {}\ncurl_test_https_tls13 ipv4 {host} : nfqws2 {}\n",
+            candidate.name,
+            args.join(" ")
+        );
+        index.push(line.trim().to_string());
+        lines.push_str(&line);
+    }
+
+    let result = (|| -> Result<std::collections::HashSet<String>> {
+        ensure_work_dir()?;
+        let corpus = Path::new(WORK_DIR).join("bcw_corpus.txt");
+        fs::write(&corpus, &lines).with_context(|| format!("write {}", corpus.display()))?;
+        let report = Path::new(WORK_DIR).join("bcw_report.json");
+        let qnum = (opts.qnum + 1).to_string();
+        let output = std::process::Command::new(&bin)
+            .env("BCW_FIREWALL", "iptables")
+            .env("BCW_LOCK_PATH", format!("{WORK_DIR}/bcw.lock"))
+            .env("BCW_NFQWS2", program_bin("nfqws2"))
+            .env("BCW_LUA_FILES", LUA_INIT_FILES.iter().map(|f| format!("{LUA_DIR}/{f}")).collect::<Vec<_>>().join(":"))
+            .env("BCW_ZAPRET_BASE", "/data/adb/modules/ZDT-D/bin")
+            .env("BCW_ENGINE_UID", "0")
+            .env("BCW_ENGINE_GID", "0")
+            .env("PATH", "/system/bin")
+            .args([
+                "--embedded", "--qnum", qnum.as_str(),
+                "scan", "-d", &host,
+                "--from-file", &corpus.to_string_lossy(),
+                "--protocols", "tls13",
+                "--top", "0",
+                "--output", &report.to_string_lossy(),
+            ])
+            .output()
+            .with_context(|| format!("spawn {}", bin.display()))?;
+        if !output.status.success() {
+            bail!(
+                "blockcheckw exited {:?}: {}",
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr).chars().take(400).collect::<String>()
+            );
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json_start = stdout.find('{').context("no JSON report on stdout")?;
+        let report: serde_json::Value =
+            serde_json::from_str(&stdout[json_start..]).context("parse blockcheckw report")?;
+        Ok(report["strategies"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s["args"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    })();
+    // bcw leaves its lock/corpus/report in WORK_DIR; a stale lock would make
+    // the next run think a session is active.
+    for f in ["bcw.lock", "bcw_corpus.txt", "bcw_report.json"] {
+        let _ = fs::remove_file(Path::new(WORK_DIR).join(f));
+    }
+
+    let working_args = match result {
+        Ok(set) => set,
+        Err(err) => {
+            // blockcheckw is an accelerator, not a gate: fall back to the
+            // full legacy scan with the original order.
+            emit_event(&json!({
+                "type": "auto_phase", "phase": "blockcheckw_failed",
+                "error": format!("{err:#}"), "ts": now_unix_ms(),
+            }));
+            return strategies.to_vec();
+        }
+    };
+    emit_event(&json!({
+        "type": "auto_phase", "phase": "blockcheckw_done",
+        "found": working_args.len(), "candidates": strategies.len(),
+        "ts": now_unix_ms(),
+    }));
+
+    let mut winners: Vec<Candidate> = Vec::new();
+    let mut rest: Vec<Candidate> = Vec::new();
+    for (candidate, line) in strategies.iter().zip(index.iter()) {
+        // The report carries `nfqws2 <args>` lines; identity is the args tail.
+        let args_tail = line.rsplit(": nfqws2 ").next().unwrap_or_default();
+        if working_args.iter().any(|w| w == args_tail || w.ends_with(args_tail)) {
+            winners.push(candidate.clone());
+        } else {
+            rest.push(candidate.clone());
+        }
+    }
+    winners.extend(rest);
+    winners
+}
 fn run_auto(opts: &AutoOptions) -> Result<()> {
     let program = opts.program.as_str();
     let targets = auto_targets(opts)?;
@@ -2454,6 +2606,13 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     };
     let full = ordered.clone();
     let strategies = batch_for_mode(ordered, &opts.mode);
+    // Parallel pre-search via blockcheckw (accelerator only: legacy loop
+    // still confirms winners): reorders winners to the front.
+    let strategies = if config_mode {
+        strategies
+    } else {
+        blockcheckw_search(opts, &strategies)
+    };
     // Zapret22 stop-on-first: the batch is scanned in order; the first
     // confirmed strategy ends the main loop and its untested same-technique
     // neighbors get appended as a short follow-up batch.
