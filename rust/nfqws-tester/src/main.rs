@@ -2583,7 +2583,13 @@ fn blockcheckw_search(
         // bcw-only engine: the parallel search is the verdict source; the
         // sequential loop below only re-confirms the winners. The non-winners
         // are reported as skipped after auto_started (see run_auto).
-        return winners;
+        // Zero winners usually means the target is not blocked (baseline
+        // open): fall through to the legacy path instead of skipping the
+        // whole batch, so the baseline phase can ask the user and the run
+        // still produces informational results.
+        if !winners.is_empty() {
+            return winners;
+        }
     }
     winners.extend(rest);
     winners
