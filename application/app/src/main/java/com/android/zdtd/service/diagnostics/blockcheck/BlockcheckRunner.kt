@@ -198,6 +198,9 @@ class BlockcheckRunner(
         // Parallel search phase via blockcheckw (tcp_https only). Null or a
         // failed install falls back to the legacy sequential scan.
         useBlockcheckw: Boolean = false,
+        // bcw-only engine: skip what the parallel search rejected instead of
+        // scanning it sequentially (winners still get confirmed).
+        bcwOnly: Boolean = false,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
         val blockcheckw = if (useBlockcheckw && program == "nfqws2" && protocol == "tcp_https") {
@@ -223,6 +226,7 @@ class BlockcheckRunner(
             add("--timeout"); add(timeoutSecs.toString())
             if (blockcheckw != null) {
                 add("--blockcheckw"); add(blockcheckw)
+                if (bcwOnly) add("--bcw-only")
             }
         }
         val cmd = buildShellCommand(binary.absolutePath, args)

@@ -2132,6 +2132,7 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Jede Kandidaten-Strategie ist für dieses Ziel bereits bestätigt. Nichts zu testen</string>
+    <string name="blockcheck_bcw_no_winners">Der schnelle parallele Suchlauf fand keine funktionierende Strategie für dieses Ziel</string>
     <string name="blockcheck_error_config_no_desync">Das aktive Profil enthält keine Strategien (leer oder Ladefehler)</string>
     <string name="blockcheck_error_no_strategies">Keine Strategien für dieses Programm gefunden</string>
     <string name="blockcheck_error_config_not_found">Strategie-Konfigurationsdatei nicht gefunden</string>

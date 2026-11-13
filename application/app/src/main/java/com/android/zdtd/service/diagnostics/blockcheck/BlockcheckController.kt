@@ -26,6 +26,9 @@ data class BlockcheckRequest(
     val stopOnFirst: Boolean = false,
     /** Probe over HTTP/2 when the device curl supports it. */
     val http2: Boolean = false,
+    /** Engine: "tester" (sequential, verdict source) or "bcw" (parallel
+     *  blockcheckw pre-search decides; winners confirmed, rest skipped). */
+    val engine: String = "tester",
 )
 
 /**
@@ -132,6 +135,7 @@ object BlockcheckController {
                     http2 = request.http2,
                     historyPath = BlockcheckHistory(appContext).path(),
                     useBlockcheckw = true,
+                    bcwOnly = request.engine == "bcw",
                 ).collect { event -> apply(appContext, request, event) }
             } finally {
                 // Only the current run may clear state or drop the service: a

@@ -2232,6 +2232,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_skip_tested">Skip tested</string>
 <string name="blockcheck_stop_first">Stop on first hit</string>
 <string name="blockcheck_http2">HTTP/2 probe</string>
+<string name="blockcheck_engine_label">Engine</string>
+<string name="blockcheck_engine_tester">Sequential tester</string>
+<string name="blockcheck_engine_bcw">Parallel (blockcheckw)</string>
 <string name="blockcheck_browser_verify">Browser check</string>
 <string name="blockcheck_browser_ok">Browser: site opens</string>
 <string name="blockcheck_browser_fail">Browser: site does not open</string>
@@ -2250,6 +2253,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_fatal_address_block">Target addresses are unreachable entirely</string>
 <string name="blockcheck_fatal_network_lost">Internet connection lost during scan</string>
 <string name="blockcheck_error_all_confirmed">Every candidate strategy is already confirmed for this target. Nothing new to test</string>
+    <string name="blockcheck_bcw_no_winners">Fast parallel search found no working strategy for this target</string>
 <string name="blockcheck_error_config_no_desync">The active profile config carries no strategies (empty or failed to load)</string>
 <string name="blockcheck_error_no_strategies">No strategies found for this program</string>
 <string name="blockcheck_error_config_not_found">Strategy config file not found</string>

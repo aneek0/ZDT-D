@@ -2148,6 +2148,9 @@ APatch: 10700+</string>
     <string name="blockcheck_skip_tested">Пропустить проверенные</string>
     <string name="blockcheck_stop_first">Остановить на первой удачной</string>
     <string name="blockcheck_http2">Проба по HTTP/2</string>
+    <string name="blockcheck_engine_label">Движок</string>
+    <string name="blockcheck_engine_tester">Тестер (подробный)</string>
+    <string name="blockcheck_engine_bcw">bcw (быстрый, параллельный)</string>
     <string name="blockcheck_browser_verify">Проверить в браузере</string>
     <string name="blockcheck_browser_ok">Браузер: сайт открывается</string>
     <string name="blockcheck_browser_fail">Браузер: сайт не открывается</string>
@@ -2180,6 +2183,7 @@ APatch: 10700+</string>
     <string name="blockcheck_fatal_address_block">Адреса целей полностью недоступны</string>
     <string name="blockcheck_fatal_network_lost">Соединение потеряно во время проверки</string>
     <string name="blockcheck_error_all_confirmed">Все стратегии-кандидаты уже подтверждены для этой цели. Нечего проверять</string>
+    <string name="blockcheck_bcw_no_winners">Быстрый параллельный поиск не нашёл работающей стратегии для этой цели</string>
     <string name="blockcheck_error_config_no_desync">В конфиге активного профиля нет стратегий (пустой или не загрузился)</string>
     <string name="blockcheck_error_no_strategies">Для этой программы не найдено стратегий</string>
     <string name="blockcheck_error_config_not_found">Файл конфига стратегии не найден</string>

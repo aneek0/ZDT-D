@@ -2131,6 +2131,7 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">このターゲットに対する候補戦略はすべて確認済みです。テストするものがありません</string>
+    <string name="blockcheck_bcw_no_winners">高速並列検索でこのターゲットに機能する戦略は見つかりませんでした</string>
     <string name="blockcheck_error_config_no_desync">アクティブなプロファイルに戦略がありません（空または読み込み失敗）</string>
     <string name="blockcheck_error_no_strategies">このプログラムの戦略が見つかりません</string>
     <string name="blockcheck_error_config_not_found">戦略設定ファイルが見つかりません</string>

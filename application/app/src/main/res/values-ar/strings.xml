@@ -2136,6 +2136,7 @@ APatch: ‏10700+</string>
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">جميع الاستراتيجيات المرشحة مؤكدة بالفعل لهذا الهدف. لا شيء لاختباره</string>
+    <string name="blockcheck_bcw_no_winners">لم يجد البحث المتوازي السريع أي استراتيجية تعمل لهذا الهدف</string>
     <string name="blockcheck_error_config_no_desync">الملف النشط لا يحتوي على استراتيجيات (فارغ أو فشل التحميل)</string>
     <string name="blockcheck_error_no_strategies">لم يتم العثور على استراتيجيات لهذا البرنامج</string>
     <string name="blockcheck_error_config_not_found">ملف تكوين الاستراتيجية غير موجود</string>

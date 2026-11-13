@@ -2131,6 +2131,7 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Bu hedef için tüm aday stratejiler zaten onaylandı. Test edilecek bir şey yok</string>
+    <string name="blockcheck_bcw_no_winners">Hızlı paralel arama bu hedef için çalışan bir strateji bulamadı</string>
     <string name="blockcheck_error_config_no_desync">Aktif profilde strateji yok (boş veya yükleme hatası)</string>
     <string name="blockcheck_error_no_strategies">Bu program için strateji bulunamadı</string>
     <string name="blockcheck_error_config_not_found">Strateji yapılandırma dosyası bulunamadı</string>

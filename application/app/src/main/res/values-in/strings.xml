@@ -2131,6 +2131,7 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="blockcheck_failed">Failed</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Setiap kandidat strategi sudah dikonfirmasi untuk target ini. Tidak ada yang perlu diuji</string>
+    <string name="blockcheck_bcw_no_winners">Pencarian paralel cepat tidak menemukan strategi yang berfungsi untuk target ini</string>
     <string name="blockcheck_error_config_no_desync">Profil aktif tidak berisi strategi (kosong atau gagal dimuat)</string>
     <string name="blockcheck_error_no_strategies">Tidak ada strategi yang ditemukan untuk program ini</string>
     <string name="blockcheck_error_config_not_found">Berkas konfigurasi strategi tidak ditemukan</string>

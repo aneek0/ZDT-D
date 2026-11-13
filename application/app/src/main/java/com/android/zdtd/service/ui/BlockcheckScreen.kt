@@ -83,6 +83,9 @@ fun BlockcheckScreen(
     // probed, the rest stays fresh), browser-like HTTP/2 probe.
     var stopFirst by remember { mutableStateOf(false) }
     var http2 by remember { mutableStateOf(false) }
+    // Engine switch: "tester" = sequential verdict scan; "bcw" = parallel
+    // blockcheckw search decides, only its winners get confirmed here.
+    var engine by remember { mutableStateOf("tester") }
     // nfqws2 always scans the shipped strategy catalog; the tester runs
     // without --config, exactly like the reference (zapretgui) scan engine.
     val targetChanged = selectedProgram != entryProgram || selectedProtocol != entryProtocol
@@ -153,6 +156,7 @@ fun BlockcheckScreen(
                     skipConfirmed = skipTested,
                     stopOnFirst = stopFirst,
                     http2 = http2,
+                    engine = if (engine == "bcw" && selectedProtocol == "tcp_https" && selectedProgram == "nfqws2") "bcw" else "tester",
                 ),
             )
         }
@@ -309,6 +313,23 @@ fun BlockcheckScreen(
                         FilterChip(selected = http2, onClick = { http2 = !http2 }, label = { Text(context.getString(R.string.blockcheck_http2)) })
                     }
                     Text(
+                        context.getString(R.string.blockcheck_engine_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        FilterChip(selected = engine == "tester", onClick = { engine = "tester" }, label = { Text(context.getString(R.string.blockcheck_engine_tester)) })
+                        FilterChip(
+                            selected = engine == "bcw",
+                            onClick = { engine = "bcw" },
+                            enabled = selectedProtocol == "tcp_https" && selectedProgram == "nfqws2",
+                            label = { Text(context.getString(R.string.blockcheck_engine_bcw)) },
+                        )
+                    }
+                    Text(
                         context.getString(R.string.blockcheck_target_profile, selectedProgram, selectedProfile),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
@@ -327,6 +348,22 @@ fun BlockcheckScreen(
                         if (state.isRunning || state.isFinished || state.isError) {
                             OutlinedButton(onClick = { BlockcheckStore.reset() }) {
                                 Text(context.getString(R.string.blockcheck_reset))
+                            }
+                        }
+                    }
+                    // Next to Start: an error only reachable after scrolling
+                    // past ~90 hostlist chips was effectively invisible.
+                    if (state.isError) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(20.dp),
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text(context.getString(R.string.blockcheck_error_title), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                state.errorMessage?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
+                                }
                             }
                         }
                     }
@@ -391,17 +428,20 @@ fun BlockcheckScreen(
                                 label = { Text(context.getString(R.string.blockcheck_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                             )
                         } else if (!state.isRunning) {
-                            // Mid-run the list is not selectable anyway, and a
-                            // few hundred chips would bury the progress card
-                            // (with Stop) far below the fold.
-                            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            // Mid-run the list is not selectable anyway; two
+                            // chips per row keep ~90 hostlists scrollable.
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                maxItemsInEachRow = 2,
+                            ) {
                                 hostFiles.forEach { file ->
                                     val path = "/data/adb/modules/ZDT-D/strategic/list/$file"
                                     FilterChip(
                                         selected = selectedHostFile == path,
                                         onClick = { selectedHostFile = path },
-                                        label = { Text(file.removeSuffix(".txt")) },
-                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(file.removeSuffix(".txt"), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        modifier = Modifier.weight(1f, fill = false),
                                     )
                                 }
                             }
@@ -452,19 +492,22 @@ fun BlockcheckScreen(
             }
         }
 
-        if (state.isError) {
+        // bcw engine finished with zero winners: a plain "nothing works"
+        // banner instead of the generic empty-results card.
+        if (state.isFinished && state.stopKind == "bcw_no_winners") {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(context.getString(R.string.blockcheck_error_title), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                        state.errorMessage?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
-                        }
-                    }
+                    Text(
+                        context.getString(R.string.blockcheck_bcw_no_winners),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(14.dp),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
                 }
             }
         }
