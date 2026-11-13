@@ -135,6 +135,7 @@ fn entry() -> Result<()> {
             let skip_confirmed = args[1..].iter().any(|it| it == "--skip-confirmed");
             let stop_on_first = args[1..].iter().any(|it| it == "--stop-on-first");
             let http2 = args[1..].iter().any(|it| it == "--http2");
+            let bcw_only = args[1..].iter().any(|it| it == "--bcw-only");
             let qnum = match parse_named_value(&args[1..], "--qnum") {
                 Ok(v) => v.parse::<u16>().context("invalid --qnum")?,
                 Err(_) => DEFAULT_QNUM,
@@ -156,6 +157,7 @@ fn entry() -> Result<()> {
                 qnum,
                 timeout_secs,
                 blockcheckw: parse_named_value(&args[1..], "--blockcheckw").ok(),
+                bcw_only,
             };
             // SIGTERM/SIGINT (UI "stop", su teardown): die fast but let
             // run_auto's exit path clean the engine + rules first. The handler
@@ -177,7 +179,7 @@ fn print_help() {
     println!("  nfqws-tester --version");
     println!("  nfqws-tester list --program nfqws2");
     println!("  nfqws-tester start --program nfqws2 --config /path/to/file.txt [--qnum 200]");
-    println!("  nfqws-tester auto --program nfqws2 [--config FILE] [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE] [--blockcheckw /path/to/blockcheckw]");
+    println!("  nfqws-tester auto --program nfqws2 [--config FILE] [--protocol tcp_https|stun_voice|udp_games] [--hosts FILE] [--mode quick|standard|full] [--history FILE] [--blockcheckw /path/to/blockcheckw] [--bcw-only]");
     println!("  nfqws-tester export --program nfqws2 --protocol tcp_https|stun_voice|udp_games --id <strategy-id>");
     println!("  nfqws-tester catalog --protocol tcp_https|stun_voice|udp_games");
     println!("  nfqws-tester stop");
@@ -1210,6 +1212,10 @@ struct AutoOptions {
     // blockcheckw binary for the parallel search phase; env ZDT_BLOCKCHECKW
     // is the fallback (the app always passes an explicit path).
     blockcheckw: Option<String>,
+    // Engine switch: scan only the blockcheckw winners (the parallel search
+    // is the verdict source; the sequential loop just confirms them). The
+    // non-winners are reported as skipped, not failed.
+    bcw_only: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1279,6 +1285,12 @@ fn classify_https(rc: i32, http_code: u32, size_bytes: u64, size_header: u64) ->
 /// Mirrors zapretgui: the first failure ends the strategy, then it takes
 /// three successes, one explicit DPI failure stops, and two silent misses
 /// stop the confirmation.
+/// bcw-only runs pre-validate winners in the parallel engine: a single ok
+/// probe is the confirmation bar there.
+fn required_ok_count(bcw_only: bool) -> u32 {
+    if bcw_only { 1 } else { CONFIRM_ATTEMPTS }
+}
+
 fn confirm_attempts_done(
     ok_count: u32,
     attempts: u32,
@@ -2472,7 +2484,12 @@ fn blockcheckw_search(
         let Ok(raw) = fs::read_to_string(&config_path) else {
             continue;
         };
-        let args = normalize_config_args(&raw);
+        // bcw injects --lua-init from BCW_LUA_FILES itself; a duplicated
+        // token in the strategy args makes its profile plan fail.
+        let args: Vec<String> = normalize_config_args(&raw)
+            .into_iter()
+            .filter(|t| !t.starts_with("--lua-init="))
+            .collect();
         let line = format!(
             "# bcwid {}\ncurl_test_https_tls13 ipv4 {host} : nfqws2 {}\n",
             candidate.name,
@@ -2562,6 +2579,12 @@ fn blockcheckw_search(
             rest.push(candidate.clone());
         }
     }
+    if opts.bcw_only {
+        // bcw-only engine: the parallel search is the verdict source; the
+        // sequential loop below only re-confirms the winners. The non-winners
+        // are reported as skipped after auto_started (see run_auto).
+        return winners;
+    }
     winners.extend(rest);
     winners
 }
@@ -2622,7 +2645,52 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         if config_mode {
             bail!("the active profile config carries no --lua-desync strategies (empty or failed to load)");
         }
-        bail!("every candidate strategy is already confirmed for this target; nothing new to test");
+        // Two distinct empty outcomes: the candidate pool itself is empty
+        // (skip-confirmed dropped everything) vs. a non-empty pool whose
+        // bcw-only parallel search found no winner.
+        if full.is_empty() || !opts.bcw_only {
+            bail!("every candidate strategy is already confirmed for this target; nothing new to test");
+        }
+        // Honest empty bcw run: the UI already showed every candidate as
+        // skipped; finish normally instead of an error.
+        emit_event(&json!({
+            "type": "auto_started",
+            "ok": true,
+            "program": program,
+            "qnum": opts.qnum,
+            "protocol": opts.protocol,
+            "mode": opts.mode,
+            "source": "catalog",
+            "total_strategies": 0,
+            "total_hosts": targets.len(),
+            "hosts": targets.iter().map(|t| t.key.clone()).collect::<Vec<_>>(),
+            "strategies": [],
+            "titles": [],
+            "ts": now_unix_ms(),
+        }));
+        for candidate in &full {
+            emit_event(&json!({
+                "type": "auto_strategy_skip",
+                "strategy": candidate.name,
+                "title": candidate.title,
+                "reason": "bcw_not_winner",
+                "ts": now_unix_ms(),
+            }));
+        }
+        emit_event(&json!({
+            "type": "auto_finished",
+            "ok": true,
+            "program": program,
+            "total_strategies": 0,
+            "working": [],
+            "failed": [],
+            "interrupted": false,
+            "forced": false,
+            "stop_kind": "bcw_no_winners",
+            "ts": now_unix_ms(),
+        }));
+        let _ = cleanup_all();
+        return Ok(());
     }
     let mut total = strategies.len();
     let total_targets = targets.len();
@@ -2642,6 +2710,24 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         "titles": strategies.iter().map(|c| c.title.clone()).collect::<Vec<_>>(),
         "ts": now_unix_ms(),
     }));
+
+    // bcw-only engine: everything the parallel search rejected is reported
+    // as skipped (not failed) so history keeps no false negatives.
+    if opts.bcw_only {
+        let scanned: std::collections::BTreeSet<&str> =
+            strategies.iter().map(|c| c.name.as_str()).collect();
+        for candidate in &full {
+            if !scanned.contains(candidate.name.as_str()) {
+                emit_event(&json!({
+                    "type": "auto_strategy_skip",
+                    "strategy": candidate.name,
+                    "title": candidate.title,
+                    "reason": "bcw_not_winner",
+                    "ts": now_unix_ms(),
+                }));
+            }
+        }
+    }
 
     // Phase: network — without internet every verdict would be garbage.
     emit_event(&json!({ "type": "auto_phase", "phase": "network", "ts": now_unix_ms() }));
@@ -2934,6 +3020,42 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             crashed_out = false;
             let mut all_unreachable = !probe_keys.is_empty();
 
+            let probe_targets: Vec<&ProbeTarget> =
+                targets.iter().filter(|t| probe_keys.contains(&t.key)).collect();
+            if opts.bcw_only {
+                // bcw winners: one parallel probe sweep across all hosts
+                // (blockcheckw already validated them, volume included).
+                std::thread::scope(|scope| {
+                    let handles: Vec<_> = probe_targets
+                        .iter()
+                        .map(|target| {
+                            let ip = resolved_ips.get(&target.key).cloned().flatten();
+                            let volume_cut = baseline_volume_cut.contains(&target.key);
+                            scope.spawn(move || {
+                                (target.key.clone(), probe_with_volume(target, ip.as_ref(), opts.timeout_secs, volume_cut))
+                            })
+                        })
+                        .collect();
+                    for (i, h) in handles.into_iter().enumerate() {
+                        if shutdown_requested() {
+                            break;
+                        }
+                        let (key, outcome) = h.join().unwrap_or_else(|_| (String::new(), ProbeOutcome::failed_resolve()));
+                        if key.is_empty() {
+                            continue;
+                        }
+                        let ok = if outcome.verdict == ProbeVerdict::Ok { 1 } else { 0 };
+                        if !matches!(outcome.verdict, ProbeVerdict::Unreachable(_)) {
+                            all_unreachable = false;
+                        }
+                        if ok == 1 {
+                            confirm_times.push(outcome.time_ms);
+                        }
+                        emit_probe_event(&strategy, probe_targets[i], &outcome, 1, ok);
+                        per_target.push((key, ok, 1));
+                    }
+                });
+            } else {
             for target in &targets {
                 if shutdown_requested() {
                     break;
@@ -3004,6 +3126,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                 complete_series &= ok_count == CONFIRM_ATTEMPTS && attempts == CONFIRM_ATTEMPTS;
                 per_target.push((target.key.clone(), ok_count, attempts));
             }
+            }
 
             stop_child(&mut child);
             let _ = cleanup_test_rules();
@@ -3054,7 +3177,8 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
 
         // Per-target results over the probed targets: 3/3 = confirmed open,
         // 1-2 = unstable, 0 = still blocked.
-        let confirmed_open = per_target.iter().filter(|(_, ok, _)| *ok == CONFIRM_ATTEMPTS).count() as u32;
+        // bcw winners arrive pre-validated: 1 ok probe counts as confirmed.
+        let confirmed_open = per_target.iter().filter(|(_, ok, _)| *ok >= required_ok_count(opts.bcw_only)).count() as u32;
         let opened_any = per_target.iter().filter(|(_, ok, _)| *ok > 0).count() as u32;
         let baseline_blocked_total = blocked_keys.len() as u32;
         let probe_total = probe_keys.len() as u32;
@@ -3117,7 +3241,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "hosts_total": total_targets as u32,
             "baseline_blocked": baseline_blocked_total,
             "hosts_opened": confirmed_open,
-            "hosts_unstable": per_target.iter().filter(|(_, ok, _)| *ok > 0 && *ok < CONFIRM_ATTEMPTS).count() as u32,
+            "hosts_unstable": per_target.iter().filter(|(_, ok, _)| *ok > 0 && *ok < required_ok_count(opts.bcw_only)).count() as u32,
             "hosts_still_blocked": per_target.iter().filter(|(_, ok, _)| *ok == 0).count() as u32,
             "attempts_ok": per_target.iter().map(|(_, ok, _)| *ok).min().unwrap_or(0),
             "attempts_total": per_target.iter().map(|(_, _, attempts)| *attempts).max().unwrap_or(0),
