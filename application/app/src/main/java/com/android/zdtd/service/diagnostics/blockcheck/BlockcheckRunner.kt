@@ -195,16 +195,18 @@ class BlockcheckRunner(
         // DEFAULT_QNUM in rust/nfqws-tester/src/main.rs.
         qnum: Int = 300,
         timeoutSecs: Int = 4,
-        // Parallel search phase via blockcheckw (tcp_https only). Null or a
-        // failed install falls back to the legacy sequential scan.
+        // Parallel search phase via blockcheckw (tcp_https only). A missing
+        // module binary falls back to the legacy sequential scan.
         useBlockcheckw: Boolean = false,
         // bcw-only engine: skip what the parallel search rejected instead of
         // scanning it sequentially (winners still get confirmed).
         bcwOnly: Boolean = false,
     ): Flow<BlockcheckEvent> = channelFlow {
         val binary = NfqwsTesterBinary(context).ensureInstalled()
+        // Shipped with the module next to the other scan binaries; absent on
+        // older modules, which makes the tester skip the phase.
         val blockcheckw = if (useBlockcheckw && program == "nfqws2" && protocol == "tcp_https") {
-            runCatching { BlockcheckwBinary(context).ensureInstalled().absolutePath }.getOrNull()
+            "$MODULE_DIR/bin/blockcheckw"
         } else {
             null
         }
@@ -516,6 +518,8 @@ class BlockcheckRunner(
 
     companion object {
         private const val TAG = "BlockcheckRunner"
+
+        private const val MODULE_DIR = "/data/adb/modules/ZDT-D"
         private const val LIST_DIR = "/data/adb/modules/ZDT-D/strategic/list"
         private const val WORKING_DIR = "/data/adb/modules/ZDT-D/working_folder"
     }

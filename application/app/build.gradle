@@ -151,6 +151,11 @@ tasks.register('prepareZdtRootAssets') {
     if (legacyBusyBoxAssetsDir.exists() && !legacyBusyBoxAssetsDir.deleteDir()) {
       throw new GradleException("Unable to remove legacy BusyBox assets: ${legacyBusyBoxAssetsDir}")
     }
+    // blockcheckw moved to the module bin dir; purge the old APK asset copy.
+    def legacyBlockcheckwAssetsDir = new File(generatedRootAssetsDir, 'blockcheckw')
+    if (legacyBlockcheckwAssetsDir.exists() && !legacyBlockcheckwAssetsDir.deleteDir()) {
+      throw new GradleException("Unable to remove legacy blockcheckw assets: ${legacyBlockcheckwAssetsDir}")
+    }
 
     if (generatedModuleZip.exists()) {
       if (generatedModuleZip.canonicalPath != zdtModuleZip.canonicalPath) {

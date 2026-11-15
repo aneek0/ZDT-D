@@ -268,6 +268,7 @@ zdt_binary_selected() {
       return 0
       ;;
     nfqws2) zdt_component_selected "nfqws2" ;;
+    blockcheckw) zdt_component_selected "nfqws2" ;;  # bcw parallel search engine, nfqws2 scans only
     byedpi) zdt_component_selected "byedpi" || zdt_component_selected "operaproxy" ;;
     opera-proxy) zdt_component_selected "operaproxy" ;;
     sing-box) zdt_component_selected "sing-box" ;;

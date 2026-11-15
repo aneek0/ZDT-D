@@ -121,15 +121,9 @@ fi
 
 if [[ "$DO_APK" == 1 ]]; then
   echo "== helper assets =="
-  mkdir -p "$GEN_ASSETS/dpi-detector/arm64-v8a" "$GEN_ASSETS/nfqws-tester/arm64-v8a" "$GEN_ASSETS/blockcheckw/arm64-v8a"
+  mkdir -p "$GEN_ASSETS/dpi-detector/arm64-v8a" "$GEN_ASSETS/nfqws-tester/arm64-v8a"
   cp prebuilt/bin/arm64-v8a/dpi-detector "$GEN_ASSETS/dpi-detector/arm64-v8a/dpi-detector"
   cp prebuilt/bin/arm64-v8a/nfqws-tester "$GEN_ASSETS/nfqws-tester/arm64-v8a/nfqws_tester"
-  if [[ -f prebuilt/bin/arm64-v8a/blockcheckw ]]; then
-    cp prebuilt/bin/arm64-v8a/blockcheckw "$GEN_ASSETS/blockcheckw/arm64-v8a/blockcheckw"
-    chmod 755 "$GEN_ASSETS/blockcheckw/arm64-v8a/blockcheckw"
-  else
-    echo "warning: prebuilt/bin/arm64-v8a/blockcheckw missing — APK ships without the parallel search binary"
-  fi
 
   [[ -f application/local.properties ]] || echo "sdk.dir=$SDK_DIR" > application/local.properties
 

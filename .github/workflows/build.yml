@@ -3706,6 +3706,12 @@ jobs:
             chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
           done
 
+          # blockcheckw ships from the repo prebuilt copy — it is built from
+          # the aneek0/blockcheckw fork, not from this repo's crates.
+          require_file "prebuilt/bin/arm64-v8a/blockcheckw"
+          cp -f prebuilt/bin/arm64-v8a/blockcheckw "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/blockcheckw"
+          chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/blockcheckw"
+
           echo "=== Package independently installable module components ==="
           python3 scripts/ci/package-module-components.py \
             --module-root "$MODULE_BUILD_DIR" \
