@@ -2132,6 +2132,7 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">이 대상에 대한 모든 후보 전략이 이미 확인되었습니다. 테스트할 항목이 없습니다</string>
     <string name="blockcheck_bcw_no_winners">빠른 병렬 검색에서 이 대상에 작동하는 전략을 찾지 못했습니다</string>
+    <string name="blockcheck_fatal_bcw_failed">빠른 병렬 엔진(blockcheckw)을 실행하지 못했습니다. 대신 테스터로 스캔을 실행하세요</string>
     <string name="blockcheck_error_config_no_desync">활성 프로필에 전략이 없습니다(비어 있거나 로드 실패)</string>
     <string name="blockcheck_error_no_strategies">이 프로그램에 대한 전략을 찾을 수 없습니다</string>
     <string name="blockcheck_error_config_not_found">전략 구성 파일을 찾을 수 없습니다</string>

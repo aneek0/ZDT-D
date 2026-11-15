@@ -2135,6 +2135,7 @@ APatch: 10700+</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Усі стратегії-кандидати вже підтверджені для цієї цілі. Немає чого перевіряти</string>
     <string name="blockcheck_bcw_no_winners">Швидкий паралельний пошук не знайшов жодної працюючої стратегії для цієї цілі</string>
+    <string name="blockcheck_fatal_bcw_failed">Швидкий паралельний рушій (blockcheckw) не зміг запуститися; запустіть перевірку тестером</string>
     <string name="blockcheck_error_config_no_desync">В активному профілі немає стратегій (порожній або помилка завантаження)</string>
     <string name="blockcheck_error_no_strategies">Стратегій для цієї програми не знайдено</string>
     <string name="blockcheck_error_config_not_found">Файл конфігурації стратегії не знайдено</string>

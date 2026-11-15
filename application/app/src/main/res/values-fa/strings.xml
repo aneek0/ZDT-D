@@ -2133,6 +2133,7 @@ APatch: 10700+</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">همه استراتژی‌های نامزد برای این هدف تأیید شده‌اند. چیزی برای تست نیست</string>
     <string name="blockcheck_bcw_no_winners">جست‌وجوی موازی سریع هیچ راهبرد کارایی برای این هدف پیدا نکرد</string>
+    <string name="blockcheck_fatal_bcw_failed">موتور موازی سریع (blockcheckw) اجرا نشد؛ به‌جای آن یک بررسی با ابزار آزمون اجرا کنید</string>
     <string name="blockcheck_error_config_no_desync">پروفایل فعال هیچ استراتژی ندارد (خالی یا خطای بارگذاری)</string>
     <string name="blockcheck_error_no_strategies">هیچ استراتژی برای این برنامه پیدا نشد</string>
     <string name="blockcheck_error_config_not_found">فایل پیکربندی استراتژی یافت نشد</string>

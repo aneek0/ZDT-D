@@ -2132,6 +2132,7 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Mọi chiến lược ứng viên đã được xác nhận cho mục tiêu này. Không có gì để kiểm tra</string>
     <string name="blockcheck_bcw_no_winners">Tìm kiếm song song nhanh không tìm thấy chiến lược nào hoạt động cho mục tiêu này</string>
+    <string name="blockcheck_fatal_bcw_failed">Không thể chạy engine song song nhanh (blockcheckw); hãy chạy quét bằng trình kiểm tra thay thế</string>
     <string name="blockcheck_error_config_no_desync">Cấu hình hoạt động không chứa chiến lược nào (trống hoặc tải thất bại)</string>
     <string name="blockcheck_error_no_strategies">Không tìm thấy chiến lược nào cho chương trình này</string>
     <string name="blockcheck_error_config_not_found">Không tìm thấy tệp cấu hình chiến lược</string>

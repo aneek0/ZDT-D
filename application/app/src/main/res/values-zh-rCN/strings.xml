@@ -2132,6 +2132,7 @@ APatch：10700+</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">该目标的所有候选策略均已确认，无需再测试</string>
     <string name="blockcheck_bcw_no_winners">快速并行搜索未找到适用于此目标的策略</string>
+    <string name="blockcheck_fatal_bcw_failed">快速并行引擎 (blockcheckw) 运行失败；请改用测试器执行扫描</string>
     <string name="blockcheck_error_config_no_desync">当前活动配置不含策略（为空或加载失败）</string>
     <string name="blockcheck_error_no_strategies">未找到此程序的策略</string>
     <string name="blockcheck_error_config_not_found">找不到策略配置文件</string>

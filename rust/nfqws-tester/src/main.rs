@@ -2448,22 +2448,33 @@ fn blockcheckw_bin(opts: &AutoOptions) -> Option<PathBuf> {
 ///
 /// Returns the reordered batch: winners (blockcheckw-verified on the first
 /// target) first in stable order, then the rest. On any failure the batch is
-/// returned unchanged — the legacy confirm loop remains the source of truth.
+/// returned unchanged — the legacy confirm loop remains the source of truth —
+/// except in bcw-only mode, where a broken accelerator must not silently turn
+/// the fast engine into the slow sequential grind (caller emits bcw_failed).
 fn blockcheckw_search(
     opts: &AutoOptions,
     strategies: &[Candidate],
-) -> Vec<Candidate> {
+) -> Option<Vec<Candidate>> {
     // Only the nfqws2 TCP path is covered: blockcheckw measures HTTPS with
     // its own socket probes and would misjudge UDP/STUN verdicts.
     if opts.program != "nfqws2" || opts.protocol != "tcp_https" {
-        return strategies.to_vec();
+        return Some(strategies.to_vec());
     }
     let Some(bin) = blockcheckw_bin(opts) else {
+        if opts.bcw_only {
+            emit_event(&json!({
+                "type": "auto_fatal", "stop_kind": "bcw_failed",
+                "message": "blockcheckw binary not found",
+                "ts": now_unix_ms(),
+            }));
+            let _ = cleanup_all();
+            return None;
+        }
         emit_event(&json!({
             "type": "auto_phase", "phase": "blockcheckw_skipped",
             "reason": "binary not found", "ts": now_unix_ms(),
         }));
-        return strategies.to_vec();
+        return Some(strategies.to_vec());
     };
     emit_event(&json!({
         "type": "auto_phase", "phase": "blockcheckw", "ts": now_unix_ms(),
@@ -2554,12 +2565,24 @@ fn blockcheckw_search(
         Ok(set) => set,
         Err(err) => {
             // blockcheckw is an accelerator, not a gate: fall back to the
-            // full legacy scan with the original order.
+            // full legacy scan with the original order — except in bcw-only
+            // mode, where the parallel search IS the verdict source and a
+            // broken accelerator must stop the run instead of silently
+            // grinding the batch sequentially.
+            if opts.bcw_only {
+                emit_event(&json!({
+                    "type": "auto_fatal", "stop_kind": "bcw_failed",
+                    "message": format!("blockcheckw failed: {err:#}"),
+                    "ts": now_unix_ms(),
+                }));
+                let _ = cleanup_all();
+                return None;
+            }
             emit_event(&json!({
                 "type": "auto_phase", "phase": "blockcheckw_failed",
                 "error": format!("{err:#}"), "ts": now_unix_ms(),
             }));
-            return strategies.to_vec();
+            return Some(strategies.to_vec());
         }
     };
     emit_event(&json!({
@@ -2587,9 +2610,9 @@ fn blockcheckw_search(
         // desync can change anything): stay fast, report and stop — the
         // user picked the fast engine and a full sequential grind behind
         // its back would betray that choice.
-        return winners;
+        return Some(winners);
     }
-    winners
+    Some(winners)
 }
 fn run_auto(opts: &AutoOptions) -> Result<()> {
     let program = opts.program.as_str();
@@ -2637,7 +2660,13 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
     let strategies = if config_mode {
         strategies
     } else {
-        blockcheckw_search(opts, &strategies)
+        // None: bcw-only hit a broken blockcheckw and already emitted the
+        // fatal event — nothing left to scan.
+        let Some(strategies) = blockcheckw_search(opts, &strategies) else {
+            let _ = cleanup_all();
+            return Ok(());
+        };
+        strategies
     };
     // Zapret22 stop-on-first: the batch is scanned in order; the first
     // confirmed strategy ends the main loop and its untested same-technique

@@ -2133,6 +2133,7 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Todas as estratégias candidatas já estão confirmadas para este alvo. Nada a testar</string>
     <string name="blockcheck_bcw_no_winners">A busca paralela rápida não encontrou nenhuma estratégia funcional para este alvo</string>
+    <string name="blockcheck_fatal_bcw_failed">O motor paralelo rápido (blockcheckw) não pôde ser executado; faça uma verificação com o testador</string>
     <string name="blockcheck_error_config_no_desync">O perfil ativo não contém estratégias (vazio ou falha ao carregar)</string>
     <string name="blockcheck_error_no_strategies">Nenhuma estratégia encontrada para este programa</string>
     <string name="blockcheck_error_config_not_found">Arquivo de configuração de estratégia não encontrado</string>

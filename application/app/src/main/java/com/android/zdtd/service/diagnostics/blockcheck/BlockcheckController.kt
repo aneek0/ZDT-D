@@ -196,6 +196,7 @@ object BlockcheckController {
                     "dns_stub" -> R.string.blockcheck_fatal_dns_stub
                     "address_block" -> R.string.blockcheck_fatal_address_block
                     "network_lost" -> R.string.blockcheck_fatal_network_lost
+                    "bcw_failed" -> R.string.blockcheck_fatal_bcw_failed
                     else -> null
                 }
                 val msg = resId?.let { context.getString(it) } ?: event.message
