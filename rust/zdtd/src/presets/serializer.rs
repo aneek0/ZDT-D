@@ -593,8 +593,8 @@ mod tests {
                 exact += 1;
             }
         }
-        // All 98 builtin presets must round-trip byte-exact.
+        // All builtin presets must round-trip byte-exact.
         assert_eq!(exact, total, "{} presets changed on roundtrip", total - exact);
-        assert_eq!(total, 98);
+        assert_eq!(total, 140);
     }
 }

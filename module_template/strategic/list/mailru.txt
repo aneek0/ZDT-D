@@ -8,7 +8,6 @@ imgsmail.ru
 datacloudmail.ru
 cloudflaremail.ru
 cmail.ru
-mail.ru
 games.mail.ru
 e.mail.ru
 ok.ru

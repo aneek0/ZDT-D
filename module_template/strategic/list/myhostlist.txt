@@ -6,7 +6,7 @@ cdn.frankerfacez.com
 dns-shop.ru
 c.dns-shop.ru
 dns.controld.com
-185.40.234.254
 anixart.tv
 pixiv.net
-157.240.9.174 instagram.com www.instagram.com
+instagram.com
+www.instagram.com

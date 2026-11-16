@@ -33,36 +33,6 @@ hostfakesplit_decoy - дополнительные мусорные пакеты
 
 ]]
 
--- Upstream API compatibility check
--- These functions must be provided by zapret-lib.lua and zapret-antidpi.lua
-do
-    local required = {
-        "DLOG", "resolve_range", "genhost", "direction_check", "payload_check",
-        "replay_first", "replay_drop", "replay_drop_set",
-        "rawsend_payload_segmented", "rawsend_opts_base", "rawsend_opts",
-        "reconstruct_opts", "blob_or_def", "direction_cutoff_opposite",
-        "hostfakesplit"
-    }
-    local missing = {}
-    for _, name in ipairs(required) do
-        if not _G[name] then
-            table.insert(missing, name)
-        end
-    end
-    if #missing > 0 then
-        local msg = "zapret-multishake.lua: SKIPPED - missing upstream functions: " .. table.concat(missing, ", ")
-        if DLOG then DLOG(msg) else print(msg) end
-        return
-    end
-    -- Use instance_cutoff_shim if available, fallback to instance_cutoff
-    if not _G["instance_cutoff_shim"] then
-        if _G["instance_cutoff"] then
-            instance_cutoff_shim = function(ctx, desync) instance_cutoff(ctx) end
-        else
-            instance_cutoff_shim = function() end
-        end
-    end
-end
 
 -- ============================================================================
 -- HOSTFAKESPLIT_STEALTH - менее агрессивный hostfakesplit
@@ -104,7 +74,7 @@ function hostfakesplit_stealth(ctx, desync)
                 local mode = desync.arg.mode or "soft"
                 local sni_len = pos[2] - pos[1] + 1
                 local real_sni = string.sub(data, pos[1], pos[2])
-
+                
                 -- режим minimal - пропускаем короткие SNI
                 if mode == "minimal" then
                     local min_sni = tonumber(desync.arg.min_sni) or 15
@@ -113,7 +83,7 @@ function hostfakesplit_stealth(ctx, desync)
                         return
                     end
                 end
-
+                
                 -- определяем сколько фейков отправлять
                 local send_fake1, send_fake2 = true, true
                 if mode == "soft" then
@@ -130,7 +100,7 @@ function hostfakesplit_stealth(ctx, desync)
                     end
                     DLOG("hostfakesplit_stealth: random mode, fake1="..tostring(send_fake1).." fake2="..tostring(send_fake2))
                 end
-
+                
                 -- ручное отключение фейков
                 if desync.arg.nofake1 then send_fake1 = false end
                 if desync.arg.nofake2 then send_fake2 = false end
@@ -261,7 +231,7 @@ function hostfakesplit_chaos(ctx, desync)
 
                 -- подготавливаем все сегменты
                 local segments = {}
-
+                
                 -- 1: before_host
                 segments[1] = {
                     name = "before",
@@ -270,7 +240,7 @@ function hostfakesplit_chaos(ctx, desync)
                     opts = opts_orig,
                     enabled = true
                 }
-
+                
                 -- 2: fake1
                 segments[2] = {
                     name = "fake1",
@@ -279,7 +249,7 @@ function hostfakesplit_chaos(ctx, desync)
                     opts = opts_fake,
                     enabled = not desync.arg.nofake1
                 }
-
+                
                 -- 3: real host
                 segments[3] = {
                     name = "real",
@@ -288,7 +258,7 @@ function hostfakesplit_chaos(ctx, desync)
                     opts = opts_orig,
                     enabled = true
                 }
-
+                
                 -- 4: fake2
                 segments[4] = {
                     name = "fake2",
@@ -297,7 +267,7 @@ function hostfakesplit_chaos(ctx, desync)
                     opts = opts_fake,
                     enabled = not desync.arg.nofake2
                 }
-
+                
                 -- 5: after_host
                 segments[5] = {
                     name = "after",
@@ -330,8 +300,8 @@ function hostfakesplit_chaos(ctx, desync)
                     local seg = segments[idx]
                     if seg and seg.enabled and #seg.data > 0 then
                         if b_debug then DLOG("hostfakesplit_chaos: sending "..seg.name.." offset="..seg.offset.." len="..#seg.data) end
-                        if not rawsend_payload_segmented(desync, seg.data, seg.offset, seg.opts) then
-                            return VERDICT_PASS
+                        if not rawsend_payload_segmented(desync, seg.data, seg.offset, seg.opts) then 
+                            return VERDICT_PASS 
                         end
                     end
                 end
@@ -380,7 +350,7 @@ function hostfakesplit_multi(ctx, desync)
                 if b_debug then DLOG("hostfakesplit_multi: resolved host range: "..table.concat(zero_based_pos(pos), " ")) end
 
                 local sni_len = pos[2] - pos[1] + 1
-
+                
                 -- парсим список хостов
                 local hosts = {}
                 local hosts_str = desync.arg.hosts or "google.com,vimeo.com,amazon.com"

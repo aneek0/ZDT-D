@@ -5,6 +5,26 @@ This folder holds tooling for the ZDT-D host lists under
 module, so editing them never touches the protected `module_template/`
 scripts (`customize.sh`, `service.sh`, `uninstall.sh`).
 
+## import_zapretgui.py
+
+Imports the upstream zapretgui (zapret 2 GUI) winws2 preset set into ZDT-D:
+converts preset texts (absolute `/data/adb/modules/ZDT-D/strategic/…` paths,
+fork `NFQWS2_*_PKT_*` capture-policy header, drops Windows-only `--wf-*` /
+WinDivert lines) and copies every preset-referenced blob/lua/list from the
+distribution. Idempotent: a second run reports 0 changes.
+
+Fork protections baked in: `list/other.txt` is never overwritten (user sites
++ DoH resolvers), the `general ALT11` «Мои сайты» item keeps the verified
+alt11 recipe (import fails loudly if upstream rewrites that block).
+
+Usage:
+```bash
+# unpack the installer once (Inno Setup extracts fine under wine):
+WINEPREFIX=/tmp/winepfx wine Zapret2Setup_DEV_x.exe /VERYSILENT /DIR=C:\\z2inst
+python3 scripts/lists/import_zapretgui.py /tmp/winepfx/drive_c/z2inst/Zapret/Dev
+python3 scripts/lists/import_zapretgui.py <dist> --dry-run   # report only
+```
+
 ## strategy_dedup.py
 
 Strips the daemon-owned selection args (`--hostlist=`, `--hostlist-exclude=`,

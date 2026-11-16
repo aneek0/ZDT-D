@@ -1,8 +1,3 @@
 claude.ai
+claude.com
 anthropic.com
-console.anthropic.com
-api.anthropic.com
-docs.anthropic.com
-support.anthropic.com
-www.anthropic.com
-status.anthropic.com

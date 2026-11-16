@@ -1,0 +1,76 @@
+# Preset: fake close
+# BuiltinVersion: 2.46
+# IconColor: #a8c5ff
+# NFQWS2_TCP_PKT_OUT=20
+# NFQWS2_TCP_PKT_IN=10
+# NFQWS2_UDP_PKT_OUT=20
+# NFQWS2_UDP_PKT_IN=10
+
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-lib.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-antidpi.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-auto.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/custom_funcs.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/custom_diag.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-multishake.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/fakemultisplit.lua
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/fakemultidisorder.lua
+
+--ctrack-disable=0
+--ipcache-lifetime=8400
+--ipcache-hostname=1
+
+
+
+--blob=tls_google:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin
+--blob=quic_google:@/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin
+--blob=fake_default_udp:0x00000000000000000000000000000000
+
+--name=Исключения домены (RU сайты)
+--filter-tcp=80,443-65535
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/netrogat.txt
+--out-range=-d8
+--payload=tls_client_hello
+--lua-desync=pass
+
+--new
+
+--name=Исключения айпи (RU сайты)
+--filter-tcp=80,443-65535
+--ipset=/data/adb/modules/ZDT-D/strategic/list/ipset-ru.txt
+--ipset=/data/adb/modules/ZDT-D/strategic/list/ipset-dns.txt
+--ipset=/data/adb/modules/ZDT-D/strategic/list/ipset-exclude.txt
+--out-range=-d8
+--payload=tls_client_hello
+--lua-desync=pass
+
+--new
+
+--name=Все сайты (айпи)
+--filter-tcp=80,443-65535
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-ru.txt
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-dns.txt
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-exclude.txt
+--out-range=-d8
+--payload=tls_client_hello
+--lua-desync=fake_close:flags=RA:shift=-66000:repeats=2
+--lua-desync=fake_close:flags=FA:shift=-66000
+--lua-desync=multisplit:pos=1,midsld
+
+--new
+
+--name=Все сайты UDP (айпи)
+--filter-udp=443-65535
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-ru.txt
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-dns.txt
+--ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/ipset-exclude.txt
+--out-range=-n8
+--payload=quic_initial
+--lua-desync=fake:blob=quic_google:repeats=11
+
+--new
+
+--name=Голосовые звонки/чаты
+--filter-l7=stun,discord
+--out-range=-n8
+--payload=stun,discord_ip_discovery
+--lua-desync=fake:blob=fake_default_udp:repeats=6
