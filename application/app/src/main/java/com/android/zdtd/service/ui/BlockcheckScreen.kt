@@ -572,104 +572,122 @@ fun BlockcheckScreen(
                             }
                             if (bgColor != Color.Transparent) {
                                 Surface(shape = shape, color = bgColor) {
-                                    Row(
+                                    Column(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
-                                        Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
                                                 strategyLabel(s),
+                                                modifier = Modifier.weight(1f),
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                                 fontWeight = if (status == "testing") FontWeight.SemiBold else FontWeight.Normal,
                                             )
-                                            // Gradient breakdown: how many baseline-blocked hosts
-                                            // this strategy opened vs failed to open.
-                                            if (res != null && res.baselineBlocked > 0 && status != "testing") {
-                                                Spacer(Modifier.height(3.dp))
-                                                LinearProgressIndicator(
-                                                    progress = (res.openedPct ?: 0.0).toFloat() / 100f,
-                                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                            if (status == "testing") {
+                                                Spacer(Modifier.width(8.dp))
+                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            }
+                                            if (status.isNotEmpty() && status != "queued" && status != "testing") {
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    when (status) {
+                                                        "works" -> res?.takeIf { it.attemptsTotal > 0 }
+                                                            ?.let { context.getString(R.string.blockcheck_works_fmt, it.attemptsOk, it.attemptsTotal) }
+                                                            ?: context.getString(R.string.blockcheck_works)
+                                                        "unstable" -> context.getString(R.string.blockcheck_unstable)
+                                                        "not_counted" -> context.getString(R.string.blockcheck_not_counted)
+                                                        "no_baseline_block" -> context.getString(R.string.blockcheck_no_baseline_block)
+                                                        "failed" -> context.getString(R.string.blockcheck_failed)
+                                                        "skipped" -> context.getString(R.string.blockcheck_skipped)
+                                                        else -> ""
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = when (status) {
+                                                        "works" -> Color(0xFF22C55E)
+                                                        "unstable" -> Color(0xFFF59E0B)
+                                                        "failed" -> MaterialTheme.colorScheme.error
+                                                        "not_counted", "no_baseline_block", "skipped" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                                        else -> MaterialTheme.colorScheme.onSurface
+                                                    },
                                                 )
                                             }
                                         }
-                                        if (status == "testing") {
-                                            Spacer(Modifier.width(8.dp))
-                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        // Gradient breakdown: how many baseline-blocked hosts
+                                        // this strategy opened vs failed to open.
+                                        if (res != null && res.baselineBlocked > 0 && status != "testing") {
+                                            LinearProgressIndicator(
+                                                progress = (res.openedPct ?: 0.0).toFloat() / 100f,
+                                                modifier = Modifier.fillMaxWidth().height(4.dp),
+                                            )
                                         }
-                                        if (status == "works" && actions != null) {
-                                            Spacer(Modifier.width(8.dp))
-                                            TextButton(
-                                                onClick = { applyStrategy(s) },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                            ) { Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelSmall) }
-                                            var verifying by remember(s) { mutableStateOf(false) }
-                                            var browserOk by remember(s) { mutableStateOf<Boolean?>(null) }
-                                            TextButton(
-                                                enabled = !verifying,
-                                                onClick = {
-                                                    verifying = true
-                                                    coroutineScope.launch {
-                                                        // Real-browser check: apply first
-                                                        // (WebView rides the live engine), then
-                                                        // load the first scanned host headless.
-                                                        applyStrategy(s)
-                                                        val host = state.hosts.firstOrNull() ?: ""
-                                                        browserOk = if (host.isBlank()) {
-                                                            null
-                                                        } else {
-                                                            BlockcheckBrowserVerify.verify(context, host, s).ok
-                                                        }
-                                                        verifying = false
-                                                        snackHost?.showSnackbar(
-                                                            when (browserOk) {
-                                                                true -> context.getString(R.string.blockcheck_browser_ok)
-                                                                false -> context.getString(R.string.blockcheck_browser_fail)
-                                                                null -> context.getString(R.string.blockcheck_browser_skip)
+                                        if (status == "works") {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                if (actions != null) {
+                                                    TextButton(
+                                                        onClick = { coroutineScope.launch { applyStrategy(s) } },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                    ) { Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelSmall) }
+                                                }
+                                                var verifying by remember(s) { mutableStateOf(false) }
+                                                var browserOk by remember(s) { mutableStateOf<Boolean?>(null) }
+                                                TextButton(
+                                                    enabled = !verifying,
+                                                    onClick = {
+                                                        verifying = true
+                                                        coroutineScope.launch {
+                                                            // Real-browser check: apply first
+                                                            // (WebView rides the live engine —
+                                                            // only after the queued engine
+                                                            // restart settles), then load the
+                                                            // first scanned host headless.
+                                                            val applied = applyStrategy(s, announce = false)
+                                                            val host = state.hosts.firstOrNull() ?: ""
+                                                            browserOk = if (!applied || host.isBlank()) {
+                                                                null
+                                                            } else {
+                                                                BlockcheckBrowserVerify.verify(context, host, s).ok
                                                             }
+                                                            verifying = false
+                                                            snackHost?.showSnackbar(
+                                                                when (browserOk) {
+                                                                    true -> context.getString(R.string.blockcheck_browser_ok)
+                                                                    false -> context.getString(R.string.blockcheck_browser_fail)
+                                                                    null -> context.getString(R.string.blockcheck_browser_skip)
+                                                                }
+                                                            )
+                                                        }
+                                                    },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                ) {
+                                                    if (verifying) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                                    } else {
+                                                        Text(
+                                                            context.getString(
+                                                                when (browserOk) {
+                                                                    true -> R.string.blockcheck_browser_ok
+                                                                    false -> R.string.blockcheck_browser_fail
+                                                                    else -> R.string.blockcheck_browser_verify
+                                                                }
+                                                            ),
+                                                            style = MaterialTheme.typography.labelSmall,
                                                         )
                                                     }
-                                                },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                            ) {
-                                                if (verifying) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                                } else {
-                                                    Text(
-                                                        context.getString(
-                                                            when (browserOk) {
-                                                                true -> R.string.blockcheck_browser_ok
-                                                                false -> R.string.blockcheck_browser_fail
-                                                                else -> R.string.blockcheck_browser_verify
-                                                            }
-                                                        ),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                    )
+                                                }
+                                                // Speed color of the median response time: green fast,
+                                                // amber tolerable, red barely working.
+                                                res?.timeMs?.let {
+                                                    val speedColor = when {
+                                                        it < 700 -> Color(0xFF22C55E)
+                                                        it < 2000 -> Color(0xFFF59E0B)
+                                                        else -> Color(0xFFEF4444)
+                                                    }
+                                                    Text("%.0f ms".format(it), style = MaterialTheme.typography.labelSmall, color = speedColor)
                                                 }
                                             }
-                                        }
-                                        if (status.isNotEmpty() && status != "queued" && status != "testing") {
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                when (status) {
-                                                    "works" -> res?.takeIf { it.attemptsTotal > 0 }
-                                                        ?.let { context.getString(R.string.blockcheck_works_fmt, it.attemptsOk, it.attemptsTotal) }
-                                                        ?: context.getString(R.string.blockcheck_works)
-                                                    "unstable" -> context.getString(R.string.blockcheck_unstable)
-                                                    "not_counted" -> context.getString(R.string.blockcheck_not_counted)
-                                                    "no_baseline_block" -> context.getString(R.string.blockcheck_no_baseline_block)
-                                                    "failed" -> context.getString(R.string.blockcheck_failed)
-                                                    "skipped" -> context.getString(R.string.blockcheck_skipped)
-                                                    else -> ""
-                                                },
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = when (status) {
-                                                    "works" -> Color(0xFF22C55E)
-                                                    "unstable" -> Color(0xFFF59E0B)
-                                                    "failed" -> MaterialTheme.colorScheme.error
-                                                    "not_counted", "no_baseline_block", "skipped" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-                                                    else -> MaterialTheme.colorScheme.onSurface
-                                                },
-                                            )
                                         }
                                     }
                                 }
@@ -721,26 +739,29 @@ fun BlockcheckScreen(
                                 )
                                 if (actions != null && bestResult != null) {
                                     Button(
-                                        onClick = { applyStrategy(bestResult.strategy) },
+                                        onClick = { coroutineScope.launch { applyStrategy(bestResult.strategy) } },
                                         modifier = Modifier.fillMaxWidth(),
                                     ) { Text(context.getString(R.string.blockcheck_apply_best)) }
                                 }
                                 workingResults.forEach { r ->
                                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(strategyLabel(r.strategy), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                r.timeMs?.let {
-                                                    Text("%.0f ms".format(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+                                        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                            Text(strategyLabel(r.strategy), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (actions != null) {
+                                                    TextButton(onClick = { coroutineScope.launch { applyStrategy(r.strategy) } }) {
+                                                        Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelMedium)
+                                                    }
                                                 }
-                                            }
-                                            if (actions != null) {
-                                                Spacer(Modifier.width(8.dp))
-                                                TextButton(onClick = { applyStrategy(r.strategy) }) {
-                                                    Text(context.getString(R.string.blockcheck_apply), style = MaterialTheme.typography.labelMedium)
+                                                r.timeMs?.let {
+                                                    // Speed color of the median response time: green fast,
+                                                    // amber tolerable, red barely working.
+                                                    val speedColor = when {
+                                                        it < 700 -> Color(0xFF22C55E)
+                                                        it < 2000 -> Color(0xFFF59E0B)
+                                                        else -> Color(0xFFEF4444)
+                                                    }
+                                                    Text("%.0f ms".format(it), style = MaterialTheme.typography.labelSmall, color = speedColor)
                                                 }
                                             }
                                         }

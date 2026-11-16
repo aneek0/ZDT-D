@@ -411,14 +411,20 @@ async fn check_tcp16<W: EventWriter + Send>(options: &RunOptions, writer: &mut W
         Domain(String),
     }
 
-    let mut tasks_input: Vec<Tcp16Task> = load_tcp_targets(options.max_tcp_targets).into_iter().map(Tcp16Task::Static).collect();
+
     let custom_domains: Vec<String> = options
         .domains_override
         .iter()
         .map(|d| clean_hostname(d))
         .filter(|d| !d.is_empty())
         .collect();
-    custom_domains.iter().for_each(|domain| tasks_input.push(Tcp16Task::Domain(domain.clone())));
+    // The user's own domain is the scan's subject: queue it first, ahead of
+    // the static references (display order follows completion order).
+    let mut tasks_input: Vec<Tcp16Task> = custom_domains
+        .iter()
+        .map(|domain| Tcp16Task::Domain(domain.clone()))
+        .collect();
+    tasks_input.extend(load_tcp_targets(options.max_tcp_targets).into_iter().map(Tcp16Task::Static));
     let static_count = tasks_input.len() - custom_domains.len();
     let concurrency = options.concurrency.min(8);
     let _ = writer.started(
