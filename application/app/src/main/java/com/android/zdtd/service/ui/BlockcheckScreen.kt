@@ -346,7 +346,10 @@ fun BlockcheckScreen(
                             enabled = !state.isRunning && (selectedProtocol != "tcp_https" || !showCustom || customDomain.isNotBlank()),
                         ) { Text(context.getString(R.string.blockcheck_start)) }
                         if (state.isRunning || state.isFinished || state.isError) {
-                            OutlinedButton(onClick = { BlockcheckStore.reset() }) {
+                            OutlinedButton(onClick = {
+                                BlockcheckStore.reset()
+                                BlockcheckHistory(context).clearAll()
+                            }) {
                                 Text(context.getString(R.string.blockcheck_reset))
                             }
                         }

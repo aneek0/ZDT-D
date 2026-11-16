@@ -18,6 +18,12 @@ class BlockcheckHistory(private val context: Context) {
 
     fun path(): String = file.absolutePath
 
+    /** Wipe all scan history (Reset button): the next scan starts from a clean slate. */
+    @Synchronized
+    fun clearAll() {
+        file.delete()
+    }
+
     /** Do not call for forced (informational) runs. */
     @Synchronized
     fun record(
