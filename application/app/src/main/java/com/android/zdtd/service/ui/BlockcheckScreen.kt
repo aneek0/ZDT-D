@@ -213,48 +213,50 @@ fun BlockcheckScreen(
     // "Применить" builds a profile for this site; re-apply updates it, no
     // copies). Other programs and preset-file candidates keep the global
     // strategicvar apply.
-    fun applyStrategy(strategy: String) {
-        val a = actions ?: return
-        coroutineScope.launch {
-            val isCatalog = catalogStrategies.any { it.id == strategy }
-            // Custom-domain scans run against a cache temp file; a per-site
-            // item must reference a persistent module list, so persist the
-            // domain first and apply against that file.
-            val customTarget =
-                showCustom && customDomain.isNotBlank() && selectedProtocol == "tcp_https"
-            var hostsPath =
-                if (selectedProtocol == "tcp_https") selectedHostFile else null
-            if (customTarget) {
-                hostsPath = runner.ensureDomainList(customDomain)
-            }
-            val exported = if (isCatalog) {
-                runner.exportStrategy(selectedProgram, selectedProtocol, strategy, hostsPath)
-            } else {
-                null
-            }
-            if (isCatalog && exported == null) {
-                snackHost?.showSnackbar(context.getString(R.string.common_apply_failed))
-                return@launch
-            }
-            val blobsOk = exported != null &&
-                runner.profileHasBlobs(selectedProfile, exported.blobNames)
-            val perItem = isCatalog && exported != null && blobsOk &&
-                selectedProgram == "nfqws2" && hostsPath != null
-            val ok = if (perItem && exported != null && hostsPath != null) {
-                applyAsSiteItem(a, exported, hostsPath)
-            } else {
-                val fileName = exported?.file ?: strategy
-                suspendCancellableCoroutine<Boolean> { cont ->
-                    a.applyStrategicVariant(selectedProgram, selectedProfile, fileName) { ok ->
-                        if (cont.isActive) cont.resumeWith(Result.success(ok))
-                    }
+    suspend fun applyStrategy(strategy: String, announce: Boolean = true): Boolean {
+        val a = actions ?: return false
+        val isCatalog = catalogStrategies.any { it.id == strategy }
+        // Custom-domain scans run against a cache temp file; a per-site
+        // item must reference a persistent module list, so persist the
+        // domain first and apply against that file.
+        val customTarget =
+            showCustom && customDomain.isNotBlank() && selectedProtocol == "tcp_https"
+        var hostsPath =
+            if (selectedProtocol == "tcp_https") selectedHostFile else null
+        if (customTarget) {
+            hostsPath = runner.ensureDomainList(customDomain)
+        }
+        val exported = if (isCatalog) {
+            runner.exportStrategy(selectedProgram, selectedProtocol, strategy, hostsPath)
+        } else {
+            null
+        }
+        if (isCatalog && exported == null) {
+            if (announce) snackHost?.showSnackbar(context.getString(R.string.common_apply_failed))
+            return false
+        }
+        val blobsOk = exported != null &&
+            runner.profileHasBlobs(selectedProfile, exported.blobNames)
+        val perItem = isCatalog && exported != null && blobsOk &&
+            selectedProgram == "nfqws2" && hostsPath != null
+        val ok = if (perItem && exported != null && hostsPath != null) {
+            applyAsSiteItem(a, exported, hostsPath)
+        } else {
+            val fileName = exported?.file ?: strategy
+            suspendCancellableCoroutine<Boolean> { cont ->
+                a.applyStrategicVariant(selectedProgram, selectedProfile, fileName) { ok ->
+                    if (cont.isActive) cont.resumeWith(Result.success(ok))
                 }
             }
-            snackHost?.showSnackbar(
-                if (ok) context.getString(R.string.common_applied_with_value, strategyLabel(strategy))
-                else context.getString(R.string.common_apply_failed)
-            )
         }
+        // The engine restart is queued, not done: wait for the runtime-apply
+        // queue to settle so any follow-up probe measures the new rules.
+        if (ok) a.awaitRuntimeApplySettled()
+        if (announce) snackHost?.showSnackbar(
+            if (ok) context.getString(R.string.common_applied_with_value, strategyLabel(strategy))
+            else context.getString(R.string.common_apply_failed)
+        )
+        return ok
     }
 
 

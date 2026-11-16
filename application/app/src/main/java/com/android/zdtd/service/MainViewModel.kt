@@ -7991,6 +7991,25 @@ fun applyStrategicVariant(programId: String, profile: String, file: String, host
   }
 }
 
+  /**
+   * Blocks until the daemon's runtime-apply queue finishes the work the app
+   * just queued (or times out). The browser check must not race the engine
+   * restart: "queued"/"running" mean the old rules are still live.
+   */
+  suspend fun awaitRuntimeApplySettled(timeoutMs: Long = 15_000): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (System.currentTimeMillis() < deadline) {
+      val state = runCatching { withContext(Dispatchers.IO) { api.getRuntimeApplyStatus().state } }
+        .getOrDefault("idle")
+      when (state) {
+        "idle", "success", "failed", "deferred_until_start", "no_active_runtime" -> return true
+        // Still queued/running: poll again.
+      }
+      delay(400)
+    }
+    return false
+  }
+
 fun applyProfileHostlists(programId: String, profile: String, hostlists: List<String>, excludeHostlists: List<String> = emptyList(), ipsets: List<String> = emptyList(), excludeIpsets: List<String> = emptyList(), onDone: (Boolean) -> Unit = {}) {
   launchIO {
     val payload = JSONObject()
