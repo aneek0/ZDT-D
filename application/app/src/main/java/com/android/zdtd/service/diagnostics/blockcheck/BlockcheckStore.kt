@@ -76,8 +76,8 @@ data class BlockcheckStrategyResult(
     // once. null when nothing was blocked at baseline.
     val openedPct: Double? = null,
     val score: Double? = null,
-    // Median wall time of successful confirm probes; only supplied for a
-    // complete successful attempt series, so null means not rankable.
+    // Median wall time of the successful confirm probes (null only when no
+    // probe succeeded — a forgiven miss still yields a median).
     val timeMs: Double? = null,
     // Worst-case confirm count over probed targets (0..attemptsTotal).
     val attemptsOk: Int = 0,
