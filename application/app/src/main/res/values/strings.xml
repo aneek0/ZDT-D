@@ -654,6 +654,7 @@ Use another editor to modify it.</string>
     <string name="strategic_preset_duplicate">Duplicate</string>
     <string name="strategic_preset_rename">Rename</string>
     <string name="strategic_presets_manage">Manage presets</string>
+    <string name="strategic_user_presets_empty">No saved presets yet — create or import one below</string>
     <string name="strategic_variants_current_hint">Current config</string>
     <string name="strategic_variants_tap_to_apply">Tap to apply</string>
 

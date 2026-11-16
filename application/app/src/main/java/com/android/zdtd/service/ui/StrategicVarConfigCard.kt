@@ -21,6 +21,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -78,6 +83,19 @@ private fun readVariantMarker(text: String): String? {
       val name = trimmed.removePrefix(VARIANT_MARKER).trim()
       if (name.isNotEmpty()) return name
     }
+  }
+  return null
+}
+
+// Header the daemon stamps into every applied user preset
+// (normalize_user_preset_text): "# Preset: <name>". Reading it back lets the
+// chip show the preset name instead of a red "user config": user presets have
+// no sha256 and no @zdtd-variant marker, so hash/marker matching never fires.
+private fun readPresetHeader(text: String): String? {
+  for (line in text.lineSequence()) {
+    val lower = line.trim().lowercase(Locale.ROOT)
+    if (!lower.startsWith("# preset:")) continue
+    return lower.substringAfter("# preset:").trim().takeIf(String::isNotEmpty)
   }
   return null
 }
@@ -249,6 +267,15 @@ fun StrategicVarConfigCard(
       val hashMatch = variants.firstOrNull {
         it.sha256 != null && it.sha256.equals(sha256HexUtf8(t), ignoreCase = true)
       }
+      // Applied user presets carry a "# Preset: <name>" header instead of the
+      // @zdtd-variant marker; match it back to the known preset list.
+      val headerMatch = readPresetHeader(t)?.let { header ->
+        // save_user_preset strips ".txt" (file_stem) but the apply endpoint
+        // uses the request name verbatim, so headers arrive both ways.
+        val stem = header.removeSuffix(".txt")
+        variants.firstOrNull { it.name.removeSuffix(".txt").equals(stem, ignoreCase = true) }
+      }
+      val resolvedVariant = marker ?: hashMatch?.name ?: headerMatch?.name
       selectedHostlists = hl
       selectedExcludeHostlists = ex
       selectedIpsets = ips
@@ -257,7 +284,7 @@ fun StrategicVarConfigCard(
       lastLoadedExcludeHostlists = ex
       lastLoadedIpsets = ips
       lastLoadedExcludeIpsets = exi
-      currentVariantName = marker ?: hashMatch?.name
+      currentVariantName = resolvedVariant
       loading = false
     }
   }
@@ -405,6 +432,10 @@ fun StrategicVarConfigCard(
         // "user config" instead of falsely claiming the variant is active.
         val hash = sha256HexUtf8(newText)
         val stillMatches = variants.any { it.sha256 != null && it.sha256.equals(hash, ignoreCase = true) }
+          || readPresetHeader(newText)?.let { header ->
+            val stem = header.removeSuffix(".txt")
+            variants.any { it.name.removeSuffix(".txt").equals(stem, ignoreCase = true) }
+          } == true
         if (!stillMatches) currentVariantName = null
       }
       scope.launch {
@@ -471,22 +502,28 @@ fun StrategicVarConfigCard(
             label = { Text(stringResource(R.string.nfqws2_list_search)) },
           )
         }
-        if (userPresets.isEmpty()) Text(stringResource(R.string.strategic_strategies_none), style = MaterialTheme.typography.bodyMedium)
+        if (userPresets.isEmpty()) Text(stringResource(R.string.strategic_user_presets_empty), style = MaterialTheme.typography.bodyMedium)
         manageFiltered.forEach { item ->
           Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(item.name.removeSuffix(".txt"), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = {
+            Text(
+              item.name.removeSuffix(".txt"),
+              Modifier.weight(1f),
+              style = MaterialTheme.typography.bodyMedium,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            IconButton(onClick = {
               managePresetsOpen = false; editingPreset = item.name; presetName = item.name
               actions.loadZapretPreset(item.name) { content -> presetContent = content?.content.orEmpty(); presetEditorOpen = content != null }
-            }) { Text(stringResource(R.string.strategic_preset_edit)) }
-            TextButton(onClick = { managePresetsOpen = false; manageAction = "duplicate"; manageTarget = item; presetName = "${item.name.removeSuffix(".txt")}-copy" }) { Text(stringResource(R.string.strategic_preset_duplicate)) }
-            TextButton(onClick = { managePresetsOpen = false; manageAction = "rename"; manageTarget = item; presetName = item.name.removeSuffix(".txt") }) { Text(stringResource(R.string.strategic_preset_rename)) }
-            TextButton(onClick = { managePresetsOpen = false; presetToDelete = item.name }) { Text(stringResource(R.string.strategic_preset_delete)) }
-            TextButton(onClick = {
+            }) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.strategic_preset_edit)) }
+            IconButton(onClick = { managePresetsOpen = false; manageAction = "duplicate"; manageTarget = item; presetName = "${item.name.removeSuffix(".txt")}-copy" }) { Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.strategic_preset_duplicate)) }
+            IconButton(onClick = { managePresetsOpen = false; manageAction = "rename"; manageTarget = item; presetName = item.name.removeSuffix(".txt") }) { Icon(Icons.Filled.DriveFileRenameOutline, contentDescription = stringResource(R.string.strategic_preset_rename)) }
+            IconButton(onClick = {
               actions.loadZapretPreset(item.name) { content ->
                 if (content != null) { pendingExport = content.content; exportLauncher.launch(item.name) }
               }
-            }) { Text(stringResource(R.string.strategic_preset_export)) }
+            }) { Icon(Icons.Filled.FileDownload, contentDescription = stringResource(R.string.strategic_preset_export)) }
+            IconButton(onClick = { managePresetsOpen = false; presetToDelete = item.name }) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.strategic_preset_delete)) }
           }
         }
       }
@@ -702,28 +739,6 @@ fun StrategicVarConfigCard(
           Text(stringResource(R.string.strategic_preset_create))
         }
         TextButton(onClick = { importLauncher.launch("text/*") }) { Text(stringResource(R.string.strategic_preset_import)) }
-        if (activeVariantName != null && userPresets.any { it.name == activeVariantName }) {
-          TextButton(onClick = {
-            val selected = userPresets.first { it.name == activeVariantName }
-            editingPreset = selected.name; presetName = selected.name
-            actions.loadZapretPreset(selected.name) { preset -> presetContent = preset?.content.orEmpty(); presetEditorOpen = true }
-          }) { Text(stringResource(R.string.strategic_preset_edit)) }
-          TextButton(onClick = {
-            val selected = userPresets.first { it.name == activeVariantName }
-            actions.loadZapretPreset(selected.name) { preset ->
-              if (preset != null) { pendingExport = preset.content; exportLauncher.launch(selected.name) }
-            }
-          }) { Text(stringResource(R.string.strategic_preset_export)) }
-          TextButton(onClick = {
-            val selected = userPresets.first { it.name == activeVariantName }
-            presetName = "${selected.name.removeSuffix(".txt")}-copy"; manageAction = "duplicate"; manageTarget = selected
-          }) { Text(stringResource(R.string.strategic_preset_duplicate)) }
-          TextButton(onClick = {
-            val selected = userPresets.first { it.name == activeVariantName }
-            presetName = selected.name.removeSuffix(".txt"); manageAction = "rename"; manageTarget = selected
-          }) { Text(stringResource(R.string.strategic_preset_rename)) }
-          TextButton(onClick = { presetToDelete = activeVariantName }) { Text(stringResource(R.string.strategic_preset_delete)) }
-        }
       }
 
       Spacer(Modifier.height(10.dp))

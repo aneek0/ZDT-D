@@ -475,6 +475,7 @@
     <string name="strategic_preset_duplicate">Дублировать</string>
     <string name="strategic_preset_rename">Переименовать</string>
     <string name="strategic_presets_manage">Управление пресетами</string>
+    <string name="strategic_user_presets_empty">Пока нет своих пресетов — создайте или импортируйте ниже</string>
 
     <!-- Common -->
     <string name="common_close">Закрыть</string><string name="common_update">Обновить</string>
