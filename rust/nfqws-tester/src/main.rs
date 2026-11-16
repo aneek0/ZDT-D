@@ -1145,11 +1145,15 @@ const VOLUME_CUT_MIN_BODY_BYTES: u64 = 8_000;
 /// Filter bytes a single TLS handshake is expected to consume.
 const TLS_HANDSHAKE_ESTIMATE: u64 = 4_000;
 /// DPI cut window measured in filter bytes (TLS handshake + response headers
-/// + accumulated body): block rules abort the connection inside it.
-const VOLUME_CUT_MIN_FILTER_BYTES: u64 = 12_000;
-const VOLUME_CUT_MAX_FILTER_BYTES: u64 = 36_000;
-/// Transfers per volume probe, all on one curl process/connection.
-const VOLUME_TRANSFERS: usize = 16;
+/// + accumulated body): block rules abort the connection inside it. Same
+/// 16-64 KB window the DPI detector probes (its TCP_BLOCK 12-69 KB window
+/// with steps up to 64); the old 12-36 KB window let pages cut at 36-64 KB
+/// pass as "not blocked".
+const VOLUME_CUT_MIN_FILTER_BYTES: u64 = 16_000;
+const VOLUME_CUT_MAX_FILTER_BYTES: u64 = 64_000;
+/// Transfers per volume probe, all on one curl process/connection. Sized so
+/// a small page (~3 KB) accumulates past the cut window's upper bound.
+const VOLUME_TRANSFERS: usize = 24;
 /// Minimum body a 2xx answer must carry to count as a real page (zapret22
 /// подбор: «работает» = сайт загрузился, а не просто ответил). Block/fake
 /// stubs answer 200 with an empty or tiny body; real site roots do not.
@@ -2683,8 +2687,10 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         if full.is_empty() || !opts.bcw_only {
             bail!("every candidate strategy is already confirmed for this target; nothing new to test");
         }
-        // Honest empty bcw run: the UI already showed every candidate as
-        // skipped; finish normally instead of an error.
+        // bcw-only found no winner: emit the session header first (the app
+        // couples baseline probes to it), then run the baseline so the UI can
+        // tell "nothing works on a blocked target" from "the target opens
+        // without any bypass" (bcw never checks the latter itself).
         emit_event(&json!({
             "type": "auto_started",
             "ok": true,
@@ -2700,6 +2706,39 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "titles": [],
             "ts": now_unix_ms(),
         }));
+        if !control_alive() {
+            emit_event(&json!({
+                "type": "auto_fatal",
+                "stop_kind": "no_internet",
+                "message": "no internet connection",
+                "ts": now_unix_ms(),
+            }));
+            let _ = cleanup_all();
+            return Ok(());
+        }
+        emit_event(&json!({ "type": "auto_phase", "phase": "baseline", "ts": now_unix_ms() }));
+        let mut baseline_open = true;
+        for target in &targets {
+            let ip = resolve_ip(&target.host);
+            let outcome = probe_with_volume(target, ip.as_ref(), opts.timeout_secs, false);
+            if !matches!(outcome.verdict, ProbeVerdict::Ok) {
+                baseline_open = false;
+            }
+            let mut event = json!({
+                "type": "auto_baseline_probe",
+                "host": target.key,
+                "verdict": verdict_class(&outcome.verdict),
+                "reason": verdict_reason(&outcome.verdict),
+                "time_ms": outcome.time_ms,
+                "ts": now_unix_ms(),
+            });
+            if target.kind == ProbeKind::Https {
+                event["http_code"] = json!(outcome.http_code);
+                event["size"] = json!(outcome.size_bytes.to_string());
+            }
+            emit_event(&event);
+        }
+        let stop_kind = if baseline_open { "bcw_no_winners_open" } else { "bcw_no_winners" };
         for candidate in &full {
             emit_event(&json!({
                 "type": "auto_strategy_skip",
@@ -2718,7 +2757,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             "failed": [],
             "interrupted": false,
             "forced": false,
-            "stop_kind": "bcw_no_winners",
+            "stop_kind": stop_kind,
             "ts": now_unix_ms(),
         }));
         let _ = cleanup_all();
@@ -3000,9 +3039,6 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
         let mut network_recovered = false;
         let mut per_target: Vec<(String, u32, u32)> = Vec::new(); // (target key, ok attempts, attempts)
         let mut confirm_times: Vec<u64> = Vec::new();
-        // Only a series where every target reached its full confirmation
-        // carries comparable timings (a forgiven miss does not).
-        let mut complete_series: bool;
         let mut crashed_out: bool;
 
         'strategy: loop {
@@ -3048,7 +3084,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
 
             per_target.clear();
             confirm_times.clear();
-            complete_series = true;
+
             crashed_out = false;
             let mut all_unreachable = !probe_keys.is_empty();
 
@@ -3155,7 +3191,7 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                         emit_probe_event(&strategy, target, &extra, attempts, ok_count);
                     }
                 }
-                complete_series &= ok_count == CONFIRM_ATTEMPTS && attempts == CONFIRM_ATTEMPTS;
+
                 per_target.push((target.key.clone(), ok_count, attempts));
             }
             }
@@ -3221,9 +3257,10 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
             0.0
         };
         let score: Option<f64> = if baseline_blocked_total > 0 { Some(opened_pct) } else { None };
-        // Only a complete series has comparable timings: one forgiven miss and
-        // the sample no longer describes the same request shape.
-        let time_ms: Option<f64> = if complete_series { median_ms(&mut confirm_times) } else { None };
+        // Median of the successful probes; a forgiven miss only widens the
+        // sample instead of hiding the time (zapretgui shows every working
+        // strategy's time). No successful probe at all -> None.
+        let time_ms: Option<f64> = median_ms(&mut confirm_times);
 
         let mut verdict: &str = if full_success {
             if blocked_keys.is_empty() {
@@ -3374,12 +3411,12 @@ fn run_auto(opts: &AutoOptions) -> Result<()> {
                             probe_target(target, ip.as_ref(), opts.timeout_secs)
                         };
                         emit_probe_event(&strategy, target, &outcome, attempt, ok);
-                        if outcome.verdict == ProbeVerdict::Ok { ok += 1; }
+                        if outcome.verdict == ProbeVerdict::Ok {
+                            ok += 1;
+                            confirm_times.push(outcome.time_ms);
+                        }
                     }
                     per_target.push((target.key.clone(), ok));
-                    if ok == CONFIRM_ATTEMPTS {
-                        confirm_times.push(0);
-                    }
                 }
                 stop_child(&mut child);
                 let _ = cleanup_test_rules();
@@ -3468,17 +3505,17 @@ mod tests {
         assert_eq!(classify_https(28, 0, 0, 0), ProbeVerdict::Blocked("timeout"));
         // rc=18: a cut is a filter-window verdict (4000 handshake + headers +
         // body), not a body-size one.
-        assert_eq!(classify_https(18, 0, 16_000, 0), ProbeVerdict::Blocked("body_cut"));
-        // Lower edge: 8000 body + 0 headers = 12_000 filter bytes.
-        assert_eq!(classify_https(18, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(18, 0, 20_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Lower edge: 12000 body + 0 headers = 16000 filter bytes.
+        assert_eq!(classify_https(18, 0, 12_000, 0), ProbeVerdict::Blocked("body_cut"));
         // A body below 8000 is a reset even with huge headers.
         assert_eq!(classify_https(18, 0, 7_999, 20_000), ProbeVerdict::Blocked("reset"));
-        // Upper edge: 32_000 body + 0 headers = 36_000 filter bytes is in ...
-        assert_eq!(classify_https(18, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Upper edge: 60_000 body + 0 headers = 64_000 filter bytes is in ...
+        assert_eq!(classify_https(18, 0, 60_000, 0), ProbeVerdict::Blocked("body_cut"));
         // ... one byte more is past the window.
-        assert_eq!(classify_https(18, 0, 32_001, 0), ProbeVerdict::Blocked("reset"));
-        // Filter past 36_000 is out even when the body alone would fit.
-        assert_eq!(classify_https(18, 0, 33_000, 1_000), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(18, 0, 60_001, 0), ProbeVerdict::Blocked("reset"));
+        // Filter past 64_000 is out even when the body alone would fit.
+        assert_eq!(classify_https(18, 0, 61_000, 1_000), ProbeVerdict::Blocked("reset"));
         assert_eq!(classify_https(6, 0, 0, 0), ProbeVerdict::Unreachable("resolve_failed"));
         assert_eq!(classify_https(7, 0, 0, 0), ProbeVerdict::Unreachable("connect_failed"));
         assert_eq!(classify_https(2, 0, 0, 0), ProbeVerdict::Blocked("reset"));
@@ -3486,20 +3523,20 @@ mod tests {
 
     #[test]
     fn classify_https_stall_and_reset_partials_use_the_window() {
-        // Lower edge: 8000 body + 0 headers = 12_000 filter bytes.
-        assert_eq!(classify_https(28, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
-        assert_eq!(classify_https(56, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
-        assert_eq!(classify_https(52, 0, 8_000, 0), ProbeVerdict::Blocked("body_cut"));
-        // Upper edge: 32_000 body + 0 headers = 36_000 filter bytes.
-        assert_eq!(classify_https(28, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
-        assert_eq!(classify_https(56, 0, 32_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Lower edge: 12000 body + 0 headers = 16000 filter bytes.
+        assert_eq!(classify_https(28, 0, 12_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(56, 0, 12_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(52, 0, 12_000, 0), ProbeVerdict::Blocked("body_cut"));
+        // Upper edge: 60_000 body + 0 headers = 64_000 filter bytes.
+        assert_eq!(classify_https(28, 0, 60_000, 0), ProbeVerdict::Blocked("body_cut"));
+        assert_eq!(classify_https(56, 0, 60_000, 0), ProbeVerdict::Blocked("body_cut"));
         // Below the body floor or past the filter ceiling keeps the fallback.
         assert_eq!(classify_https(28, 0, 7_999, 0), ProbeVerdict::Blocked("timeout"));
         assert_eq!(classify_https(56, 0, 7_999, 20_000), ProbeVerdict::Blocked("reset"));
         assert_eq!(classify_https(52, 0, 7_999, 0), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(28, 0, 40_000, 0), ProbeVerdict::Blocked("timeout"));
-        assert_eq!(classify_https(52, 0, 33_000, 1_000), ProbeVerdict::Blocked("reset"));
-        assert_eq!(classify_https(56, 0, 32_001, 0), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(28, 0, 68_000, 0), ProbeVerdict::Blocked("timeout"));
+        assert_eq!(classify_https(52, 0, 61_000, 1_000), ProbeVerdict::Blocked("reset"));
+        assert_eq!(classify_https(56, 0, 60_001, 0), ProbeVerdict::Blocked("reset"));
     }
 
     #[test]
@@ -3812,7 +3849,7 @@ mod tests {
 
     #[test]
     fn classify_volume_rc18_in_window_is_cut() {
-        // filter = 4000 + 500 header + 16000 body = 20500, inside 12k..=36k.
+        // filter = 4000 + 500 header + 16000 body = 20500, inside 16k..=64k.
         let run = volume_run(18, &[(200, 16_000, 500, 1)]);
         assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
     }
@@ -3820,13 +3857,13 @@ mod tests {
     #[test]
     fn classify_volume_partial_timeout_is_cut() {
         // A timeout after a partial body inside the window is a cut too.
-        let run = volume_run(28, &[(200, 10_000, 400, 1)]);
+        let run = volume_run(28, &[(200, 14_000, 400, 1)]);
         assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
     }
 
     #[test]
     fn classify_volume_partial_reset_is_cut() {
-        let run = volume_run(56, &[(200, 9_000, 300, 1)]);
+        let run = volume_run(56, &[(200, 13_000, 300, 1)]);
         assert_eq!(classify_volume(&run), VolumeVerdict::Cut);
     }
 
@@ -3839,12 +3876,13 @@ mod tests {
 
     #[test]
     fn classify_volume_repeated_short_pages_accumulate_to_ok() {
-        // 16 * (2500 body + 200 header) + 4000 handshake = 47200 filter bytes.
+        // 24 * (2500 body + 200 header) + 4000 handshake = 68800 filter bytes:
+        // past the 64 KB window ceiling.
         assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 2_500, 200)), VolumeVerdict::Ok);
-        // 16 * (2200 + 200) + 4000 = 42400: the body alone stays under the old
+        // 24 * (2400 + 200) + 4000 = 66400: the body alone stays under the
         // window, the filter volume crosses it.
-        assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 2_200, 200)), VolumeVerdict::Ok);
-        // 16 * (1000 + 200) + 4000 = 23200 never reaches the window.
+        assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 2_400, 200)), VolumeVerdict::Ok);
+        // 24 * (1000 + 200) + 4000 = 32800 never reaches the window.
         assert_eq!(classify_volume(&clean_run(VOLUME_TRANSFERS, 1_000, 200)), VolumeVerdict::Unknown);
     }
 
@@ -3860,7 +3898,7 @@ mod tests {
         // Below the window: too little body to be a window cut.
         assert_eq!(classify_volume(&volume_run(56, &[(200, 3_000, 200, 1)])), VolumeVerdict::Unknown);
         // Above the window: the transfer already crossed it, so not a cut.
-        assert_eq!(classify_volume(&volume_run(56, &[(200, 40_000, 900, 1)])), VolumeVerdict::Unknown);
+        assert_eq!(classify_volume(&volume_run(56, &[(200, 66_000, 900, 1)])), VolumeVerdict::Unknown);
     }
 
     #[test]

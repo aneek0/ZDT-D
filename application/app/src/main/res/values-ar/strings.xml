@@ -2137,6 +2137,7 @@ APatch: ‏10700+</string>
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">جميع الاستراتيجيات المرشحة مؤكدة بالفعل لهذا الهدف. لا شيء لاختباره</string>
     <string name="blockcheck_bcw_no_winners">لم يجد البحث المتوازي السريع أي استراتيجية تعمل لهذا الهدف</string>
+    <string name="blockcheck_bcw_no_winners_open">لم يجد البحث المتوازي السريع أي استراتيجية تعمل — الهدف يفتح من تلقاء نفسه، لا حاجة لتجاوز</string>
     <string name="blockcheck_fatal_bcw_failed">تعذّر تشغيل المحرك المتوازي السريع (blockcheckw)؛ شغّل فحصًا بأداة الاختبار بدلًا منه</string>
     <string name="blockcheck_error_config_no_desync">الملف النشط لا يحتوي على استراتيجيات (فارغ أو فشل التحميل)</string>
     <string name="blockcheck_error_no_strategies">لم يتم العثور على استراتيجيات لهذا البرنامج</string>

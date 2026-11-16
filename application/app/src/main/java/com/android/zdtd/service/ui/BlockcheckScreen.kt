@@ -497,7 +497,7 @@ fun BlockcheckScreen(
 
         // bcw engine finished with zero winners: a plain "nothing works"
         // banner instead of the generic empty-results card.
-        if (state.isFinished && state.stopKind == "bcw_no_winners") {
+        if (state.isFinished && (state.stopKind == "bcw_no_winners" || state.stopKind == "bcw_no_winners_open")) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -505,7 +505,10 @@ fun BlockcheckScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 ) {
                     Text(
-                        context.getString(R.string.blockcheck_bcw_no_winners),
+                        context.getString(
+                            if (state.stopKind == "bcw_no_winners_open") R.string.blockcheck_bcw_no_winners_open
+                            else R.string.blockcheck_bcw_no_winners
+                        ),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(14.dp),

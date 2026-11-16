@@ -2133,6 +2133,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">इस लक्ष्य के लिए हर संभावित रणनीति पहले से पुष्ट है। परीक्षण के लिए कुछ नहीं</string>
     <string name="blockcheck_bcw_no_winners">तेज़ समानांतर खोज को इस लक्ष्य के लिए कोई कार्यशील रणनीति नहीं मिली</string>
+    <string name="blockcheck_bcw_no_winners_open">तेज़ समानांतर खोज को कोई कार्यशील रणनीति नहीं मिली — लक्ष्य अपने आप खुलता है, बायपास की ज़रूरत नहीं</string>
     <string name="blockcheck_fatal_bcw_failed">तेज़ समानांतर इंजन (blockcheckw) चल नहीं सका; इसके बजाय टेस्टर से स्कैन चलाएँ</string>
     <string name="blockcheck_error_config_no_desync">सक्रिय प्रोफ़ाइल में कोई रणनीति नहीं है (खाली या लोड विफल)</string>
     <string name="blockcheck_error_no_strategies">इस प्रोग्राम के लिए कोई रणनीति नहीं मिली</string>

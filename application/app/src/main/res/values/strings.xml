@@ -2254,6 +2254,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 <string name="blockcheck_fatal_network_lost">Internet connection lost during scan</string>
 <string name="blockcheck_error_all_confirmed">Every candidate strategy is already confirmed for this target. Nothing new to test</string>
     <string name="blockcheck_bcw_no_winners">Fast parallel search found no working strategy for this target</string>
+    <string name="blockcheck_bcw_no_winners_open">Fast parallel search found no working strategy — the target opens on its own, no bypass needed</string>
     <string name="blockcheck_fatal_bcw_failed">Fast parallel engine (blockcheckw) failed; run a Sequential tester scan instead</string>
 <string name="blockcheck_error_config_no_desync">The active profile config carries no strategies (empty or failed to load)</string>
 <string name="blockcheck_error_no_strategies">No strategies found for this program</string>

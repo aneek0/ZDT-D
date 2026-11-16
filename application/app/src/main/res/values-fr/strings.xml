@@ -2133,6 +2133,7 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="blockcheck_failed_count_fmt">Failed (%1$d)</string>
     <string name="blockcheck_error_all_confirmed">Toutes les stratégies candidates sont déjà confirmées pour cette cible. Rien à tester</string>
     <string name="blockcheck_bcw_no_winners">La recherche parallèle rapide n\'a trouvé aucune stratégie fonctionnelle pour cette cible</string>
+    <string name="blockcheck_bcw_no_winners_open">La recherche parallèle rapide n\'a trouvé aucune stratégie fonctionnelle — la cible s\'ouvre toute seule, aucun contournement nécessaire</string>
     <string name="blockcheck_fatal_bcw_failed">Le moteur parallèle rapide (blockcheckw) n’a pas pu démarrer ; lancez plutôt un balayage avec le testeur</string>
     <string name="blockcheck_error_config_no_desync">Le profil actif ne contient aucune stratégie (vide ou échec de chargement)</string>
     <string name="blockcheck_error_no_strategies">Aucune stratégie trouvée pour ce programme</string>
